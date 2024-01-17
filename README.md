@@ -1,19 +1,27 @@
-# Description:
-This repository contains solutions to various programming problems from [LeetCode](https://leetcode.com/vladislavsherwood/), a platform known for its coding challenges that test algorithmic and data structure skills. The solutions presented here showcase my programming proficiency and problem-solving abilities.
+# Saturday: Restaurant Data Architecture & Interactive Dashboards
 
-The problems are categorized into three folders based on their difficulty levels: Easy, Medium, and Hard.
+## Description:
+Saturday is a pet project that exemplifies a comprehensive data architecture for a restaurant business, integrating SQL, Snowflake, and Looker. This project showcases a well-designed database schema to manage and analyze various aspects of a restaurant's operations. The project emphasizes creating interactive dashboards in Looker, which provide insightful visualizations and real-time data analytics to support decision-making in the restaurant industry.
 
-# Approach:
-A significant portion of the problems in this repository are solved using two main approaches:
+## Approach:
+- **SQL Database Design**: The foundation of 'Saturday' is a robust SQL database that captures all essential elements of a restaurant's operations. This includes tables for inventory, staff, orders, customers, and more. Each table is meticulously designed to ensure data integrity and optimal performance.
 
-**SQL:** Many challenges involving data manipulation, querying, and analysis are solved using SQL queries.
+- **Snowflake Integration**: Leveraging the power of the Snowflake cloud data platform, 'Saturday' offers scalable storage and computing power. Snowflake's unique architecture allows for efficient data storage and querying.
 
-**Python:** Python scripts, often leveraging libraries like Pandas and NumPy, are employed to solve problems related to data manipulation, analysis, and algorithmic tasks. This highlights my proficiency in programming with Python and utilizing relevant libraries for efficient problem-solving.
+- **Looker Dashboards**: The heart of 'Saturday' lies in its interactive dashboards built using Looker. These dashboards provide real-time insights into different facets of the restaurant's operations, such as sales trends, inventory levels, staff performance, and customer preferences. The dashboards are designed to be user-friendly, offering intuitive navigation and clear visualizations to make data-driven decisions easier for restaurant managers and stakeholders.
 
-# Continuous Improvement:
-It's important to note that coding skills are continually evolving. Some of the earlier problems in this repository might have solutions that I would approach more efficiently or differently now, as my skills have developed over time. The most recent problems are likely to be the best representation of my current skill level and problem-solving approach.
+## Features:
+1. **Comprehensive Data Model**: Includes all critical areas of restaurant management like inventory tracking, order processing, staff scheduling e.t.c.
 
-# Note:
-While these solutions provide working examples of solving specific problems, they might not be the only optimal solutions. Coding is an iterative process, and there can be multiple ways to solve a problem. These solutions reflect my approach to the problems based on my understanding at the time of solving them.
+2. **Real-Time Data Analysis**: Up-to-the-minute data allows for timely insights and quick decision-making.
 
-Feel free to provide any feedback or improvements if you come across alternative or more efficient solutions. Your insights are valuable in refining my problem-solving skills. 
+3. **Interactive Visualizations**: Dynamic charts, graphs, and tables that are both informative and easy to understand.
+
+4. **User Access Control**: Secure views in Snowflake ensure that sensitive data is protected and only accessible to authorized users.
+
+5. **Customizable Dashboards**: Looker dashboards can be customized to meet the unique needs and preferences of each user.
+
+## Potential Enhancements:
+- Integration with online ordering systems to track and analyze delivery and take-out orders.
+- Implementing AI and ML for predictive analytics in inventory and sales.
+- Customer feedback analysis tools to improve service quality and menu offerings.
