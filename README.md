@@ -32,4 +32,4 @@ Saturday is a pet project that exemplifies a comprehensive data architecture for
 ## Getting Started:
 To dive into the project, start with the `saturday.ipynb` Jupyter Notebook. This notebook will guide you through the entire project, from the foundational database architecture to the detailed creation of interactive dashboards in Looker. It provides a step-by-step walkthrough, making it easy to understand and follow the project's development.
 
-To go directly to the dashboards, you can follow the "[link](https://lookerstudio.google.com/u/0/reporting/595e5728-fdf4-4dce-8241-f74bdfa2456a/page/8IAnD)"
+To go directly to the dashboards, you can follow the [link](https://lookerstudio.google.com/u/0/reporting/595e5728-fdf4-4dce-8241-f74bdfa2456a/page/8IAnD)
