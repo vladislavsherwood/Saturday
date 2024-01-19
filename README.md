@@ -21,7 +21,7 @@ Saturday is a pet project that exemplifies a comprehensive data architecture for
 
 5. **Customizable Dashboards**: Looker dashboards can be customized to meet the unique needs and preferences of each user.
 
-6. **Jupyter Notebook Storytelling**: The entire process of building the project, from database design to queries creation, is documented in a Jupyter Notebook. This provides a comprehensive guide for understanding the project's implementation.
+6. **Jupyter Notebook Storytelling**: The entire process of building the project, from database design to dashboard creation, is documented in a Jupyter Notebook. This provides a comprehensive guide for understanding the project's implementation.
 
 ## Potential Enhancements:
 - Integration with online ordering systems to track and analyze delivery and take-out orders.
