@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DCA на сегодня</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-secondary-bg-color, #f2f3f5);
+    --card: var(--tg-theme-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #14171a);
+    --hint: var(--tg-theme-hint-color, #7a8490);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --line: rgba(128, 128, 128, 0.18);
+    --buy3: #1f9d55; --buy2: #3aa76d; --buy1: #5b6b7a; --skip: #a0a7ae; --bad: #d64545;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: var(--tg-theme-secondary-bg-color, #0f1114); --card: var(--tg-theme-bg-color, #1a1d21);
+            --text: var(--tg-theme-text-color, #eef0f2); --hint: var(--tg-theme-hint-color, #8b95a1); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 15px; font-weight: 500; color: var(--hint); margin: 4px 0 2px; }
+  .total { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .sub { color: var(--hint); font-size: 14px; margin-top: 2px; }
+  .list { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; display: grid;
+          grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+  .card.done { opacity: 0.55; }
+  .sym { font-weight: 650; font-size: 17px; }
+  .name { color: var(--hint); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+  .amount { font-size: 22px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .mult { display: inline-block; font-size: 12px; font-weight: 650; color: #fff; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+  .m3 { background: var(--buy3); } .m2 { background: var(--buy2); } .m1 { background: var(--buy1); } .m0 { background: var(--skip); }
+  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .small { padding: 7px 14px; font-size: 14px; flex: none; border-radius: 9px; }
+  .reason { grid-column: 1 / -1; font-size: 14px; color: var(--hint); }
+  .reason b { color: var(--text); font-weight: 500; }
+  .row { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 8px; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 11px 14px; cursor: pointer; }
+  .primary { background: var(--accent); color: var(--accent-text); font-weight: 600; flex: 1; }
+  .ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  .danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
+  .err { color: var(--bad); }
+  .add { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+         background: var(--accent); color: var(--accent-text); font-weight: 600; padding: 15px; border-radius: 14px;
+         box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: flex-end; z-index: 10; }
+  .sheet-bg.open { display: flex; }
+  .sheet { background: var(--card); width: 100%; border-radius: 18px 18px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
+           max-height: 86vh; overflow: auto; }
+  .sheet h2 { margin: 0 0 12px; font-size: 19px; }
+  label { display: block; font-size: 13px; color: var(--hint); margin: 14px 0 6px; }
+  input, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+                  border-radius: 10px; padding: 12px; }
+  .opt { padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
+  .opt.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .opt small { display: block; color: var(--hint); margin-top: 2px; }
+  .res { padding: 12px 4px; border-bottom: 1px solid var(--line); cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  .res small { color: var(--hint); }
+  .empty { text-align: center; color: var(--hint); padding: 48px 12px; }
+  .toast { position: fixed; left: 16px; right: 16px; top: 12px; background: var(--bad); color: #fff; padding: 12px 14px;
+           border-radius: 12px; display: none; z-index: 20; }
+</style>
+</head>
+<body>
+<h1 id="day">Сегодня</h1>
+<div class="total" id="total">…</div>
+<div class="sub" id="sub"></div>
+<div class="list" id="list"></div>
+<button class="add" id="addBtn">+ Добавить актив</button>
+
+<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const initData = tg ? tg.initData : "";
+let state = null;
+
+const $ = (id) => document.getElementById(id);
+const money = (x) => "$" + (Math.round(x * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = (s) => s.replace(/-USD$/, "").replace(/\d{4,}$/, "");
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-Tg-Init-Data": initData, ...(opts.headers || {}) } });
+  if (!r.ok) {
+    let msg = "Ошибка " + r.status;
+    try { msg = (await r.json()).detail || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => (t.style.display = "none"), 3500); }
+function haptic() { try { tg && tg.HapticFeedback.impactOccurred("light"); } catch (e) {} }
+
+async function load() {
+  try { state = await api("/api/today"); render(); }
+  catch (e) { $("total").textContent = "—"; $("sub").innerHTML = '<span class="err">' + esc(e.message) + "</span>"; }
+}
+
+function render() {
+  const d = new Date(state.day + "T00:00:00Z");
+  $("day").textContent = "Сегодня, " + d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+  const items = state.items.slice().sort((a, b) => (!!a.done - !!b.done) || ((b.mult || 0) - (a.mult || 0)));
+  const toBuy = items.filter((i) => !i.done && i.amount > 0).length;
+  const doneN = items.filter((i) => i.done).length;
+  if (!items.length) {
+    $("total").textContent = "Список пуст";
+    $("sub").textContent = "Добавьте первый актив — кнопка внизу";
+    $("list").innerHTML = "";
+    return;
+  }
+  $("total").textContent = state.left > 0 ? "Купить на " + money(state.left) : "На сегодня всё";
+  $("sub").textContent = (toBuy ? "Осталось покупок: " + toBuy : "Покупок не осталось") + (doneN ? " · сделано: " + doneN : "") + " · ×1 = " + money(state.unit);
+  $("list").innerHTML = items.map(card).join("");
+}
+
+function card(i) {
+  if (i.error) {
+    return `<div class="card" onclick="openTicker('${esc(i.symbol)}')"><div><div class="sym">${esc(short(i.symbol))}</div><div class="name">${esc(i.name)}</div></div>
+      <div class="amount">—</div><div class="reason err">${esc(i.error)}</div></div>`;
+  }
+  const m = i.mult;
+  const act = i.done
+    ? `<button class="small ghost" onclick="event.stopPropagation(); undo('${esc(i.symbol)}')">✓ отменить</button>`
+    : m > 0 ? `<button class="small primary" onclick="event.stopPropagation(); done('${esc(i.symbol)}')">Куплено</button>` : "";
+  return `<div class="card ${i.done ? "done" : ""}" onclick="openTicker('${esc(i.symbol)}')">
+    <div><div class="sym">${esc(short(i.symbol))}<span class="mult m${m}">${m > 0 ? "×" + m : "пропуск"}</span></div>
+      <div class="name">${esc(i.name)}</div></div>
+    <div class="right"><div class="amount">${m > 0 ? money(i.amount) : "—"}</div>${act}</div>
+    <div class="reason"><b>${esc(i.strategy_name)}:</b> ${esc(i.reason)}</div>
+  </div>`;
+}
+
+async function done(symbol) {
+  const i = state.items.find((x) => x.symbol === symbol);
+  haptic();
+  try { await api("/api/done", { method: "POST", body: JSON.stringify({ symbol, amount: i.amount, price: i.price, mult: i.mult }) }); await load(); }
+  catch (e) { toast(e.message); }
+}
+async function undo(symbol) {
+  try { await api("/api/done/" + encodeURIComponent(symbol), { method: "DELETE" }); await load(); } catch (e) { toast(e.message); }
+}
+
+function openSheet(html) { $("sheet").innerHTML = html; $("sheetBg").classList.add("open"); }
+function closeSheet() { $("sheetBg").classList.remove("open"); }
+$("sheetBg").addEventListener("click", (e) => { if (e.target.id === "sheetBg") closeSheet(); });
+
+function openTicker(symbol) {
+  const i = state.items.find((x) => x.symbol === symbol);
+  const opts = i.allowed.map((k) => `<div class="opt ${k === i.strategy ? "sel" : ""}" onclick="setStrategy('${esc(symbol)}','${k}')">
+      ${esc(state.strategies[k].name)}<small>${esc(state.strategies[k].about)}</small></div>`).join("");
+  openSheet(`<h2>${esc(short(symbol))} <span style="color:var(--hint);font-weight:400;font-size:15px">${esc(i.name)}</span></h2>
+    <div class="sub">${i.price ? "Цена " + Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") + " · " : ""}данные на ${esc(i.as_of || "—")}${i.invested ? " · отмечено покупок на " + money(i.invested) : ""}</div>
+    <label>Стратегия</label>${opts}
+    <label>Сумма ×1 для этого актива, $ (пусто — общая ${money(state.unit)})</label>
+    <input id="unitIn" type="number" inputmode="decimal" min="1" step="1" value="${i.custom_unit ?? ""}" placeholder="${state.unit}">
+    <div class="row" style="margin-top:16px"><button class="primary" onclick="saveUnit('${esc(symbol)}')">Сохранить</button>
+      <button class="danger" onclick="removeTicker('${esc(symbol)}')">Удалить</button></div>`);
+}
+async function setStrategy(symbol, strategy) {
+  haptic();
+  try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify({ strategy }) }); await load(); openTicker(symbol); }
+  catch (e) { toast(e.message); }
+}
+async function saveUnit(symbol) {
+  const v = $("unitIn").value.trim();
+  const body = v === "" ? { reset_unit: true } : { unit: Number(v) };
+  try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify(body) }); closeSheet(); await load(); }
+  catch (e) { toast(e.message); }
+}
+async function removeTicker(symbol) {
+  const go = async () => { try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "DELETE" }); closeSheet(); await load(); } catch (e) { toast(e.message); } };
+  if (tg && tg.showConfirm) tg.showConfirm("Удалить " + short(symbol) + " из списка?", (ok) => ok && go());
+  else if (confirm("Удалить " + short(symbol) + " из списка?")) go();
+}
+
+$("addBtn").addEventListener("click", () => {
+  openSheet(`<h2>Добавить актив</h2>
+    <input id="q" placeholder="Тикер или название: BTC, SPY, gold…" autocomplete="off" autocapitalize="characters">
+    <div id="results" style="margin-top:8px"></div>
+    <label>Общая сумма ×1, $</label>
+    <div class="row" style="margin-top:0"><input id="unitAll" type="number" inputmode="decimal" min="1" step="1" value="${state ? state.unit : 10}">
+      <button class="ghost" onclick="saveUnitAll()">Сохранить</button></div>`);
+  const q = $("q");
+  let timer = null;
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => doSearch(q.value), 350); });
+  setTimeout(() => q.focus(), 50);
+});
+let found = [];
+async function doSearch(text) {
+  const box = $("results");
+  if (!text.trim()) { box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="sub">Ищу…</div>';
+  try {
+    found = await api("/api/search?q=" + encodeURIComponent(text));
+    box.innerHTML = found.length ? found.map((r, n) => `<div class="res" onclick="addTicker(${n})">
+      <div><b>${esc(r.symbol)}</b><br><small>${esc(r.name)}</small></div><small>${esc(r.kind)}<br>${esc(r.exchange)}</small></div>`).join("")
+      : '<div class="sub">Ничего не нашёл</div>';
+  } catch (e) { box.innerHTML = '<div class="sub err">' + esc(e.message) + "</div>"; }
+}
+async function addTicker(n) {
+  const r = found[n];
+  haptic();
+  try { await api("/api/tickers", { method: "POST", body: JSON.stringify(r) }); closeSheet(); await load(); }
+  catch (e) { toast(e.message); }
+}
+async function saveUnitAll() {
+  try { await api("/api/unit", { method: "POST", body: JSON.stringify({ unit: Number($("unitAll").value) }) }); closeSheet(); await load(); }
+  catch (e) { toast(e.message); }
+}
+
+load();
+</script>
+</body>
+</html>
