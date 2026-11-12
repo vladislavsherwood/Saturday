@@ -2,94 +2,159 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>DCA на сегодня</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>DCA</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: var(--tg-theme-secondary-bg-color, #f2f3f5);
-    --card: var(--tg-theme-bg-color, #ffffff);
-    --text: var(--tg-theme-text-color, #14171a);
-    --hint: var(--tg-theme-hint-color, #7a8490);
-    --accent: var(--tg-theme-button-color, #2481cc);
-    --accent-text: var(--tg-theme-button-text-color, #ffffff);
-    --line: rgba(128, 128, 128, 0.18);
-    --buy3: #1f9d55; --buy2: #3aa76d; --buy1: #5b6b7a; --skip: #a0a7ae; --bad: #d64545;
+    --bg: #F3F3EF; --surface: #FFFFFF; --text: #0D0E10; --mute: #8B9098; --faint: #D9DAD6;
+    --line: rgba(13, 14, 16, 0.07); --accent: #0FA958; --on-accent: #FFFFFF; --bad: #E5484D;
+    --shadow: 0 1px 2px rgba(13, 14, 16, 0.04), 0 8px 24px rgba(13, 14, 16, 0.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
+    --line: rgba(255, 255, 255, 0.07); --accent: #C6F53A; --on-accent: #0A0B0D; --bad: #FF6369;
+    --shadow: none;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: var(--tg-theme-secondary-bg-color, #0f1114); --card: var(--tg-theme-bg-color, #1a1d21);
-            --text: var(--tg-theme-text-color, #eef0f2); --hint: var(--tg-theme-hint-color, #8b95a1); }
+    :root:not([data-theme="light"]) {
+      --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
+      --line: rgba(255, 255, 255, 0.07); --accent: #C6F53A; --on-accent: #0A0B0D; --bad: #FF6369;
+      --shadow: none;
+    }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
-  h1 { font-size: 15px; font-weight: 500; color: var(--hint); margin: 4px 0 2px; }
-  .total { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .sub { color: var(--hint); font-size: 14px; margin-top: 2px; }
-  .list { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
-  .card { background: var(--card); border-radius: 14px; padding: 14px; display: grid;
-          grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
-  .card.done { opacity: 0.55; }
-  .sym { font-weight: 650; font-size: 17px; }
-  .name { color: var(--hint); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
-  .amount { font-size: 22px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-  .mult { display: inline-block; font-size: 12px; font-weight: 650; color: #fff; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
-  .m3 { background: var(--buy3); } .m2 { background: var(--buy2); } .m1 { background: var(--buy1); } .m0 { background: var(--skip); }
-  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-  .small { padding: 7px 14px; font-size: 14px; flex: none; border-radius: 9px; }
-  .reason { grid-column: 1 / -1; font-size: 14px; color: var(--hint); }
-  .reason b { color: var(--text); font-weight: 500; }
-  .row { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 8px; }
-  button { font: inherit; border: 0; border-radius: 10px; padding: 11px 14px; cursor: pointer; }
-  .primary { background: var(--accent); color: var(--accent-text); font-weight: 600; flex: 1; }
-  .ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
-  .danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
-  .err { color: var(--bad); }
-  .add { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
-         background: var(--accent); color: var(--accent-text); font-weight: 600; padding: 15px; border-radius: 14px;
-         box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
-  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: flex-end; z-index: 10; }
-  .sheet-bg.open { display: flex; }
-  .sheet { background: var(--card); width: 100%; border-radius: 18px 18px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
-           max-height: 86vh; overflow: auto; }
-  .sheet h2 { margin: 0 0 12px; font-size: 19px; }
-  label { display: block; font-size: 13px; color: var(--hint); margin: 14px 0 6px; }
-  input, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-                  border-radius: 10px; padding: 12px; }
-  .opt { padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
-  .opt.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .opt small { display: block; color: var(--hint); margin-top: 2px; }
-  .res { padding: 12px 4px; border-bottom: 1px solid var(--line); cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
-  .res small { color: var(--hint); }
-  .empty { text-align: center; color: var(--hint); padding: 48px 12px; }
-  .toast { position: fixed; left: 16px; right: 16px; top: 12px; background: var(--bad); color: #fff; padding: 12px 14px;
-           border-radius: 12px; display: none; z-index: 20; }
+  html, body { margin: 0; background: var(--bg); }
+  body { color: var(--text); min-height: 100vh;
+         font: 16px/1.3 ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         padding: 20px 16px calc(110px + env(safe-area-inset-bottom)); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .num { font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+
+  /* шапка */
+  .top { display: flex; justify-content: space-between; align-items: center; color: var(--mute); font-size: 14px; font-weight: 600; }
+  .chip { background: var(--surface); border-radius: 999px; padding: 7px 12px; box-shadow: var(--shadow); color: var(--text); }
+  .chip span { color: var(--mute); margin-right: 4px; }
+  .hero { margin: 22px 2px 14px; font-size: 76px; line-height: 0.95; font-weight: 800; }
+  .hero small { font-size: 0.5em; font-weight: 700; color: var(--mute); margin-right: 2px; vertical-align: 0.42em; }
+  .hero.ok { color: var(--accent); }
+  .bar { height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; margin: 0 2px 22px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width 0.45s cubic-bezier(.2,.8,.2,1); }
+
+  /* список */
+  .list { background: var(--surface); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
+  .item { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; padding: 15px 14px 15px 18px;
+          border-bottom: 1px solid var(--line); transition: opacity 0.25s; }
+  .item:last-child { border-bottom: 0; }
+  .item:active { background: var(--line); }
+  .sym { font-size: 19px; font-weight: 750; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .sym b { font-weight: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meter { display: inline-flex; align-items: flex-end; gap: 3px; height: 16px; flex: none; }
+  .meter i { width: 4px; border-radius: 2px; background: var(--faint); }
+  .meter i:nth-child(1) { height: 7px; } .meter i:nth-child(2) { height: 11px; } .meter i:nth-child(3) { height: 16px; }
+  .meter i.on { background: var(--accent); }
+  .amt { font-size: 21px; font-weight: 750; text-align: right; }
+  .amt.zero { color: var(--faint); }
+  .check { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--faint); display: grid; place-items: center;
+           transition: transform 0.15s, background 0.2s, border-color 0.2s; }
+  .check:active { transform: scale(0.86); }
+  .check svg { width: 18px; height: 18px; stroke: var(--on-accent); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+  .check.none { visibility: hidden; }
+  .item.done .check { background: var(--accent); border-color: var(--accent); animation: pop 0.3s; }
+  .item.done .check svg { opacity: 1; }
+  .item.done .sym, .item.done .amt { opacity: 0.35; }
+  .item.skip .sym { opacity: 0.45; }
+  .item.bad .amt { font-size: 13px; color: var(--bad); font-weight: 600; letter-spacing: 0; }
+  @keyframes pop { 50% { transform: scale(1.18); } }
+  .empty { text-align: center; color: var(--mute); padding: 70px 0; font-weight: 600; }
+
+  /* кнопка добавления */
+  .fab { position: fixed; right: 18px; bottom: calc(22px + env(safe-area-inset-bottom)); width: 60px; height: 60px; border-radius: 50%;
+         background: var(--text); color: var(--bg); display: grid; place-items: center; box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+         transition: transform 0.15s; z-index: 5; }
+  .fab:active { transform: scale(0.9); }
+  .fab svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 2.6; fill: none; stroke-linecap: round; }
+
+  /* шторка */
+  .veil { position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none; transition: opacity 0.22s; z-index: 10;
+          display: flex; align-items: flex-end; }
+  .veil.open { opacity: 1; pointer-events: auto; }
+  .sheet { width: 100%; background: var(--surface); border-radius: 26px 26px 0 0; padding: 10px 18px calc(24px + env(safe-area-inset-bottom));
+           max-height: 88vh; overflow: auto; transform: translateY(24px); transition: transform 0.26s cubic-bezier(.2,.8,.2,1); }
+  .veil.open .sheet { transform: none; }
+  .grab { width: 38px; height: 4px; border-radius: 2px; background: var(--faint); margin: 0 auto 16px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .title { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .price { color: var(--mute); font-weight: 600; margin-top: 6px; font-size: 15px; }
+  .icon { width: 40px; height: 40px; border-radius: 50%; background: var(--bg); display: grid; place-items: center; color: var(--bad); flex: none; }
+  .icon svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  .scale { margin: 26px 0 8px; }
+  .scale .val { font-size: 15px; font-weight: 700; margin-bottom: 12px; display: flex; justify-content: space-between; }
+  .scale .val em { font-style: normal; color: var(--accent); }
+  .track { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .track i { height: 8px; border-radius: 4px; background: var(--accent); }
+  .track i:nth-child(2) { opacity: 0.6; } .track i:nth-child(3) { opacity: 0.3; } .track i:nth-child(4) { background: var(--faint); }
+  .pin { position: absolute; top: -5px; width: 4px; height: 18px; border-radius: 2px; background: var(--text); box-shadow: 0 0 0 3px var(--surface);
+         transform: translateX(-2px); }
+  .ticks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 8px; color: var(--mute); font-size: 12px; font-weight: 700; text-align: center; }
+
+  .pills { display: flex; gap: 8px; margin-top: 26px; flex-wrap: wrap; }
+  .pill { padding: 10px 16px; border-radius: 999px; background: var(--bg); font-weight: 700; font-size: 15px; transition: background 0.15s, color 0.15s; }
+  .pill.on { background: var(--text); color: var(--surface); }
+
+  .field { display: flex; align-items: center; gap: 6px; background: var(--bg); border-radius: 16px; padding: 4px 16px; margin-top: 14px; }
+  .field span { color: var(--mute); font-weight: 700; font-size: 20px; }
+  .field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 20px; font-weight: 700; padding: 12px 0; }
+  .field input::placeholder { color: var(--mute); font-weight: 600; }
+  .field em { font-style: normal; color: var(--mute); font-weight: 700; font-size: 14px; }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+  .res { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+  .res:last-child { border-bottom: 0; }
+  .res:active { opacity: 0.5; }
+  .res b { font-size: 17px; font-weight: 750; }
+  .res div small { display: block; color: var(--mute); font-weight: 600; font-size: 13px; margin-top: 1px; max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .res > small { color: var(--mute); font-weight: 700; font-size: 11px; letter-spacing: 0.04em; }
+  .hint { color: var(--mute); text-align: center; padding: 22px 0 6px; font-weight: 600; }
+
+  .toast { position: fixed; left: 16px; right: 16px; top: 14px; background: var(--bad); color: #fff; padding: 13px 16px; border-radius: 16px;
+           font-weight: 650; transform: translateY(-90px); transition: transform 0.25s; z-index: 30; }
+  .toast.show { transform: none; }
 </style>
 </head>
 <body>
-<h1 id="day">Сегодня</h1>
-<div class="total" id="total">…</div>
-<div class="sub" id="sub"></div>
-<div class="list" id="list"></div>
-<button class="add" id="addBtn">+ Добавить актив</button>
+<div class="top"><div id="day"></div><button class="chip num" id="unitChip"></button></div>
+<div class="hero num" id="hero">&nbsp;</div>
+<div class="bar"><i id="bar"></i></div>
+<div id="list"></div>
+<button class="fab" id="fab" aria-label="Добавить"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
 
-<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
+<div class="veil" id="veil"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
-const initData = tg ? tg.initData : "";
+if (tg && tg.initData !== undefined) {
+  try {
+    tg.ready(); tg.expand();
+    if (tg.colorScheme) document.documentElement.dataset.theme = tg.colorScheme;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    tg.setHeaderColor && tg.setHeaderColor(bg); tg.setBackgroundColor && tg.setBackgroundColor(bg);
+    tg.onEvent && tg.onEvent("themeChanged", () => { document.documentElement.dataset.theme = tg.colorScheme; });
+  } catch (e) {}
+}
+const initData = tg ? tg.initData || "" : "";
 let state = null;
 
 const $ = (id) => document.getElementById(id);
-const money = (x) => "$" + (Math.round(x * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const short = (s) => s.replace(/-USD$/, "").replace(/\d{4,}$/, "");
+const num = (x) => (Math.round(x * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const short = (s) => s.replace(/-USD$/, "").replace(/\d{4,}$/, "").replace(/^\^/, "").replace(/=F$/, "").replace(/\.TA$/, "");
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 async function api(path, opts = {}) {
-  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-Tg-Init-Data": initData, ...(opts.headers || {}) } });
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-Tg-Init-Data": initData } });
   if (!r.ok) {
     let msg = "Ошибка " + r.status;
     try { msg = (await r.json()).detail || msg; } catch (e) {}
@@ -97,73 +162,88 @@ async function api(path, opts = {}) {
   }
   return r.json();
 }
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => (t.style.display = "none"), 3500); }
-function haptic() { try { tg && tg.HapticFeedback.impactOccurred("light"); } catch (e) {} }
+let toastTimer;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 3200); }
+function haptic(kind) { try { kind === "ok" ? tg.HapticFeedback.notificationOccurred("success") : tg.HapticFeedback.impactOccurred("light"); } catch (e) {} }
 
 async function load() {
   try { state = await api("/api/today"); render(); }
-  catch (e) { $("total").textContent = "—"; $("sub").innerHTML = '<span class="err">' + esc(e.message) + "</span>"; }
+  catch (e) { $("hero").innerHTML = "—"; $("list").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; }
 }
 
 function render() {
   const d = new Date(state.day + "T00:00:00Z");
-  $("day").textContent = "Сегодня, " + d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+  $("day").textContent = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+  $("unitChip").innerHTML = "<span>×1</span>$" + num(state.unit);
   const items = state.items.slice().sort((a, b) => (!!a.done - !!b.done) || ((b.mult || 0) - (a.mult || 0)));
-  const toBuy = items.filter((i) => !i.done && i.amount > 0).length;
-  const doneN = items.filter((i) => i.done).length;
   if (!items.length) {
-    $("total").textContent = "Список пуст";
-    $("sub").textContent = "Добавьте первый актив — кнопка внизу";
-    $("list").innerHTML = "";
+    $("hero").className = "hero num"; $("hero").innerHTML = "<small>$</small>0"; $("bar").style.width = "0";
+    $("list").innerHTML = '<div class="empty">Добавьте первый актив</div>';
     return;
   }
-  $("total").textContent = state.left > 0 ? "Купить на " + money(state.left) : "На сегодня всё";
-  $("sub").textContent = (toBuy ? "Осталось покупок: " + toBuy : "Покупок не осталось") + (doneN ? " · сделано: " + doneN : "") + " · ×1 = " + money(state.unit);
-  $("list").innerHTML = items.map(card).join("");
+  const doneSum = items.reduce((s, i) => s + (i.done || 0), 0);
+  const all = doneSum + state.left;
+  const finished = state.left <= 0;
+  $("hero").className = "hero num" + (finished ? " ok" : "");
+  $("hero").innerHTML = "<small>$</small>" + num(finished ? doneSum : state.left);
+  $("bar").style.width = all > 0 ? Math.round((doneSum / all) * 100) + "%" : "0";
+  $("list").innerHTML = '<div class="list">' + items.map(row).join("") + "</div>";
 }
 
-function card(i) {
+function meter(m) { return '<span class="meter">' + [1, 2, 3].map((n) => `<i class="${m >= n ? "on" : ""}"></i>`).join("") + "</span>"; }
+
+function row(i) {
+  const s = esc(i.symbol);
   if (i.error) {
-    return `<div class="card" onclick="openTicker('${esc(i.symbol)}')"><div><div class="sym">${esc(short(i.symbol))}</div><div class="name">${esc(i.name)}</div></div>
-      <div class="amount">—</div><div class="reason err">${esc(i.error)}</div></div>`;
+    return `<div class="item bad" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b></div><div class="amt">нет данных</div><div class="check none"></div></div>`;
   }
   const m = i.mult;
-  const act = i.done
-    ? `<button class="small ghost" onclick="event.stopPropagation(); undo('${esc(i.symbol)}')">✓ отменить</button>`
-    : m > 0 ? `<button class="small primary" onclick="event.stopPropagation(); done('${esc(i.symbol)}')">Куплено</button>` : "";
-  return `<div class="card ${i.done ? "done" : ""}" onclick="openTicker('${esc(i.symbol)}')">
-    <div><div class="sym">${esc(short(i.symbol))}<span class="mult m${m}">${m > 0 ? "×" + m : "пропуск"}</span></div>
-      <div class="name">${esc(i.name)}</div></div>
-    <div class="right"><div class="amount">${m > 0 ? money(i.amount) : "—"}</div>${act}</div>
-    <div class="reason"><b>${esc(i.strategy_name)}:</b> ${esc(i.reason)}</div>
-  </div>`;
+  const cls = i.done ? "done" : m > 0 ? "" : "skip";
+  const btn = i.done || m > 0
+    ? `<button class="check" onclick="event.stopPropagation(); toggle('${s}')" aria-label="Куплено">${CHECK}</button>`
+    : '<div class="check none"></div>';
+  return `<div class="item ${cls}" onclick="openTicker('${s}')">
+    <div class="sym"><b>${esc(short(i.symbol))}</b>${meter(m)}</div>
+    <div class="amt num ${m > 0 || i.done ? "" : "zero"}">${m > 0 || i.done ? "$" + num(i.done || i.amount) : "—"}</div>${btn}</div>`;
 }
 
-async function done(symbol) {
+async function toggle(symbol) {
   const i = state.items.find((x) => x.symbol === symbol);
-  haptic();
-  try { await api("/api/done", { method: "POST", body: JSON.stringify({ symbol, amount: i.amount, price: i.price, mult: i.mult }) }); await load(); }
-  catch (e) { toast(e.message); }
-}
-async function undo(symbol) {
-  try { await api("/api/done/" + encodeURIComponent(symbol), { method: "DELETE" }); await load(); } catch (e) { toast(e.message); }
+  try {
+    if (i.done) { haptic(); await api("/api/done/" + encodeURIComponent(symbol), { method: "DELETE" }); }
+    else { haptic("ok"); await api("/api/done", { method: "POST", body: JSON.stringify({ symbol, amount: i.amount, price: i.price, mult: i.mult }) }); }
+    await load();
+  } catch (e) { toast(e.message); }
 }
 
-function openSheet(html) { $("sheet").innerHTML = html; $("sheetBg").classList.add("open"); }
-function closeSheet() { $("sheetBg").classList.remove("open"); }
-$("sheetBg").addEventListener("click", (e) => { if (e.target.id === "sheetBg") closeSheet(); });
+function openSheet(html) { $("sheet").innerHTML = '<div class="grab"></div>' + html; $("veil").classList.add("open"); }
+function closeSheet() { $("veil").classList.remove("open"); document.activeElement && document.activeElement.blur(); }
+$("veil").addEventListener("click", (e) => { if (e.target.id === "veil") closeSheet(); });
+
+function scale(i) {
+  if (!i.edges || i.value == null) return "";
+  const e = i.edges, lo = e[0] - (e[1] - e[0]), hi = e[2] + (e[2] - e[1]);
+  const bounds = [lo, e[0], e[1], e[2], hi];
+  let pos = 0;
+  const v = Math.min(Math.max(i.value, lo), hi);
+  for (let k = 0; k < 4; k++) if (v >= bounds[k]) pos = (k + (v - bounds[k]) / (bounds[k + 1] - bounds[k])) * 25;
+  pos = Math.min(Math.max(pos, 1), 99);
+  return `<div class="scale"><div class="val"><span>${esc(i.label)}</span><em>${i.mult > 0 ? "×" + i.mult : "—"}</em></div>
+    <div class="track"><i></i><i></i><i></i><i></i><div class="pin" style="left:${pos}%"></div></div>
+    <div class="ticks"><span>×3</span><span>×2</span><span>×1</span><span>—</span></div></div>`;
+}
 
 function openTicker(symbol) {
   const i = state.items.find((x) => x.symbol === symbol);
-  const opts = i.allowed.map((k) => `<div class="opt ${k === i.strategy ? "sel" : ""}" onclick="setStrategy('${esc(symbol)}','${k}')">
-      ${esc(state.strategies[k].name)}<small>${esc(state.strategies[k].about)}</small></div>`).join("");
-  openSheet(`<h2>${esc(short(symbol))} <span style="color:var(--hint);font-weight:400;font-size:15px">${esc(i.name)}</span></h2>
-    <div class="sub">${i.price ? "Цена " + Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") + " · " : ""}данные на ${esc(i.as_of || "—")}${i.invested ? " · отмечено покупок на " + money(i.invested) : ""}</div>
-    <label>Стратегия</label>${opts}
-    <label>Сумма ×1 для этого актива, $ (пусто — общая ${money(state.unit)})</label>
-    <input id="unitIn" type="number" inputmode="decimal" min="1" step="1" value="${i.custom_unit ?? ""}" placeholder="${state.unit}">
-    <div class="row" style="margin-top:16px"><button class="primary" onclick="saveUnit('${esc(symbol)}')">Сохранить</button>
-      <button class="danger" onclick="removeTicker('${esc(symbol)}')">Удалить</button></div>`);
+  const s = esc(symbol);
+  const pills = i.allowed.map((k) => `<button class="pill ${k === i.strategy ? "on" : ""}" onclick="setStrategy('${s}','${k}')">${esc(state.strategies[k].name)}</button>`).join("");
+  const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
+  openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price}</div></div>
+      <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
+    ${scale(i)}
+    <div class="pills">${pills}</div>
+    <div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}"
+      onchange="saveUnit('${s}')"><em>×1</em></div>`);
 }
 async function setStrategy(symbol, strategy) {
   haptic();
@@ -172,51 +252,51 @@ async function setStrategy(symbol, strategy) {
 }
 async function saveUnit(symbol) {
   const v = $("unitIn").value.trim();
-  const body = v === "" ? { reset_unit: true } : { unit: Number(v) };
-  try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify(body) }); closeSheet(); await load(); }
+  try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify(v === "" ? { reset_unit: true } : { unit: Number(v) }) }); await load(); }
   catch (e) { toast(e.message); }
 }
-async function removeTicker(symbol) {
+function removeTicker(symbol) {
   const go = async () => { try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "DELETE" }); closeSheet(); await load(); } catch (e) { toast(e.message); } };
-  if (tg && tg.showConfirm) tg.showConfirm("Удалить " + short(symbol) + " из списка?", (ok) => ok && go());
-  else if (confirm("Удалить " + short(symbol) + " из списка?")) go();
+  const q = "Удалить " + short(symbol) + "?";
+  if (tg && tg.showConfirm && initData) tg.showConfirm(q, (ok) => ok && go()); else if (confirm(q)) go();
 }
 
-$("addBtn").addEventListener("click", () => {
-  openSheet(`<h2>Добавить актив</h2>
-    <input id="q" placeholder="Тикер или название: BTC, SPY, gold…" autocomplete="off" autocapitalize="characters">
-    <div id="results" style="margin-top:8px"></div>
-    <label>Общая сумма ×1, $</label>
-    <div class="row" style="margin-top:0"><input id="unitAll" type="number" inputmode="decimal" min="1" step="1" value="${state ? state.unit : 10}">
-      <button class="ghost" onclick="saveUnitAll()">Сохранить</button></div>`);
-  const q = $("q");
-  let timer = null;
-  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => doSearch(q.value), 350); });
-  setTimeout(() => q.focus(), 50);
+$("unitChip").addEventListener("click", () => {
+  openSheet(`<div class="title">×1</div>
+    <div class="field" style="margin-top:20px"><span>$</span><input id="unitAll" type="number" inputmode="decimal" min="1" value="${state ? state.unit : 10}" onchange="saveUnitAll()"></div>`);
+  setTimeout(() => $("unitAll").select(), 60);
 });
-let found = [];
-async function doSearch(text) {
-  const box = $("results");
-  if (!text.trim()) { box.innerHTML = ""; return; }
-  box.innerHTML = '<div class="sub">Ищу…</div>';
-  try {
-    found = await api("/api/search?q=" + encodeURIComponent(text));
-    box.innerHTML = found.length ? found.map((r, n) => `<div class="res" onclick="addTicker(${n})">
-      <div><b>${esc(r.symbol)}</b><br><small>${esc(r.name)}</small></div><small>${esc(r.kind)}<br>${esc(r.exchange)}</small></div>`).join("")
-      : '<div class="sub">Ничего не нашёл</div>';
-  } catch (e) { box.innerHTML = '<div class="sub err">' + esc(e.message) + "</div>"; }
-}
-async function addTicker(n) {
-  const r = found[n];
-  haptic();
-  try { await api("/api/tickers", { method: "POST", body: JSON.stringify(r) }); closeSheet(); await load(); }
-  catch (e) { toast(e.message); }
-}
 async function saveUnitAll() {
   try { await api("/api/unit", { method: "POST", body: JSON.stringify({ unit: Number($("unitAll").value) }) }); closeSheet(); await load(); }
   catch (e) { toast(e.message); }
 }
 
+let found = [], searchTimer;
+$("fab").addEventListener("click", () => {
+  haptic();
+  openSheet(`<div class="field" style="margin-top:0"><input id="q" placeholder="BTC, SPY, gold…" autocomplete="off" autocorrect="off" spellcheck="false"></div><div id="results"></div>`);
+  $("q").addEventListener("input", (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => doSearch(e.target.value), 320); });
+  setTimeout(() => $("q").focus(), 80);
+});
+async function doSearch(text) {
+  const box = $("results");
+  if (!text.trim()) { box.innerHTML = ""; return; }
+  try {
+    found = await api("/api/search?q=" + encodeURIComponent(text));
+    const have = new Set(state.items.map((i) => i.symbol));
+    const KIND = { CRYPTOCURRENCY: "КРИПТА", EQUITY: "АКЦИЯ", ETF: "ФОНД", INDEX: "ИНДЕКС", FUTURE: "ФЬЮЧЕРС", MUTUALFUND: "ФОНД", CURRENCY: "ВАЛЮТА" };
+    box.innerHTML = found.length ? found.map((r, n) => `<div class="res" onclick="addTicker(${n})" style="${have.has(r.symbol) ? "opacity:.35" : ""}">
+      <div><b>${esc(r.symbol)}</b><small>${esc(r.name)}</small></div><small>${esc(KIND[r.kind] || r.kind)}</small></div>`).join("")
+      : '<div class="hint">Ничего не найдено</div>';
+  } catch (e) { box.innerHTML = '<div class="hint">' + esc(e.message) + "</div>"; }
+}
+async function addTicker(n) {
+  haptic("ok");
+  try { await api("/api/tickers", { method: "POST", body: JSON.stringify(found[n]) }); closeSheet(); await load(); }
+  catch (e) { toast(e.message); }
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 load();
 </script>
 </body>
