@@ -61,22 +61,26 @@ def _get(url):
 
 
 def yahoo(symbol):
-    """Дневные цены закрытия с Yahoo, с кэшем на день."""
+    """Дневные цены закрытия и объёмы с Yahoo, с кэшем на день."""
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, symbol.replace("^", "_").replace("=", "_") + ".csv")
     if os.path.exists(path) and time.time() - os.path.getmtime(path) < 20 * 3600:
-        return pd.read_csv(path, index_col=0, parse_dates=True)["close"]
+        df = pd.read_csv(path, index_col=0, parse_dates=True)
+        if "volume" in df:
+            return df
     url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
            + urllib.parse.quote(symbol) + "?period1=0&period2=9999999999&interval=1d")
     res = _get(url)["chart"]["result"][0]
     quote = res["indicators"]["quote"][0]["close"]
     adj = res["indicators"].get("adjclose", [{}])[0].get("adjclose")
-    s = pd.Series(adj or quote, index=pd.to_datetime(res["timestamp"], unit="s").normalize(), name="close")
-    s = s.dropna()
-    s = s[s > 0]
-    s = s[~s.index.duplicated(keep="last")]
-    s.to_frame().to_csv(path)
-    return s
+    idx = pd.to_datetime(res["timestamp"], unit="s").normalize()
+    df = pd.DataFrame({"close": adj or quote, "volume": res["indicators"]["quote"][0]["volume"]}, index=idx)
+    df = df.astype(float)
+    df = df[df["close"] > 0]
+    df["volume"] = df["volume"].fillna(0)
+    df = df[~df.index.duplicated(keep="last")]
+    df.to_csv(path)
+    return df
 
 
 def fear_greed():
@@ -106,7 +110,7 @@ def ladder(x, edges, values):
     return out
 
 
-def indicators(close, vix, fng):
+def indicators(close, volume, vix, fng):
     ind = pd.DataFrame(index=close.index)
     ind["dd"] = 1 - close / close.rolling(252, min_periods=1).max()      # просадка от годового максимума
     ind["rsi"] = rsi(close)
@@ -117,6 +121,23 @@ def indicators(close, vix, fng):
     ind["w1"] = close / close.shift(5) - 1
     ind["w3"] = ((close < close.shift(5)) & (close.shift(5) < close.shift(10))
                  & (close.shift(10) < close.shift(15))).astype(float)
+    # объёмные индикаторы (пустые, если у тикера нет объёмов)
+    ret = close.pct_change()
+    ind["ret"] = ret
+    if (volume > 0).mean() > 0.8:
+        ind["vr"] = volume / volume.rolling(20).mean()                        # объём к среднему за 20 дней
+        mf = close * volume
+        pos = mf.where(ret > 0, 0).rolling(14).sum()
+        neg = mf.where(ret < 0, 0).rolling(14).sum()
+        ind["mfi"] = 100 - 100 / (1 + pos / neg.replace(0, np.nan))           # MFI по ценам закрытия
+        vwap = mf.rolling(200, min_periods=WARMUP).sum() / volume.rolling(200, min_periods=WARMUP).sum()
+        ind["vwap"] = close / vwap                                            # цена / средняя цена, взвешенная по объёму
+        obv = (np.sign(ret.fillna(0)) * volume).cumsum()
+        ind["obv"] = obv - obv.rolling(50).mean()                             # OBV выше или ниже своей средней
+    else:
+        for c in ("vr", "mfi", "vwap", "obv"):
+            ind[c] = np.nan
+    ind["has_vol"] = float(ind["vr"].notna().any())
     ind["vix"] = vix.reindex(close.index, method="ffill")
     ind["fng"] = fng.reindex(close.index, method="ffill")
     return ind
@@ -132,6 +153,14 @@ def buy_rules(ind, group):
     r["Боллинджер"] = ladder(ind["bb"], [-1, 1], [3, 1, 0])
     rw = np.where(ind["w3"] > 0, 3, np.where(ind["w1"] < 0, 2, 1)).astype(float)
     r["Красная неделя"] = rw
+    if ind["has_vol"].iloc[0] > 0:
+        down, up = ind["ret"] < 0, ind["ret"] > 0
+        panic = np.where(down & (ind["vr"] > 2), 3, np.where(down & (ind["vr"] > 1.5), 2, 1)).astype(float)
+        r["Объём-паника"] = panic
+        r["Объём-всплеск"] = np.where(up & (ind["vr"] > 2), 0.0, panic)
+        r["MFI"] = ladder(ind["mfi"], [20, 40, 80], [3, 2, 1, 0])
+        r["VWAP200"] = ladder(ind["vwap"], [0.8, 1.0, 1.4], [3, 2, 1, 0])
+        r["OBV"] = np.where(ind["obv"] < 0, 2.0, 1.0)
     if group == "США":
         r["VIX"] = ladder(ind["vix"], [20, 30], [1, 2, 3])
     if group in ("Крипта", "Мемкоины"):
@@ -147,6 +176,7 @@ def sell_rules(ind):
         "SMA200>1.5": ladder(ind["sma"].fillna(1), [1.5, 2.0], [0, 1, 3]),
         "Ниже SMA200": np.where(ind["sma"] < 1.0, 3.0, 0.0),
         "Цель +100%": "target",
+        "Объём-эйфория": np.where((ind["ret"] > 0) & (ind["vr"] > 2), 1.0, 0.0),
     }
 
 
@@ -242,23 +272,24 @@ def run_segment(close, ind, group):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    vix = yahoo("^VIX")
+    vix = yahoo("^VIX")["close"]
     fng = fear_greed()
     rows, info = [], []
     for name, (sym, group) in TICKERS.items():
         try:
-            close = yahoo(sym)
+            data = yahoo(sym)
         except Exception as e:  # noqa: BLE001
             print(f"{name}: нет данных ({e})")
             continue
-        close = close[close.index >= START]
+        data = data[data.index >= START]
+        close, volume = data["close"], data["volume"]
         if len(close) < MIN_DAYS + WARMUP:
             print(f"{name}: мало истории ({len(close)} дн.), пропуск")
             continue
-        ind = indicators(close, vix, fng)
+        ind = indicators(close, volume, vix, fng)
         close = close.iloc[WARMUP:]
         yrs = (close.index[-1] - close.index[0]).days / 365.25
-        info.append({"ticker": name, "group": group, "from": close.index[0].date(),
+        info.append({"ticker": name, "group": group, "volume": bool(ind["has_vol"].iloc[0]), "from": close.index[0].date(),
                      "to": close.index[-1].date(), "years": round(yrs, 1)})
         mid = len(close) // 2
         segs = {"full": close, "h1": close.iloc[:mid], "h2": close.iloc[mid:]}
