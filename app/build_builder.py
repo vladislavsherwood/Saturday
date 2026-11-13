@@ -146,7 +146,7 @@ function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 function setup(key) {
   RAW = SETS.sets[key];
-  KEY = "dca-builder-" + RAW.slug + "-v2";
+  KEY = "dca-builder-" + SETS.key + "-v2";
   C = RAW.c;
   IND = {
     sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
@@ -178,10 +178,12 @@ function setup(key) {
   N = H.t.length;
 
   /* ---------- состояние ---------- */
-  DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, focus: RAW.rules[0].id, rules: RAW.rules };
-  S = JSON.parse(JSON.stringify(DEFAULT));
-  try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
-  if (!S.mode) S.mode = "pct";
+  if (!S) {
+    DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, focus: SETS.rules[0].id, rules: SETS.rules };
+    S = JSON.parse(JSON.stringify(DEFAULT));
+    try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
+    if (!S.mode) S.mode = "pct";
+  }
   document.getElementById("asset").textContent = "· " + RAW.title;
 }
 let WIN = null;
@@ -510,17 +512,13 @@ ASSETS = {
             "pair": ("BTC-USD", "SOL/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     "eth": {"symbol": "ETH-USD", "slug": "eth", "title": "Ethereum", "ticker": "ETH", "bpy": 365, "skip": 205,
             "pair": ("BTC-USD", "ETH/BTC"), "crypto": True, "rules": CRYPTO_RULES},
-    # у pump.fun истории меньше полутора лет: средняя за 200 дней есть не везде, правила по умолчанию обходятся без неё
-    "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 60,
-             "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True,
-             "rules": [
-                 {"id": 1, "on": True, "a": {"ind": "rsi", "op": ">", "v": 75}, "b": None, "act": 0},
-                 {"id": 2, "on": True, "a": {"ind": "dd", "op": ">", "v": 50}, "b": None, "act": 3},
-                 {"id": 3, "on": True, "a": {"ind": "ret30", "op": "<", "v": -20}, "b": None, "act": 2},
-             ]},
+    # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
+    "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 15,
+             "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "pump"], "Конструктор стратегии SOL")}
+STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
 def build_raw(asset):
@@ -550,7 +548,7 @@ def build_raw(asset):
 
 def main(out, page="gold"):
     assets, title = PAGES[page]
-    sets = {"order": assets, "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "key": STORE[page], "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title))
