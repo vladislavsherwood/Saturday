@@ -4,7 +4,7 @@
 20 монет — из сегодняшнего топ-300, появившихся после этой даты. Стейблкоины, обёрнутые токены и монеты, на которых стратегия
 уже проверялась, исключены. Зерно случайности фиксировано.
 
-Запуск: python3 app/pick_random.py <куда.json>
+Запуск: python3 app/pick_random.py <куда.json> [сколько старых] [сколько новых] [зерно] [файл прежней выборки] [глубина топа]
 """
 import json
 import os
@@ -28,12 +28,16 @@ def ok(c):
     return c["symbol"].upper() not in SEEN and not (tags & BAD_TAGS) and not any(w in name for w in BAD_WORDS)
 
 
-def main(out):
-    rnd = random.Random(2026)
-    old = data._get(f"{B}/listings/historical?date=2022-01-02&start=1&limit=300&convertId=2781")["data"]
-    new = data._get(f"{B}/listing?start=1&limit=300&sortBy=market_cap&sortType=desc&convert=USD&cryptoType=all&tagType=all")["data"]["cryptoCurrencyList"]
+def main(out, n_old=30, n_new=20, seed=2026, exclude="", top=300):
+    """exclude — файл прежней выборки: её монеты в новую не попадут."""
+    n_old, n_new, seed, top = int(n_old), int(n_new), int(seed), int(top)
+    if exclude:
+        SEEN.update(c["ticker"] for c in json.load(open(exclude, encoding="utf-8")))
+    rnd = random.Random(seed)
+    old = data._get(f"{B}/listings/historical?date=2022-01-02&start=1&limit={top}&convertId=2781")["data"]
+    new = data._get(f"{B}/listing?start=1&limit={top}&sortBy=market_cap&sortType=desc&convert=USD&cryptoType=all&tagType=all")["data"]["cryptoCurrencyList"]
     old_ids = {c["id"] for c in old}
-    pools = [("2022", [c for c in old if ok(c)], 30), ("new", [c for c in new if ok(c) and c["id"] not in old_ids and (c.get("dateAdded") or "")[:10] > "2022-01-02"], 20)]
+    pools = [("2022", [c for c in old if ok(c)], n_old), ("new", [c for c in new if ok(c) and c["id"] not in old_ids and (c.get("dateAdded") or "")[:10] > "2022-01-02"], n_new)]
     picked, used = [], set()
     for group, pool, need in pools:
         print(f"группа {group}: подходящих {len(pool)}, нужно {need}")
@@ -64,4 +68,4 @@ def main(out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:])

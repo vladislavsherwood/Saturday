@@ -77,4 +77,4 @@ async function lab(dir, opt = {}) {
 // не менее устойчив, чем эталон, на группе k (отбор или экзамен)
 const stable = (r, base, k) => r[k].pos >= base[k].pos && r[k].worst >= base[k].worst && r[k].hworst >= base[k].hworst && r[k].hpos >= base[k].hpos;
 const report = (r) => `     отбор: ${sh(r.sel)}\n     экзамен: ${sh(r.ex)}\n     все 31: ${sh(r.all)} | 2-я пол. медиана ${r.h2.med.toFixed(0)}% | металлы ${r.met.join('/')}\n     в минусе: ${r.neg.join(', ') || 'нет'}` + (r.rnd ? `\n     50 случайных: ${sh(r.rnd)}` : '');
-module.exports = { lab, c, med, stat, sh, stable, report };
+module.exports = { lab, c, med, stat, sh, stable, report, inject };
