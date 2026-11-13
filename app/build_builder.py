@@ -82,10 +82,24 @@ PAGE = r"""<title>Конструктор стратегии</title>
   .mix i { display: block; height: 100%; }
   .mixl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--mute); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .mixl i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+  .knobs { display: flex; flex-wrap: wrap; gap: 14px 10px; margin-top: 14px; }
+  .kcell { width: 104px; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 10px 4px 10px; border-radius: 18px; background: var(--surface); border: 2px solid transparent; }
+  .kcell.focus { border-color: var(--text); }
+  .knob { position: relative; width: 76px; height: 76px; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; border-radius: 50%; }
+  .knob:active { cursor: grabbing; }
+  .knob svg { display: block; }
+  .knob b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; pointer-events: none; }
+  .klabel { font-size: 12.5px; font-weight: 700; margin-top: 6px; line-height: 1.2; }
+  .kact { font-size: 12px; font-weight: 750; color: var(--mute); margin-top: 2px; }
+  .kact.buy { color: #0c8a4a; } .kact.sell { color: #c2511f; }
+  .presets { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .presets button { text-align: left; padding: 11px 14px; border-radius: 14px; background: var(--surface); font-weight: 700; }
   .ind text { font: 600 11px var(--sans); fill: var(--mute); font-variant-numeric: tabular-nums; }
   .ind svg { display: block; width: 100%; overflow: visible; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bar .up { color: #3ecf8e; } :root:not([data-theme="light"]) .bar .down { color: #ff7a70; } }
   :root[data-theme="dark"] .bar .up { color: #3ecf8e; } :root[data-theme="dark"] .bar .down { color: #ff7a70; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kact.buy { color: #3ecf8e; } :root:not([data-theme="light"]) .kact.sell { color: #f08a5b; } }
+  :root[data-theme="dark"] .kact.buy { color: #3ecf8e; } :root[data-theme="dark"] .kact.sell { color: #f08a5b; }
   @media (min-width: 940px) {
     .main { grid-template-columns: 400px minmax(0, 1fr); }
     .left { order: -1; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
@@ -94,8 +108,10 @@ PAGE = r"""<title>Конструктор стратегии</title>
 </style>
 <div class="wrap">
   <h1>Конструктор стратегии <span>· __TITLE__</span></h1>
-  <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Двигайте пороги — отметки покупок и продаж на графике перестроятся сразу.</p>
+  <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги — отметки покупок и продаж на графике перестроятся сразу.</p>
   <div class="bar" id="bar"></div>
+  <div class="cap" style="margin-top:14px">Крутилки</div>
+  <div class="knobs" id="knobs"></div>
   <div class="main">
     <div class="card" id="result"></div>
     <div class="left rules" id="left"></div>
@@ -104,7 +120,7 @@ PAGE = r"""<title>Конструктор стратегии</title>
 <script>__EXPLORER__</script>
 <script>
 const RAW = __DATA__;
-const KEY = "dca-builder-__SLUG__-v1";
+const KEY = "dca-builder-__SLUG__-v2";
 
 /* ---------- индикаторы (считаются по закрытию дня) ---------- */
 function sma(a, n) { const o = new Array(a.length).fill(NaN); let s = 0, c = 0; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null || isNaN(v)) { continue; } s += v; c++; if (c > n) { s -= a[i - n]; c = n; } if (c === n) o[i] = s / n; } return o; }
@@ -116,17 +132,17 @@ function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 const C = RAW.c;
 const IND = {
-  sma200: { name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
-  sma50: { name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
-  dd: { name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, 252) },
-  rsi: { name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
-  ret30: { name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, 21) },
-  ret90: { name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, 63) },
-  bbz: { name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
+  sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
+  sma50: { short: "Цена / SMA50", name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
+  dd: { short: "Просадка, %", name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, 252) },
+  rsi: { short: "RSI", name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
+  ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, 21) },
+  ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, 63) },
+  bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
 };
-if (RAW.vix) IND.vix = { name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
-if (RAW.dxy) IND.dxy = { name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
-if (RAW.pair) IND.pair = { name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
+if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
+if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
+if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
 const SKIP = 260;                                  // разогрев индикаторов не входит в расчёт
 const H = { t: RAW.t.slice(SKIP), c: RAW.c.slice(SKIP), o: RAW.o.slice(SKIP), h: RAW.h.slice(SKIP), l: RAW.l.slice(SKIP) };
@@ -134,7 +150,8 @@ Object.values(IND).forEach((d) => (d.v = d.v.slice(SKIP)));
 const N = H.t.length;
 
 /* ---------- состояние ---------- */
-const DEFAULT = { base: 1, period: "all", unit: 10, focus: 1, rules: [
+const DEFAULT = { base: 1, period: "all", unit: 10, focus: 4, rules: [
+  { id: 4, on: true, a: { ind: "rsi", op: ">", v: 75 }, b: null, act: 0 },
   { id: 1, on: true, a: { ind: "dd", op: ">", v: 15 }, b: null, act: 3 },
   { id: 2, on: true, a: { ind: "sma200", op: "<", v: 1.0 }, b: null, act: 2 },
   { id: 3, on: true, a: { ind: "sma200", op: ">", v: 1.15 }, b: null, act: 0 },
@@ -236,6 +253,77 @@ function asText() {
     (s ? `Результат: ${Explorer.pct(s.irr, true)} в год, ${s.edge == null ? "" : Explorer.pct(s.edge, true).replace("%", " п.п.")} к DCA, прибыль ${Explorer.money(s.pnl, true)} против ${Explorer.money(s.dca.pnl, true)}` : "");
 }
 
+/* ---------- крутилки ---------- */
+function knobSvg(frac, color) {
+  const cx = 38, cy = 38, R = 31, pt = (f, r) => { const a = ((-135 + 270 * f) * Math.PI) / 180; return [cx + r * Math.sin(a), cy - r * Math.cos(a)]; };
+  const arc = (f0, f1) => { const [x0, y0] = pt(f0, R), [x1, y1] = pt(f1, R); return `M${x0.toFixed(1)} ${y0.toFixed(1)}A${R} ${R} 0 ${(f1 - f0) * 270 > 180 ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`; };
+  const [nx, ny] = pt(frac, R - 9), [mx, my] = pt(frac, R - 2);
+  return `<svg width="76" height="76" viewBox="0 0 76 76" aria-hidden="true"><path d="${arc(0, 1)}" fill="none" stroke="var(--faint)" stroke-width="6" stroke-linecap="round"/>
+    ${frac > 0.005 ? `<path d="${arc(0, frac)}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"/>` : ""}
+    <line x1="${nx.toFixed(1)}" y1="${ny.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/></svg>`;
+}
+const actColor = (a) => (a > 0 ? "var(--viz-buy, #1baf7a)" : a < 0 ? "var(--viz-sell, #eb6834)" : "var(--mute)");
+function knobInner(r, key) {
+  const c = r[key], d = IND[c.ind], frac = Math.max(0, Math.min(1, (c.v - d.min) / (d.max - d.min)));
+  return knobSvg(frac, actColor(r.act)) + `<b>${fmtV(c)}</b>`;
+}
+function knobs() {
+  const el = document.getElementById("knobs");
+  const on = S.rules.filter((r) => r.on);
+  el.innerHTML = on.length ? on.map((r) => [["a", r.a], ["b", r.b]].filter((x) => x[1]).map(([key, c]) => {
+    const d = IND[c.ind];
+    return `<div class="kcell ${r.id === S.focus ? "focus" : ""}" data-kr="${r.id}">
+      <div class="knob" data-knob="${r.id}:${key}" role="slider" tabindex="0" aria-label="${d.name}, порог" aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${c.v}">${knobInner(r, key)}</div>
+      <div class="klabel">${d.short} ${c.op === ">" ? "выше" : "ниже"}</div>
+      <div class="kact ${r.act > 0 ? "buy" : r.act < 0 ? "sell" : ""}">${key === "b" ? "и" : actName(r.act)}</div></div>`;
+  }).join("")).join("") : '<div class="lead" style="margin:0">Добавьте правило — у него появится крутилка.</div>';
+}
+function setKnob(el, v) {
+  const [rid, key] = el.dataset.knob.split(":"), r = S.rules.find((x) => String(x.id) === rid);
+  if (!r) return;
+  const d = IND[r[key].ind];
+  v = Math.max(d.min, Math.min(d.max, Math.round(v / d.step) * d.step));
+  v = +v.toFixed(4);
+  if (v === r[key].v && S.focus === r.id) return;
+  r[key].v = v; S.focus = r.id;
+  el.innerHTML = knobInner(r, key); el.setAttribute("aria-valuenow", v);
+  document.querySelectorAll(".kcell").forEach((x) => x.classList.toggle("focus", x.dataset.kr === rid));
+  for (const pre of ["n-", "s-"]) { const twin = document.getElementById(pre + rid + "-" + key); if (twin) twin.value = v; }
+  left.querySelectorAll(".rule").forEach((x) => x.classList.toggle("focus", x.dataset.rule === rid));
+  save(); results();
+}
+(function () {
+  const box = document.getElementById("knobs");
+  let drag = null;
+  const info = (el) => { const [rid, key] = el.dataset.knob.split(":"), r = S.rules.find((x) => String(x.id) === rid); return r ? { c: r[key], d: IND[r[key].ind] } : null; };
+  box.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest(".knob"); if (!el) return;
+    const k = info(el); if (!k) return;
+    drag = { el, x: e.clientX, y: e.clientY, v: k.c.v, range: k.d.max - k.d.min };
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    setKnob(el, k.c.v); e.preventDefault();
+  });
+  box.addEventListener("pointermove", (e) => { if (drag) setKnob(drag.el, drag.v + ((e.clientX - drag.x - (e.clientY - drag.y)) / 170) * drag.range); });
+  const end = () => { if (drag) { drag = null; } };
+  box.addEventListener("pointerup", end); box.addEventListener("pointercancel", end);
+  box.addEventListener("keydown", (e) => {
+    const el = e.target.closest(".knob"); if (!el) return;
+    const k = info(el), dir = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    if (k && dir) { setKnob(el, k.c.v + dir * k.d.step); e.preventDefault(); }
+  });
+  box.addEventListener("wheel", (e) => { const el = e.target.closest(".knob"); if (!el) return; const k = info(el); if (k) { setKnob(el, k.c.v + (e.deltaY < 0 ? 1 : -1) * k.d.step); e.preventDefault(); } }, { passive: false });
+})();
+const PRESETS = [
+  ["Не покупать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 70 }, act: 0 }, "top"],
+  ["Не покупать, когда цена выше средней за 200 дней на…", { a: { ind: "sma200", op: ">", v: 1.15 }, act: 0 }, "top"],
+  ["Покупать ×3 на просадке больше…", { a: { ind: "dd", op: ">", v: 15 }, act: 3 }, "end"],
+  ["Покупать ×2, когда RSI ниже…", { a: { ind: "rsi", op: "<", v: 35 }, act: 2 }, "end"],
+  ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
+  ["Продавать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 80 }, act: -1 }, "top"],
+  ["Продавать, когда цена выше средней за 200 дней на…", { a: { ind: "sma200", op: ">", v: 1.25 }, act: -1 }, "top"],
+  ["Своё правило", { a: { ind: "ret30", op: "<", v: -5 }, act: 2 }, "end"],
+];
+
 /* ---------- правила ---------- */
 function condHtml(r, key, label) {
   const c = r[key], d = IND[c.ind];
@@ -262,7 +350,8 @@ function rulesPanel() {
     <div class="rule" data-rule="base"><div class="rhead"><div class="rnum">…</div><span class="sp" data-count="0" style="text-align:left"></span></div>
       <div class="acts"><span>иначе</span>${ACTS.slice(0, 4).map(([a, n]) => `<button class="act ${S.base === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
     <div class="tools"><button class="btn dark" data-tool="add">+ Правило</button><button class="btn" data-tool="copy">Скопировать правила</button>
-      <button class="btn" data-tool="reset">Сбросить</button></div><div id="copybox"></div>`;
+      <button class="btn" data-tool="reset">Сбросить</button></div><div id="presets"></div><div id="copybox"></div>`;
+  knobs();
 }
 function ruleOf(target) { const box = target.closest("[data-rule]"); return box ? S.rules.find((r) => String(r.id) === box.dataset.rule) : null; }
 const left = document.getElementById("left");
@@ -274,7 +363,7 @@ left.addEventListener("input", (e) => {
   r[key].v = v; S.focus = r.id;
   const twin = document.getElementById((e.target.type === "range" ? "n-" : "s-") + r.id + "-" + key); if (twin) twin.value = v;
   left.querySelectorAll(".rule").forEach((x) => x.classList.toggle("focus", x.dataset.rule === String(r.id)));
-  save(); results();
+  knobs(); save(); results();
 });
 left.addEventListener("change", (e) => {
   const r = ruleOf(e.target);
@@ -284,7 +373,17 @@ left.addEventListener("click", (e) => {
   const t = e.target.closest("button"), r = ruleOf(e.target);
   if (!t) { if (r && S.focus !== r.id) { S.focus = r.id; save(); rulesPanel(); results(); } return; }
   const f = t.dataset.f, k = r ? S.rules.indexOf(r) : -1;
-  if (t.dataset.tool === "add") { const id = Math.max(0, ...S.rules.map((x) => x.id)) + 1; S.rules.push({ id, on: true, a: { ind: "rsi", op: "<", v: 30 }, b: null, act: 3 }); S.focus = id; }
+  if (t.dataset.tool === "add") {
+    const box = document.getElementById("presets");
+    box.innerHTML = box.innerHTML ? "" : '<div class="presets">' + PRESETS.map((x, n) => `<button data-preset="${n}">${x[0]}</button>`).join("") + "</div>";
+    return;
+  }
+  else if (t.dataset.preset !== undefined) {
+    const [, tpl, where] = PRESETS[Number(t.dataset.preset)], id = Math.max(0, ...S.rules.map((x) => x.id)) + 1;
+    const rule = { id, on: true, a: { ...tpl.a }, b: null, act: tpl.act };
+    if (where === "top") S.rules.unshift(rule); else S.rules.push(rule);
+    S.focus = id;
+  }
   else if (t.dataset.tool === "reset") { S = JSON.parse(JSON.stringify(DEFAULT)); WIN = null; }
   else if (t.dataset.tool === "copy") {
     const text = asText(), box = document.getElementById("copybox");
@@ -304,6 +403,10 @@ left.addEventListener("click", (e) => {
   else if (f === "addb") { r.b = { ind: "rsi", op: "<", v: 40 }; S.focus = r.id; }
   else if (f === "delb") r.b = null;
   save(); rulesPanel(); results();
+});
+document.getElementById("knobs").addEventListener("click", (e) => {
+  const cell = e.target.closest(".kcell"); if (!cell || e.target.closest(".knob")) return;
+  S.focus = Number(cell.dataset.kr); save(); rulesPanel(); results();
 });
 let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(results, 150); });
 rulesPanel(); results();
