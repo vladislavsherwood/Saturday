@@ -1,0 +1,1 @@
+{"base": 1, "rules": [{"act": 1.5, "conds": [{"ind": "usdtd", "op": "<", "v": 5}, {"ind": "rsi", "op": ">", "v": 54}]}, {"act": -0.1, "conds": [{"ind": "usdtd", "op": "<", "v": 5}, {"ind": "btcd", "op": "<", "v": 60}]}]}
