@@ -176,6 +176,8 @@ function change(a, n) { return a.map((v, i) => (i >= n ? (v / a[i - n] - 1) * 10
 function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[i])) return NaN; let s = 0; for (let j = i - n + 1; j <= i; j++) s += (a[j] - m[i]) ** 2; const sd = Math.sqrt(s / n); return sd ? (v - m[i]) / sd : 0; }); }
 // расстояние до исторического максимума, %: 0 — сегодняшнее закрытие само стало новым максимумом
 function athDist(a, seed) { let m = seed || 0; return a.map((v) => { if (v > m) m = v; return (1 - v / m) * 100; }); }
+// сколько свечей подряд закрылись ниже (dir = -1) или выше (dir = 1) открытия, считая сегодняшнюю
+function streak(o, c, dir) { let n = 0; return c.map((v, i) => (n = (v - o[i]) * dir > 0 ? n + 1 : 0)); }
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 const CTX = {};
 function setup(key, quiet) {
@@ -192,6 +194,8 @@ function setup(key, quiet) {
     ret30: { need: RAW.bpy === 365 ? 30 : 21, short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
     ret90: { need: RAW.bpy === 365 ? 90 : 63, short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
     ret1: { short: "За день, %", name: "Изменение за день, %", min: -10, max: 10, step: 0.5, def: 0, v: change(C, 1) },
+    red: { short: "Красных подряд", name: "Красных свечей подряд", min: 0, max: 12, step: 1, def: 6, v: streak(RAW.o, C, -1) },
+    green: { short: "Зелёных подряд", name: "Зелёных свечей подряд", min: 0, max: 12, step: 1, def: 6, v: streak(RAW.o, C, 1) },
     bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
   };
   if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
@@ -513,6 +517,8 @@ const PRESETS = [
   ["Покупать ×3 на просадке больше…", { a: { ind: "dd", op: ">", v: 15 }, act: 3 }, "end"],
   ["Покупать ×2, когда RSI ниже…", { a: { ind: "rsi", op: "<", v: 35 }, act: 2 }, "end"],
   ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
+  ["Свечи: покупать ×2 на седьмой красной свече подряд", { a: { ind: "red", op: ">", v: 6 }, b: null, act: 2 }, "end"],
+  ["Свечи: продавать на седьмой зелёной свече подряд", { a: { ind: "green", op: ">", v: 6 }, b: null, act: -1 }, "top"],
   ["Объём: покупать ×2 при всплеске объёма на падении", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: "<", v: 0 }, act: 2 }, "end"],
   ["Объём: не покупать при всплеске объёма на росте", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: ">", v: 0 }, act: 0 }, "top"],
   ["Объём: продавать при всплеске объёма на росте", { a: { ind: "vol", op: ">", v: 2.5 }, b: { ind: "ret1", op: ">", v: 3 }, act: -1 }, "top"],
