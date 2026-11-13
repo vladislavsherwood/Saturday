@@ -731,8 +731,9 @@ for _sym, _t in (("ADA-USD", "ADA"), ("LTC-USD", "LTC"), ("LINK-USD", "LINK"), (
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
 PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "Экзаменационные монеты")
-PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1"}      # ключ, под которым правила хранятся в браузере
+PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
+PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -776,15 +777,17 @@ def build_raw(asset):
 
 def main(out, page="gold"):
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page == 'found' else page}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple') else page}.json")
+    simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
         best = {"w": best}
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": best["pct"] if page == "found" and best else None, "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP)
             .replace("__LEAD__", "Стратегия, которую нашёл перебор 1,2 млн вариантов на всей истории. Это подгонка под прошлое: на данных, которых поиск не видел, от результата остаётся от +23% до +55%. Правила можно менять — основная страница конструктора при этом не затрагивается." if page == "found"
+                     else "Два правила, найденные с ограничением на сложность. В плюсе к DCA на всех 9 наших активах и на 16 монетах, которых поиск не видел. Сигналы общерыночные, поэтому это одна удачная схема за четыре рыночных цикла, а не 25 независимых подтверждений. Основная страница конструктора не затрагивается." if page == "simple"
                      else "Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли."))
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)

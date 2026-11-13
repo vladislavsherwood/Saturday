@@ -15,7 +15,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxConds = 2 }) => {
+const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxConds = 2, part = 'full' }) => {
   let st = seed >>> 0;
   const rnd = () => { st = (st + 0x6D2B79F5) >>> 0; let t = st; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -75,7 +75,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
     return detail ? { score, worst, mean: sum / A.length, wavg: sv / sw, per } : score;
   }
   if (evalMany) {          // оценка списка готовых стратегий на активах этой страницы
-    const A = prep('full'), out = evalMany.map((S) => { const r = evalS(A, S, true); return { worst: r.worst, mean: r.mean, pos: r.per.filter((p) => Math.min(p[1], p[2]) > 0).length, n: r.per.length }; });
+    const A = prep(part), out = evalMany.map((S) => { const r = evalS(A, S, true); return { worst: r.worst, mean: r.mean, pos: r.per.filter((p) => Math.min(p[1], p[2]) > 0).length, n: r.per.length }; });
     setup(cur, true);
     return out;
   }
@@ -118,7 +118,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
   }
 
   const trainSet = mode === 'assets' ? [0, 1, 2, 3, 5, 7] : null;          // шесть активов для поиска, три — на проверку
-  const A = prep(mode === 'time' ? 'h1' : 'full', trainSet);
+  const A = prep(mode === 'time' ? 'h1' : part, trainSet);
   let curS = { base: 1, rules: [newRule()] }, curV = evalS(A, curS), best = clone(curS), bestV = curV, evals = 1, stall = 0, T = 3;
   const pool = new Map();      // кандидаты: разные стратегии, у которых все активы поиска в плюсе
   const t0 = Date.now();
@@ -152,17 +152,17 @@ async function open(browser, file, tag) {
 }
 
 (async () => {
-  const [file, secs, outPath, validFile, examFile] = process.argv.slice(2);
+  const [file, secs, outPath, validFile, examFile, part = 'full'] = process.argv.slice(2);      // part = h1: поиск и отбор только на первой половине истории
   const browser = await chromium.launch();
   // четыре поиска разной сложности на наших активах
   const cfg = [[5, 1, 2], [17, 2, 1], [23, 2, 2], [41, 3, 2]];
   const res = await Promise.all(cfg.map(async ([seed, maxRules, maxConds]) =>
-    (await open(browser, file, 's' + seed)).evaluate(inPage, { seed, mode: 'full', ms: Number(secs) * 1000, unit: 10, maxRules, maxConds })));
+    (await open(browser, file, 's' + seed)).evaluate(inPage, { seed, mode: 'full', ms: Number(secs) * 1000, unit: 10, maxRules, maxConds, part })));
   const show = (S) => S.rules.map((r) => r.conds.map((c) => `${c.ind} ${c.op} ${c.v}`).join(' и ') + ' → ' + r.act).join(' | ') + ' | иначе ' + S.base;
   for (const r of res) console.log(`поиск: до ${r.maxRules} правил по ${r.maxConds} условия — вариантов ${r.evals}, кандидатов ${r.pool.length}, лучший: худший актив ${r.train.worst.toFixed(1)}%, средний ${r.train.mean.toFixed(1)}%\n    ${show(r.best)}`);
   // отбор: все кандидаты оцениваются на монетах, которых поиск не видел
   const cands = res.flatMap((r) => r.pool.map((c) => ({ ...c, maxRules: r.maxRules, maxConds: r.maxConds })));
-  const sel = await (await open(browser, validFile, 'val')).evaluate(inPage, { seed: 1, unit: 10, evalMany: cands.map((c) => c.S) });
+  const sel = await (await open(browser, validFile, 'val')).evaluate(inPage, { seed: 1, unit: 10, evalMany: cands.map((c) => c.S), part });
   cands.forEach((c, i) => Object.assign(c, { sel: sel[i], nc: c.S.rules.reduce((x, r) => x + r.conds.length, 0) }));
   const allPos = cands.filter((c) => c.sel.pos === c.sel.n);
   console.log(`кандидатов всего ${cands.length}; на монетах отбора в плюсе все ${sel[0].n}: ${allPos.length}; 7 из 8: ${cands.filter((c) => c.sel.pos === c.sel.n - 1).length}`);
