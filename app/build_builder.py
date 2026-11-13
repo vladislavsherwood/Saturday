@@ -583,7 +583,7 @@ function rulesPanel() {
       <div class="acts"><span>иначе</span>${ACTS().filter(([a]) => a >= 0 && (!PCT() || a <= 1)).map(([a, n]) => `<button class="act ${baseAct() === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
     <div class="tools"><button class="btn dark" data-tool="add">+ Правило</button><button class="btn" data-tool="copy">Скопировать правила</button>
       <button class="btn" data-tool="reset">Сбросить</button>
-      ${SETS.best ? '<button class="btn" data-tool="best">Загрузить найденный максимум</button>' : ""}</div><div id="presets"></div><div id="copybox"></div>`;
+      ${SETS.best && SETS.best[S.mode] ? '<button class="btn" data-tool="best">Загрузить найденный максимум</button>' : ""}</div><div id="presets"></div><div id="copybox"></div>`;
   knobs();
 }
 function ruleOf(target) { const box = target.closest("[data-rule]"); return box ? S.rules.find((r) => String(r.id) === box.dataset.rule) : null; }
@@ -630,7 +630,7 @@ left.addEventListener("click", (e) => {
   else if (t.dataset.tool === "best") {
     if (t.dataset.sure !== "1") { t.dataset.sure = "1"; t.textContent = "Это заменит ваши правила. Нажмите ещё раз"; return; }
     const keep = { period: S.period };
-    S = { ...JSON.parse(JSON.stringify(SETS.best)), ...keep }; WIN = null; BASE = null;
+    S = { ...JSON.parse(JSON.stringify(SETS.best[S.mode])), ...keep }; WIN = null; BASE = null;
   }
   else if (t.dataset.tool === "copy") {
     const text = asText(), box = document.getElementById("copybox");
@@ -768,6 +768,8 @@ def main(out, page="gold"):
     assets, title = PAGES[page]
     best_path = os.path.join(HERE, f"best_{page}.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
+    if best and "rules" in best:              # старый формат: одна стратегия для режима весов
+        best = {"w": best}
     sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))

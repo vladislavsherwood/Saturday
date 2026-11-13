@@ -3,12 +3,14 @@
    Считает в самой странице конструктора — теми же индикаторами и на тех же данных.
    Режим: веса, начальный баланс 1000, размер ×1 = 10. Правило — до трёх условий и действие от «продать ×3» до «купить ×3».
 
-   Запуск: node app/optimize.js <страница.html> <секунд на поиск> <куда сохранить .json>
+   Запуск: node app/optimize.js <страница.html> <секунд на поиск> <куда сохранить .json> [w | pct]
+   pct — режим «доля портфеля»: взнос 10 в день, покупка на взнос и долю резерва, продажа доли позиции.
    Четыре параллельных поиска: два на всей истории, два только на первой половине (для проверки на второй). */
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const inPage = ({ seed, mode, ms, balance, unit }) => {
+const inPage = ({ seed, mode, ms, balance, unit, kind }) => {
+  const PCT = kind === 'pct';        // «доля портфеля»: взнос unit в день, действия — доли резерва и позиции
   // ---------- генератор случайных чисел с зерном ----------
   let st = seed >>> 0;
   const rnd = () => { st = (st + 0x6D2B79F5) >>> 0; let t = st; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -26,8 +28,8 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
       const ind = {};
       for (const key in IND) ind[key] = Float64Array.from(IND[key].v, (x) => (x == null ? NaN : x));
       const c = Float64Array.from(H.c);
-      let cash = balance, du = 0;
-      for (let i = a; i < b; i++) { const amt = Math.min(unit, cash); if (amt > 0) { du += amt / c[i]; cash -= amt; } }
+      let cash = PCT ? 0 : balance, du = 0;
+      for (let i = a; i < b; i++) { const amt = PCT ? unit : Math.min(unit, cash); if (amt > 0) { du += amt / c[i]; if (!PCT) cash -= amt; } }
       A.push({ k, name: RAW.ticker, ind, c, a, b, m: b - a, dca: du * c[b - 1] + cash });
     }
     return A;
@@ -61,10 +63,15 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
     for (const X of A) {
       const rs = S.rules.filter((r) => r.conds.every((cd) => X.ind[cd.ind]));
       const arrs = rs.map((r) => r.conds.map((cd) => [X.ind[cd.ind], cd.op === '<', cd.v])), acts = rs.map((r) => r.act);
-      let cash = balance, units = 0, prev = X.a > 0 ? decideAt(arrs, acts, S.base, X.a - 1) : 1;
+      let cash = PCT ? 0 : balance, units = 0, prev = X.a > 0 ? decideAt(arrs, acts, S.base, X.a - 1) : 1;
       for (let i = X.a; i < X.b; i++) {
         const p = X.c[i];
-        if (prev > 0) { const amt = Math.min(prev * unit, cash); if (amt > 0.005) { units += amt / p; cash -= amt; } }
+        if (PCT) {
+          const before = cash;
+          cash += unit;
+          if (prev < 0) { const amt = -prev * units * p; if (amt > 0) { units -= amt / p; cash += amt; } }
+          else if (prev > 0) { const amt = Math.min(cash, unit + (prev - 1) * before); units += amt / p; cash -= amt; }
+        } else if (prev > 0) { const amt = Math.min(prev * unit, cash); if (amt > 0.005) { units += amt / p; cash -= amt; } }
         else if (prev < 0) { const amt = Math.min(-prev * unit, units * p); if (amt > 0.005) { units -= amt / p; cash += amt; } }
         prev = decideAt(arrs, acts, S.base, i);
       }
@@ -76,7 +83,8 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
   }
 
   // ---------- случайные правила и их изменения ----------
-  const ACTS = [-3, -2, -1, 0, 1, 2, 3];
+  const ACTS = PCT ? [-0.5, -0.4, -0.3, -0.2, -0.15, -0.1, -0.075, -0.05, -0.03, -0.02, -0.01, -0.005, 0, 1, 1.05, 1.1, 1.25, 1.5, 1.75, 2] : [-3, -2, -1, 0, 1, 2, 3];
+  const BASES = PCT ? [0, 1] : [0, 1, 2, 3];
   const newCond = () => { const ind = pick(KEYS); return { ind, op: rnd() < 0.5 ? '<' : '>', v: pick(Q[ind]) }; };
   const newRule = () => ({ conds: Array.from({ length: 1 + Math.floor(rnd() * 3) }, newCond), act: pick(ACTS) });
   const clone = (S) => ({ base: S.base, rules: S.rules.map((r) => ({ act: r.act, conds: r.conds.map((c) => ({ ...c })) })) });
@@ -86,13 +94,13 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
     if (!r || (u < 0.12 && S.rules.length < 10)) S.rules.splice(Math.floor(rnd() * (S.rules.length + 1)), 0, newRule());
     else if (u < 0.2 && S.rules.length > 1) S.rules.splice(S.rules.indexOf(r), 1);
     else if (u < 0.5) { const c = pick(r.conds), q = Q[c.ind]; let j = q.indexOf(c.v); if (j < 0) j = Math.floor(rnd() * q.length); j = Math.max(0, Math.min(q.length - 1, j + (rnd() < 0.5 ? -1 : 1) * (1 + Math.floor(rnd() * 3)))); c.v = q[j]; }
-    else if (u < 0.6) r.act = pick(ACTS);
+    else if (u < 0.6) { const j = ACTS.indexOf(r.act); r.act = rnd() < 0.5 || j < 0 ? pick(ACTS) : ACTS[Math.max(0, Math.min(ACTS.length - 1, j + (rnd() < 0.5 ? -1 : 1)))]; }
     else if (u < 0.68) { const c = pick(r.conds); c.op = c.op === '<' ? '>' : '<'; }
     else if (u < 0.78) r.conds[Math.floor(rnd() * r.conds.length)] = newCond();
     else if (u < 0.85 && r.conds.length < 3) r.conds.push(newCond());
     else if (u < 0.9 && r.conds.length > 1) r.conds.splice(Math.floor(rnd() * r.conds.length), 1);
     else if (u < 0.96 && S.rules.length > 1) { const i = S.rules.indexOf(r), j = Math.floor(rnd() * S.rules.length); [S.rules[i], S.rules[j]] = [S.rules[j], S.rules[i]]; }
-    else S.base = pick([0, 1, 2, 3]);
+    else S.base = pick(BASES);
     return S;
   }
 
@@ -117,7 +125,7 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
     const v = evalS(A, t);
     if (v >= bestV - 1e-9) { best = t; bestV = v; }
   }
-  const out = { seed, mode, evals, best, score: evalS(A, best, true) };
+  const out = { seed, mode, kind, evals, best, score: evalS(A, best, true) };
   if (mode === 'train') { out.test = evalS(prep('test'), best, true); out.full = evalS(prep('full'), best, true); }
   out.dcaBase = evalS(A, { base: 1, rules: [] });
   setup(cur, true);
@@ -125,7 +133,7 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
 };
 
 (async () => {
-  const [file, secs, outPath] = process.argv.slice(2);
+  const [file, secs, outPath, kind = 'w'] = process.argv.slice(2);
   const html = '<!doctype html><html><head><meta charset="utf-8"></head><body>' + fs.readFileSync(file, 'utf8') + '</body></html>';
   const tmp = outPath + '.page.html';
   fs.writeFileSync(tmp, html);
@@ -135,7 +143,7 @@ const inPage = ({ seed, mode, ms, balance, unit }) => {
     page.setDefaultTimeout(0);
     await page.goto('file://' + tmp);
     await page.waitForSelector('.ex-candles svg');
-    return page.evaluate(inPage, { seed, mode, ms: Number(secs) * 1000, balance: 1000, unit: 10 });
+    return page.evaluate(inPage, { seed, mode, ms: Number(secs) * 1000, balance: 1000, unit: 10, kind });
   });
   const res = await Promise.all(jobs);
   // цены каждого актива — для расчёта теоретического потолка
