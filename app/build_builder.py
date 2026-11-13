@@ -256,10 +256,10 @@ const fmtV = (c) => String(+c.v.toFixed(3)).replace(".", ",");
 
 function decide() {
   const acts = new Array(N), who = new Int16Array(N);
-  const rules = S.rules.filter((r) => r.on && IND[r.a.ind] && (!r.b || IND[r.b.ind]));
+  const rules = S.rules.filter((r) => r.on && IND[r.a.ind] && (!r.b || IND[r.b.ind]) && (!r.c || IND[r.c.ind]));
   for (let i = 0; i < N; i++) {
     let a = baseAct(), w = 0;
-    for (const r of rules) if (hit(r.a, i) && (!r.b || hit(r.b, i))) { a = actOf(r); w = r.id; break; }
+    for (const r of rules) if (hit(r.a, i) && (!r.b || hit(r.b, i)) && (!r.c || hit(r.c, i))) { a = actOf(r); w = r.id; break; }
     acts[i] = a; who[i] = w;
   }
   return { acts, who };
@@ -362,7 +362,7 @@ function results() {
     onPeriod: (p) => { S.period = p; WIN = null; save(); results(); },
     onDraw: (el, g, sim) => {
       WIN = { a: g.a, b: g.b };
-      el.innerHTML = balPanel(g, sim) + (focus ? [focus.a, focus.b].filter(Boolean).map((c) => indPanel(c, g)).join("") : "");
+      el.innerHTML = balPanel(g, sim) + (focus ? [focus.a, focus.b, focus.c].filter(Boolean).map((c) => indPanel(c, g)).join("") : "");
     } });
   const years = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0;
   const i0 = Explorer.startIndex(h, years), s = runSim(h, h.strategies[0], i0);
@@ -414,7 +414,7 @@ function summary() {
 }
 function asText() {
   const lines = S.rules.filter((r) => r.on).map((r, k) =>
-    `${k + 1}. если ${IND[r.a.ind].name} ${r.a.op} ${fmtV(r.a)}${r.b ? ` и ${IND[r.b.ind].name} ${r.b.op} ${fmtV(r.b)}` : ""} → ${actName(actOf(r))}`);
+    `${k + 1}. если ${IND[r.a.ind].name} ${r.a.op} ${fmtV(r.a)}${r.b ? ` и ${IND[r.b.ind].name} ${r.b.op} ${fmtV(r.b)}` : ""}${r.c ? ` и ${IND[r.c.ind].name} ${r.c.op} ${fmtV(r.c)}` : ""} → ${actName(actOf(r))}`);
   const s = LAST;
   return `Стратегия для ${RAW.title} (режим: ${PCT() ? "доля портфеля, взнос $" + S.unit + " в день" : "веса, ×1 = $" + S.unit + (S.balance > 0 ? ", начальный баланс $" + S.balance : "")}; период: ${S.period})\n${lines.join("\n")}\nиначе → ${actName(baseAct())}\n` +
     (s ? `Результат: ${s.reserve ? "итог " + Explorer.pct(s.wealthEdge, true) + " к DCA, " : ""}${Explorer.pct(s.irr, true)} в год, ${s.edge == null ? "" : Explorer.pct(s.edge, true).replace("%", " п.п.")} к DCA, прибыль ${Explorer.money(s.pnl, true)} против ${Explorer.money(s.dca.pnl, true)}` : "");
@@ -448,11 +448,11 @@ function knobs() {
   const el = document.getElementById("knobs");
   const on = S.rules.filter((r) => r.on);
   el.innerHTML = on.length ? on.map((r) => {
-    const act = actOf(r), keys = ["a"].concat(r.b ? ["b"] : [], PCT() && act !== 0 ? ["amt"] : []);
+    const act = actOf(r), keys = ["a"].concat(r.b ? ["b"] : [], r.c ? ["c"] : [], PCT() && act !== 0 ? ["amt"] : []);
     return keys.map((key) => {
       const { v, d } = kget(r, key), c = r[key];
       const label = key === "amt" ? (act < 0 ? "Продать" : "Из резерва") : `${d.short} ${c.op === ">" ? "выше" : "ниже"}`;
-      const sub = key === "amt" ? (act < 0 ? "% позиции" : "% сверх взноса") : key === "b" ? "и" : actName(act);
+      const sub = key === "amt" ? (act < 0 ? "% позиции" : "% сверх взноса") : key === "b" || key === "c" ? "и" : actName(act);
       return `<div class="kcell ${r.id === S.focus ? "focus" : ""}" data-kr="${r.id}">
         <div class="knob" data-knob="${r.id}:${key}" role="slider" tabindex="0" aria-label="${d.name}" aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${v}">${knobInner(r, key)}</div>
         <div class="klabel">${label}</div>
@@ -571,8 +571,9 @@ function rulesPanel() {
         <button class="ib" data-f="up" ${k === 0 ? "disabled" : ""} aria-label="Выше">↑</button>
         <button class="ib" data-f="down" ${k === S.rules.length - 1 ? "disabled" : ""} aria-label="Ниже">↓</button>
         <button class="ib" data-f="del" aria-label="Удалить">×</button></div>
-      ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}
-      <button class="link" data-f="${r.b ? "delb" : "addb"}">${r.b ? "убрать второе условие" : "+ второе условие"}</button>
+      ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}${r.c ? condHtml(r, "c", "и") : ""}
+      <button class="link" data-f="${r.c ? "delc" : r.b ? "delb" : "addb"}">${r.c ? "убрать третье условие" : r.b ? "убрать второе условие" : "+ второе условие"}</button>
+      ${r.b && !r.c ? '<button class="link" data-f="addc" style="margin-left:14px">+ третье условие</button>' : ""}
       <div class="acts"><span>то</span>${ACTS().map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${actOf(r) === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}
         ${PCT() && actOf(r) < 0 ? `<label class="amt">или <input type="number" data-f="amt" id="amt-${r.id}" min="0.5" max="50" step="0.5" value="${+(-actOf(r) * 100).toFixed(2)}" aria-label="Сколько продавать, процент позиции"> % позиции</label>` : ""}
         ${PCT() && actOf(r) >= 1 ? `<label class="amt">взнос и <input type="number" data-f="amt" id="amt-${r.id}" min="0" max="100" step="5" value="${+((actOf(r) - 1) * 100).toFixed(2)}" aria-label="Сколько добавить из резерва, процент"> % резерва</label>` : ""}</div>
@@ -581,7 +582,8 @@ function rulesPanel() {
     <div class="rule" data-rule="base"><div class="rhead"><div class="rnum">…</div><span class="sp" data-count="0" style="text-align:left"></span></div>
       <div class="acts"><span>иначе</span>${ACTS().filter(([a]) => a >= 0 && (!PCT() || a <= 1)).map(([a, n]) => `<button class="act ${baseAct() === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
     <div class="tools"><button class="btn dark" data-tool="add">+ Правило</button><button class="btn" data-tool="copy">Скопировать правила</button>
-      <button class="btn" data-tool="reset">Сбросить</button></div><div id="presets"></div><div id="copybox"></div>`;
+      <button class="btn" data-tool="reset">Сбросить</button>
+      ${SETS.best ? '<button class="btn" data-tool="best">Загрузить найденный максимум</button>' : ""}</div><div id="presets"></div><div id="copybox"></div>`;
   knobs();
 }
 function ruleOf(target) { const box = target.closest("[data-rule]"); return box ? S.rules.find((r) => String(r.id) === box.dataset.rule) : null; }
@@ -625,6 +627,11 @@ left.addEventListener("click", (e) => {
     S.focus = id;
   }
   else if (t.dataset.tool === "reset") { S = JSON.parse(JSON.stringify(DEFAULT)); WIN = null; }
+  else if (t.dataset.tool === "best") {
+    if (t.dataset.sure !== "1") { t.dataset.sure = "1"; t.textContent = "Это заменит ваши правила. Нажмите ещё раз"; return; }
+    const keep = { period: S.period };
+    S = { ...JSON.parse(JSON.stringify(SETS.best)), ...keep }; WIN = null; BASE = null;
+  }
   else if (t.dataset.tool === "copy") {
     const text = asText(), box = document.getElementById("copybox");
     box.innerHTML = '<textarea class="copy" id="copytext" rows="7" readonly></textarea>'; const ta = document.getElementById("copytext"); ta.value = text;
@@ -643,6 +650,8 @@ left.addEventListener("click", (e) => {
   else if (f === "del") S.rules.splice(k, 1);
   else if (f === "addb") { r.b = { ind: "rsi", op: "<", v: 40 }; S.focus = r.id; }
   else if (f === "delb") r.b = null;
+  else if (f === "addc") { r.c = { ind: "rsi", op: "<", v: 40 }; S.focus = r.id; }
+  else if (f === "delc") r.c = null;
   save(); rulesPanel(); results();
 });
 document.getElementById("knobs").addEventListener("click", (e) => {
@@ -757,7 +766,9 @@ def build_raw(asset):
 
 def main(out, page="gold"):
     assets, title = PAGES[page]
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    best_path = os.path.join(HERE, f"best_{page}.json")
+    best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP))
