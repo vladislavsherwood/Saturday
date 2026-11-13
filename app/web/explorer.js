@@ -234,9 +234,15 @@
         bk.push({ ja, jb, o: O[i0 + ja], c: C[i0 + jb - 1], h: hh, l: ll, buy, sell, bd, sd, gb, gs });
         if (hh > hi) hi = hh; if (ll < lo) lo = ll;
       }
+      // шкала строится по телам свечей с запасом: одна длинная тень обвала не должна сплющивать весь график
+      let blo = Infinity, bhi = -Infinity;
+      for (const b of bk) { blo = Math.min(blo, b.o, b.c); bhi = Math.max(bhi, b.o, b.c); }
+      const span = Math.max(0.02, Math.log(bhi / blo));
+      const trueLo = lo, trueHi = hi;
+      lo = Math.max(lo, blo * Math.exp(-0.2 * span)); hi = Math.min(hi, bhi * Math.exp(0.2 * span));
       const lmin = Math.log(lo), lmax = Math.log(hi) > lmin ? Math.log(hi) : lmin + 0.01;
       const ph = H - top - axis - 2 * pad;
-      const Y = (p) => top + pad + (1 - (Math.log(p) - lmin) / (lmax - lmin)) * ph;
+      const Y = (p) => top + pad + (1 - (Math.log(Math.min(hi, Math.max(lo, p))) - lmin) / (lmax - lmin)) * ph;
       const bw = Math.max(1, Math.min(cw * 0.68, 14));
       let ticks = "", body = "", marks = "";
       // сетка по годам или месяцам
@@ -278,6 +284,7 @@
       holder.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Свечной график цены с отметками покупок и продаж">
         ${ticks}${body}${marks}
         <text x="${pw + 6}" y="${Y(hi) + 4}">${price(hi)}</text><text x="${pw + 6}" y="${Y(lo) + 4}">${price(lo)}</text>
+        ${trueLo < lo ? `<text x="${pw - 4}" y="${H - axis - 4}" text-anchor="end">тень уходит до ${price(trueLo)}</text>` : ""}${trueHi > hi ? `<text x="${pw - 4}" y="${top + 10}" text-anchor="end">тень уходит до ${price(trueHi)}</text>` : ""}
         ${Math.abs(Y(last.c) - Y(hi)) > 14 && Math.abs(Y(last.c) - Y(lo)) > 14 ? `<text x="${pw + 6}" y="${Y(last.c) + 4}" style="fill:var(--text)">${price(last.c)}</text>` : ""}
         <line class="cross" y1="${top}" y2="${H - axis}" stroke="var(--mute)" stroke-width="1" style="display:none"/></svg>`;
       box.querySelector("[data-range]").textContent = (k > 1 ? "1 свеча = " + k + " дн" : "1 свеча = 1 день");

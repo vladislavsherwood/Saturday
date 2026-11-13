@@ -146,7 +146,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
 </style>
 <div class="wrap">
   <h1>Конструктор стратегии <span id="asset"></span></h1>
-  <div class="ver">версия __STAMP__</div>
+  <div class="ver">версия __STAMP__<span id="src"></span></div>
   <div class="tks" id="tks"></div>
   <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
   <div class="bar" id="bar"></div>
@@ -175,17 +175,17 @@ function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last
 const CTX = {};
 function setup(key, quiet) {
   KEY = "dca-builder-" + SETS.key + "-v2";
-  if (CTX[key]) { ({ RAW, C, IND, SKIP, H, N } = CTX[key]); if (!quiet) document.getElementById("asset").textContent = "· " + RAW.title; return; }
+  if (CTX[key]) { ({ RAW, C, IND, SKIP, H, N } = CTX[key]); if (!quiet) { document.getElementById("asset").textContent = "· " + RAW.title; document.getElementById("src").textContent = " · цены: " + RAW.src + ", по " + RAW.last; } return; }
   RAW = SETS.sets[key];
   C = RAW.c;
   IND = {
-    sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
-    sma50: { short: "Цена / SMA50", name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
+    sma200: { need: 200, short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
+    sma50: { need: 50, short: "Цена / SMA50", name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
     dd: { short: "Просадка, %", name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, RAW.bpy) },
     ath: { short: "До ATH, %", name: "ATH — до исторического максимума, %", min: 0, max: 30, step: 0.5, def: 1, v: athDist(C, RAW.ath0) },
     rsi: { short: "RSI", name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
-    ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
-    ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
+    ret30: { need: RAW.bpy === 365 ? 30 : 21, short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
+    ret90: { need: RAW.bpy === 365 ? 90 : 63, short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
     ret1: { short: "За день, %", name: "Изменение за день, %", min: -10, max: 10, step: 0.5, def: 0, v: change(C, 1) },
     bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
   };
@@ -200,7 +200,7 @@ function setup(key, quiet) {
     IND.ethd = { short: "ETH.D, %", name: "ETH.D — доля эфира, %", min: 8, max: 20, step: 0.5, def: 12, v: fill(RAW.dom.eth) };
     IND.othd = { short: "Альты, %", name: "Доля альткоинов (без BTC, ETH, USDT), %", min: 20, max: 45, step: 0.5, def: 28, v: fill(RAW.dom.oth) };
   }
-  if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
+  if (RAW.pair) IND.pair = { need: 200, short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
   for (const key of ["sma200", "sma50", "dd", "ath", "ret1", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
     const d = IND[key]; if (!d) continue;
@@ -224,7 +224,7 @@ function setup(key, quiet) {
     if (!S.mode) S.mode = "pct";
   }
   CTX[key] = { RAW, C, IND, SKIP, H, N };
-  if (!quiet) document.getElementById("asset").textContent = "· " + RAW.title;
+  if (!quiet) { document.getElementById("asset").textContent = "· " + RAW.title; document.getElementById("src").textContent = " · цены: " + RAW.src + ", по " + RAW.last; }
 }
 let WIN = null;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -274,17 +274,23 @@ function indPanel(c, g) {
   }
   lo = Math.min(lo, c.v); hi = Math.max(hi, c.v); if (hi === lo) hi = lo + 1;
   const Y = (v) => top + (1 - (v - lo) / (hi - lo)) * ph;
-  let path = "", shade = "", pen = false;
+  let path = "", early = "", shade = "", pen = false, pen2 = false, lastEarly = -1;
+  const warm = (d.need || 0) - SKIP;                 // с этого дня графика окно индикатора полное
   pts.forEach(([v, any], q) => {
-    const x = (q + 0.5) * g.cw;
+    const x = (q + 0.5) * g.cw, dayIdx = g.i0 + Math.min(g.b, g.a + (q + 1) * g.k) - 1;
     if (any) shade += `<rect x="${(q * g.cw).toFixed(1)}" y="${top}" width="${(g.cw + 0.3).toFixed(1)}" height="${ph}" fill="var(--hit)"/>`;
-    if (isNaN(v)) { pen = false; return; }
-    path += (pen ? "L" : "M") + x.toFixed(1) + " " + Y(v).toFixed(1); pen = true;
+    if (isNaN(v)) { pen = false; pen2 = false; return; }
+    if (dayIdx < warm) { early += (pen2 ? "L" : "M") + x.toFixed(1) + " " + Y(v).toFixed(1); pen2 = true; lastEarly = q; }
+    if (dayIdx >= warm || q === lastEarly) { path += (pen && dayIdx >= warm ? "L" : "M") + x.toFixed(1) + " " + Y(v).toFixed(1); pen = true; }
   });
+  const earlyX = lastEarly >= 0 ? (lastEarly + 0.5) * g.cw : 0;
   const num = (v) => String(+v.toFixed(2)).replace(".", ",");
   return `<div class="ex-cap" style="margin-top:14px"><span>${d.name} ${c.op} ${fmtV(c)}</span><span><i style="--k:var(--hit)">условие выполняется</i></span></div>
     <div class="ind"><svg viewBox="0 0 ${W} ${hgt}" height="${hgt}" role="img" aria-label="${d.name}">
-    ${shade}<path d="${path}" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linejoin="round"/>
+    ${shade}${early ? `<path d="${early}" fill="none" stroke="var(--mute)" stroke-width="1.5" stroke-dasharray="3 3" stroke-linejoin="round"/>
+      <line x1="${earlyX.toFixed(1)}" x2="${earlyX.toFixed(1)}" y1="${top}" y2="${top + ph}" stroke="var(--mute)" stroke-width="1" stroke-dasharray="2 3"/>
+      <text x="${Math.max(2, earlyX - 4).toFixed(1)}" y="${top - 6}" text-anchor="${earlyX > 150 ? "end" : "start"}">окно ${d.need} дн ещё не набрано</text>` : ""}
+    <path d="${path}" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linejoin="round"/>
     <line x1="0" x2="${pw}" y1="${Y(c.v).toFixed(1)}" y2="${Y(c.v).toFixed(1)}" stroke="var(--viz-sell)" stroke-width="1.5" stroke-dasharray="4 3"/>
     <text x="${pw + 6}" y="${Y(c.v) + 4}" style="fill:var(--text)">${fmtV(c)}</text>
     ${Math.abs(Y(hi) - Y(c.v)) > 13 ? `<text x="${pw + 6}" y="${Y(hi) + 8}">${num(hi)}</text>` : ""}
@@ -673,7 +679,7 @@ ASSETS = {
     "hype": {"symbol": "HYPE32196-USD", "slug": "hype", "title": "Hyperliquid", "ticker": "HYPE", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "HYPE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
-    "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
+    "pump": {"exchange": ("PUMPUSDT", "PUMP"), "src": "Binance, до 11.09.2025 — Hyperliquid", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
@@ -686,7 +692,9 @@ STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
 
 def build_raw(asset):
     cfg = ASSETS[asset]
-    if cfg.get("cmc"):
+    if cfg.get("exchange"):
+        df = data.exchange_ohlc(*cfg["exchange"])
+    elif cfg.get("cmc"):
         df = data.cmc_ohlc(cfg["cmc"])
     else:
         data.history(cfg["symbol"])
@@ -695,7 +703,8 @@ def build_raw(asset):
     idx = df.index
     epoch = idx[0].__class__("1970-01-01")
     raw = {"t": [int(x) for x in (idx - epoch).days], "bpy": cfg["bpy"], "skip": cfg["skip"], "rules": cfg["rules"],
-           "title": cfg["title"], "ticker": cfg["ticker"], "slug": cfg["slug"], "ath0": cfg.get("ath0")}
+           "title": cfg["title"], "ticker": cfg["ticker"], "slug": cfg["slug"], "ath0": cfg.get("ath0"),
+           "src": cfg.get("src") or ("CoinMarketCap" if cfg.get("cmc") else "Yahoo Finance"), "last": str(idx[-1].date())}
     for k in ("o", "h", "l", "c"):
         raw[k] = r6(df[k].values)
     if not cfg.get("novol") and (df["v"] > 0).mean() > 0.95:      # объёмы есть не у всех инструментов

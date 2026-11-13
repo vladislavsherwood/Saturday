@@ -196,3 +196,34 @@ def cmc_ohlc(cid):
     df = df[df["c"] > 0]
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     return df[df.index < today]
+
+
+def exchange_ohlc(binance_symbol, hyperliquid_coin):
+    """Дневные свечи напрямую с бирж: Binance (спот), а до его листинга — Hyperliquid. Дни по UTC."""
+    def load():
+        rows = {}
+        req = urllib.request.Request("https://api.hyperliquid.xyz/info", headers={"Content-Type": "application/json"},
+                                     data=json.dumps({"type": "candleSnapshot", "req": {"coin": hyperliquid_coin, "interval": "1d",
+                                                      "startTime": 1600000000000, "endTime": 2000000000000}}).encode())
+        with urllib.request.urlopen(req, timeout=40) as r:
+            for x in json.load(r):
+                day = datetime.fromtimestamp(x["t"] / 1000, timezone.utc).strftime("%Y-%m-%d")
+                rows[day] = [float(x["o"]), float(x["h"]), float(x["l"]), float(x["c"]), float(x["v"]) * float(x["c"]), "hl"]
+        start = 0
+        while True:
+            d = _get(f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval=1d&startTime={start}&limit=1000")
+            for n, k in enumerate(d):
+                day = datetime.fromtimestamp(k[0] / 1000, timezone.utc).strftime("%Y-%m-%d")
+                if start == 0 and n == 0 and day in rows:
+                    continue        # день листинга на Binance неполный: открытие и минимум — цена размещения, берём Hyperliquid
+                rows[day] = [float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[7]), "bn"]     # Binance важнее
+            if len(d) < 1000:
+                break
+            start = d[-1][0] + 1
+        days = sorted(rows)
+        return {"t": days, "v": [rows[k] for k in days]}
+    d = _cached(f"exch2_{binance_symbol}.json", 3600, load)
+    df = pd.DataFrame(d["v"], index=pd.to_datetime(d["t"]), columns=["o", "h", "l", "c", "v", "src"])
+    df[["o", "h", "l", "c", "v"]] = df[["o", "h", "l", "c", "v"]].astype(float)
+    today = pd.Timestamp(datetime.now(timezone.utc).date())
+    return df[(df["c"] > 0) & (df.index < today)]
