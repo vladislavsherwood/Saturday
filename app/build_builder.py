@@ -178,6 +178,27 @@ function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[
 function athDist(a, seed) { let m = seed || 0; return a.map((v) => { if (v > m) m = v; return (1 - v / m) * 100; }); }
 // сколько свечей подряд закрылись ниже (dir = -1) или выше (dir = 1) открытия, считая сегодняшнюю
 function streak(o, c, dir) { let n = 0; return c.map((v, i) => (n = (v - o[i]) * dir > 0 ? n + 1 : 0)); }
+// Рыночная структура по разворотным точкам. Вершина — день, чей максимум выше k дней до и k дней после;
+// она считается известной только через k дней, поэтому в будущее расчёт не заглядывает.
+// trend: 1 — последние вершина и впадина выше предыдущих (higher high + higher low), −1 — обе ниже, 0 — смешанно;
+// low / high — цена к последней подтверждённой впадине / вершине (ниже 1 и выше 1 — пробой).
+function structure(h, l, c, k) {
+  const n = c.length, trend = new Array(n).fill(NaN), low = new Array(n).fill(NaN), high = new Array(n).fill(NaN);
+  let H1 = NaN, H0 = NaN, L1 = NaN, L0 = NaN;
+  for (let i = 0; i < n; i++) {
+    const j = i - k;
+    if (j >= k) {
+      let top = true, bot = true;
+      for (let q = j - k; q <= j + k; q++) { if (h[q] > h[j]) top = false; if (l[q] < l[j]) bot = false; }
+      if (top) { H0 = H1; H1 = h[j]; }
+      if (bot) { L0 = L1; L1 = l[j]; }
+    }
+    if (!isNaN(L1)) low[i] = c[i] / L1;
+    if (!isNaN(H1)) high[i] = c[i] / H1;
+    if (!isNaN(H0) && !isNaN(L0)) trend[i] = H1 > H0 && L1 > L0 ? 1 : H1 < H0 && L1 < L0 ? -1 : 0;
+  }
+  return { trend, low, high };
+}
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 const CTX = {};
 function setup(key, quiet) {
@@ -198,6 +219,12 @@ function setup(key, quiet) {
     green: { short: "Зелёных подряд", name: "Зелёных свечей подряд", min: 0, max: 12, step: 1, def: 6, v: streak(RAW.o, C, 1) },
     bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
   };
+  for (const k of [5, 15]) {
+    const st = structure(RAW.h, RAW.l, C, k), nm = k === 5 ? "короткая" : "длинная";
+    IND["st" + k] = { need: 4 * k, short: `Структура ${k}д`, name: `Структура, ${nm} (${k} дн.): 1 — выше вершины и впадины, −1 — ниже`, min: -1, max: 1, step: 1, def: 0, v: st.trend };
+    IND["sl" + k] = { need: 2 * k, short: `К впадине ${k}д`, name: `Цена к последней впадине, ${nm} (${k} дн.)`, min: 0.7, max: 1.6, step: 0.01, def: 1, v: st.low };
+    IND["sh" + k] = { need: 2 * k, short: `К вершине ${k}д`, name: `Цена к последней вершине, ${nm} (${k} дн.)`, min: 0.5, max: 1.3, step: 0.01, def: 1, v: st.high };
+  }
   if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
   if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
   if (RAW.v) IND.vol = { short: "Объём / средний", name: "Объём к среднему за 20 дней", min: 0.2, max: 6, step: 0.1, def: 2, v: ratio(RAW.v.map((x) => (x > 0 ? x : NaN)), 20) };
@@ -517,6 +544,9 @@ const PRESETS = [
   ["Покупать ×3 на просадке больше…", { a: { ind: "dd", op: ">", v: 15 }, act: 3 }, "end"],
   ["Покупать ×2, когда RSI ниже…", { a: { ind: "rsi", op: "<", v: 35 }, act: 2 }, "end"],
   ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
+  ["Структура: продавать при выходе из восходящей структуры (пробой последней впадины)", { a: { ind: "st15", op: ">", v: 0 }, b: { ind: "sl15", op: "<", v: 1 }, act: -1 }, "top"],
+  ["Структура: не покупать в нисходящей структуре", { a: { ind: "st15", op: "<", v: 0 }, b: null, act: 0 }, "top"],
+  ["Структура: покупать ×2 на пробое последней вершины", { a: { ind: "sh15", op: ">", v: 1 }, b: null, act: 2 }, "end"],
   ["Свечи: покупать ×2 на седьмой красной свече подряд", { a: { ind: "red", op: ">", v: 6 }, b: null, act: 2 }, "end"],
   ["Свечи: продавать на седьмой зелёной свече подряд", { a: { ind: "green", op: ">", v: 6 }, b: null, act: -1 }, "top"],
   ["Объём: покупать ×2 при всплеске объёма на падении", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: "<", v: 0 }, act: 2 }, "end"],
