@@ -46,6 +46,10 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .tks:empty { display: none; }
   .tk { padding: 8px 16px; border-radius: 999px; background: var(--surface); font-weight: 800; font-size: 15px; }
   .tk.on { background: var(--text); color: var(--bg); }
+  .setup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; color: var(--mute); font-weight: 700; font-size: 14px; }
+  .setup label { display: inline-flex; align-items: center; gap: 8px; }
+  .setup input { width: 104px; background: var(--surface); padding: 8px 10px; color: var(--text); font-weight: 800; }
+  .setup span { font-size: 13px; font-weight: 650; }
   .lead { color: var(--mute); font-weight: 600; margin: 6px 0 0; max-width: 64ch; }
   .main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 18px; align-items: start; }
   .card { background: var(--surface); border-radius: 22px; padding: 16px 18px 20px; min-width: 0; }
@@ -148,6 +152,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   <h1>Конструктор стратегии <span id="asset"></span></h1>
   <div class="ver">версия __STAMP__<span id="src"></span></div>
   <div class="tks" id="tks"></div>
+  <div class="setup" id="setup"></div>
   <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
   <div class="bar" id="bar"></div>
 
@@ -218,10 +223,11 @@ function setup(key, quiet) {
 
   /* ---------- состояние ---------- */
   if (!S) {
-    DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, focus: SETS.rules[0].id, rules: SETS.rules };
+    DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, balance: 10000, focus: SETS.rules[0].id, rules: SETS.rules };
     S = JSON.parse(JSON.stringify(DEFAULT));
     try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
     if (!S.mode) S.mode = "pct";
+    if (S.balance == null) S.balance = 10000;
   }
   CTX[key] = { RAW, C, IND, SKIP, H, N };
   if (!quiet) { document.getElementById("asset").textContent = "· " + RAW.title; document.getElementById("src").textContent = " · цены: " + RAW.src + ", по " + RAW.last; }
@@ -319,6 +325,27 @@ function balPanel(g, s) {
     <text x="${pw + 6}" y="${Math.max(Y(100) + 9, Math.min(Y(0), yc + 4))}" style="fill:var(--text)">${cur}%</text></svg></div>`;
 }
 
+// какой расчёт идёт: доли портфеля, веса с начальным балансом или веса без ограничения денег
+function runSim(h, st, i0) {
+  if (PCT()) return Explorer.simulateReserve(h, st, i0, S.unit);
+  return S.balance > 0 ? Explorer.simulateBalance(h, st, i0, S.unit, S.balance) : Explorer.simulate(h, st, i0, S.unit);
+}
+function setupRow() {
+  const el = document.getElementById("setup");
+  el.innerHTML = PCT()
+    ? `<label>Взнос в день, $ <input id="unit1" type="number" min="1" step="1" value="${S.unit}" inputmode="decimal"></label>`
+    : `<label>Начальный баланс, $ <input id="bal" type="number" min="0" step="100" value="${S.balance}" inputmode="decimal"></label>
+       <label>Размер ×1, $ <input id="unit1" type="number" min="1" step="1" value="${S.unit}" inputmode="decimal"></label>
+       <span>${S.balance > 0 ? "баланса хватает на " + Math.floor(S.balance / S.unit).toLocaleString("ru-RU") + " покупок ×1" : "0 — деньги не ограничены"}</span>`;
+}
+document.getElementById("setup").addEventListener("change", (e) => {
+  const v = Number(e.target.value);
+  if (e.target.id === "unit1" && v > 0) S.unit = v;
+  else if (e.target.id === "bal" && v >= 0) S.balance = v;
+  else return;
+  snapshot(); BASE = null; save(); setupRow(); results();
+});
+
 /* ---------- результат ---------- */
 let LAST = null, BASE = null;
 // снимок перед каждой правкой: с ним сравнивается график, пока вы меняете правило
@@ -331,14 +358,14 @@ function results() {
   const focus = S.rules.find((r) => r.id === S.focus && r.on);
   const years0 = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0, start0 = Explorer.startIndex(h, years0);
   const base = BASE && BASE.i0 === start0 && BASE.m === N - start0 ? BASE : null;
-  Explorer.detail(document.getElementById("result"), h, "mine", { period: S.period, unit: S.unit, win: WIN, bare: true, base,
+  Explorer.detail(document.getElementById("result"), h, "mine", { period: S.period, unit: S.unit, balance: PCT() ? 0 : S.balance, win: WIN, bare: true, base,
     onPeriod: (p) => { S.period = p; WIN = null; save(); results(); },
     onDraw: (el, g, sim) => {
       WIN = { a: g.a, b: g.b };
       el.innerHTML = balPanel(g, sim) + (focus ? [focus.a, focus.b].filter(Boolean).map((c) => indPanel(c, g)).join("") : "");
     } });
   const years = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0;
-  const i0 = Explorer.startIndex(h, years), s = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(h, h.strategies[0], i0, S.unit);
+  const i0 = Explorer.startIndex(h, years), s = runSim(h, h.strategies[0], i0);
   LAST = s;
   let came = 0, gone = 0;
   if (base) for (let j = 0; j < s.m; j++) {
@@ -357,7 +384,7 @@ function results() {
   document.getElementById("bar").innerHTML = `<b>${Explorer.pct(s.irr, true)}</b><span>в год</span>
     <span class="${cls}">${d == null ? "" : Explorer.pct(d, true).replace("%", " п.п.") + " к DCA"}</span>
     ${s.reserve ? `<span class="${cls}">итог ${Explorer.pct(s.wealthEdge, true)} к DCA</span>` : ""}
-    <span>прибыль ${Explorer.money(s.pnl, true)} · DCA ${Explorer.money(s.dca.pnl, true)}${s.reserve ? " · в резерве " + Explorer.money(s.cash) : " · вложено " + Explorer.money(s.inv) + " против " + Explorer.money(s.dca.inv)}</span>
+    <span>прибыль ${Explorer.money(s.pnl, true)} · DCA ${Explorer.money(s.dca.pnl, true)}${s.fixed ? " · свободно " + Explorer.money(s.cash) : s.reserve ? " · в резерве " + Explorer.money(s.cash) : " · вложено " + Explorer.money(s.inv) + " против " + Explorer.money(s.dca.inv)}</span>
     ${base && (came || gone) ? `<span>к прежнему варианту: появилось ${came} дн со сделкой, ушло ${gone}</span>` : ""}
     <div style="flex-basis:100%"><div class="mix">${order.map((a) => `<i style="width:${(mix[a] / total) * 100}%;background:${COL[a]}"></i>`).join("")}</div>
     <div class="mixl">${order.map((a) => `<span><i style="background:${COL[a]}"></i>${actName(a)} — ${Math.round((mix[a] / total) * 100)}% дней</span>`).join("")}</div></div>`;
@@ -366,12 +393,12 @@ function results() {
     const rows = SETS.avg.map((k) => {
       setup(k, true);
       const dd = decide(), st = PCT() ? { plan: dd.acts } : { acts: dd.acts.map((a) => codes[a + 3]).join("") };
-      const hh = { ...H, strategies: [st] }, sm = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(hh, st, Explorer.startIndex(hh, years), S.unit);
-      return { k, name: RAW.ticker, v: PCT() ? sm.wealthEdge : sm.edge, w: sm.m };
+      const hh = { ...H, strategies: [st] }, sm = runSim(hh, st, Explorer.startIndex(hh, years));
+      return { k, name: RAW.ticker, v: sm.reserve ? sm.wealthEdge : sm.edge, w: sm.m };
     });
     setup(cur, true);
     const ok = rows.filter((r) => r.v != null && isFinite(r.v)), mean = ok.reduce((x, r) => x + r.v * r.w, 0) / (ok.reduce((x, r) => x + r.w, 0) || 1);
-    const unitTxt = PCT() ? "%" : " п.п.", f = (v) => (v == null || !isFinite(v) ? "—" : Explorer.pct(v, true).replace("%", unitTxt));
+    const unitTxt = PCT() || S.balance > 0 ? "%" : " п.п.", f = (v) => (v == null || !isFinite(v) ? "—" : Explorer.pct(v, true).replace("%", unitTxt));
     const c = (v) => (v == null || Math.abs(v) < 0.05 ? "" : v > 0 ? "up" : "down");
     document.getElementById("bar").insertAdjacentHTML("afterbegin", `<div class="avg"><b class="${c(mean)}" title="Средневзвешенное: вес актива — длина его истории в расчёте">${f(mean)}</b><span>средневзв. по ${rows.length} к DCA</span>
       ${rows.map((r) => `<button class="${r.k === cur ? "on" : ""}" data-tk="${r.k}">${r.name} <i class="${c(r.v)}">${f(r.v)}</i></button>`).join("")}</div>`);
@@ -389,7 +416,7 @@ function asText() {
   const lines = S.rules.filter((r) => r.on).map((r, k) =>
     `${k + 1}. если ${IND[r.a.ind].name} ${r.a.op} ${fmtV(r.a)}${r.b ? ` и ${IND[r.b.ind].name} ${r.b.op} ${fmtV(r.b)}` : ""} → ${actName(actOf(r))}`);
   const s = LAST;
-  return `Стратегия для ${RAW.title} (режим: ${PCT() ? "доля портфеля, взнос $" + S.unit + " в день" : "веса, ×1 = $" + S.unit}; период: ${S.period})\n${lines.join("\n")}\nиначе → ${actName(baseAct())}\n` +
+  return `Стратегия для ${RAW.title} (режим: ${PCT() ? "доля портфеля, взнос $" + S.unit + " в день" : "веса, ×1 = $" + S.unit + (S.balance > 0 ? ", начальный баланс $" + S.balance : "")}; период: ${S.period})\n${lines.join("\n")}\nиначе → ${actName(baseAct())}\n` +
     (s ? `Результат: ${s.reserve ? "итог " + Explorer.pct(s.wealthEdge, true) + " к DCA, " : ""}${Explorer.pct(s.irr, true)} в год, ${s.edge == null ? "" : Explorer.pct(s.edge, true).replace("%", " п.п.")} к DCA, прибыль ${Explorer.money(s.pnl, true)} против ${Explorer.money(s.dca.pnl, true)}` : "");
 }
 
@@ -529,11 +556,13 @@ function condHtml(r, key, label) {
     <input type="range" data-f="v" id="s-${r.id}-${key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${c.v}" aria-label="Порог"></div>`;
 }
 function rulesPanel() {
+  setupRow();
   const el = document.getElementById("left");
   el.innerHTML = `<div class="cap">Как считать</div>
     <div class="mode"><button class="${PCT() ? "on" : ""}" data-mode="pct">Доля портфеля</button><button class="${PCT() ? "" : "on"}" data-mode="w">Веса ×1–×3</button></div>
     <p class="hint">${PCT() ? "Каждый день в резерв приходит взнос — столько же, сколько тратит DCA. Правило решает: купить на взнос, пропустить и копить, добавить часть резерва или продать часть позиции. Разница с DCA — только от правил."
-      : "Правило задаёт размер покупки. Стратегия может вложить больше денег, чем DCA, поэтому прибыль в долларах сравнивать нельзя."}</p>
+      : S.balance > 0 ? "На счёте сразу лежит начальный баланс. Покупка ×N тратит N размеров ×1, пока деньги есть; продажа возвращает деньги на счёт. DCA тратит по ×1 в день с такого же баланса. Баланс и размер ×1 задаются наверху."
+      : "Правило задаёт размер покупки, деньги не ограничены. Стратегия может вложить больше, чем DCA, поэтому прибыль в долларах сравнивать нельзя."}</p>
     <div class="caprow"><div class="cap">Правила</div><button class="btn dark sm" data-tool="add">+ Правило</button></div>` + S.rules.map((r, k) => `
     <div class="rule ${r.id === S.focus ? "focus" : ""} ${r.on ? "" : "off"}" data-rule="${r.id}">
       <div class="rhead"><div class="rnum">${k + 1}</div>

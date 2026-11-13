@@ -136,6 +136,41 @@
              dca: { inv: dinv, value: dvalue, pnl: dvalue - dinv, irr: dirr }, edge: irr != null && dirr != null ? irr - dirr : null };
   }
 
+  /* Веса с начальным балансом: на счёте сразу лежит balance долларов. Покупка ×N тратит N·unit со счёта, пока деньги есть;
+     продажа ×N возвращает N·unit на счёт. Обычный DCA тратит по unit в день с такого же баланса. Итог = позиция + остаток. */
+  function simulateBalance(h, st, i0, unit, balance) {
+    const n = h.t.length, m = n - i0, c = h.c, t = h.t, acts = st.acts;
+    const B = Math.min(110, m), buy = new Float64Array(B), sell = new Float64Array(B);
+    const profit = new Float64Array(m), dprofit = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m), share = new Float32Array(m);
+    let units = 0, cash = balance, du = 0, dcash = balance, rec = 0, spent = 0, buys = 0, sells = 0, skips = 0, cashShare = 0, empty = -1, dempty = -1;
+    for (let j = 0; j < m; j++) {
+      const i = i0 + j, p = c[i], a = i > 0 ? CODES.indexOf(acts[i - 1]) - 3 : 1, b = Math.min(B - 1, Math.floor((j * B) / m));
+      if (a > 0) {
+        const amt = Math.min(a * unit, cash);
+        if (amt > 0.005) { units += amt / p; cash -= amt; spent += amt; buy[b] += amt; dbuy[j] = amt; buys++; } else skips++;
+        if (empty < 0 && cash < unit) empty = j;
+      } else if (a < 0) {
+        const amt = Math.min(-a * unit, units * p);
+        if (amt > 0.005) { units -= amt / p; cash += amt; rec += amt; sell[b] += amt; dsell[j] = amt; sells++; } else skips++;
+      } else skips++;
+      const damt = Math.min(unit, dcash);
+      if (damt > 0) { du += damt / p; dcash -= damt; }
+      if (dempty < 0 && dcash < unit) dempty = j;
+      const wealth = units * p + cash;
+      share[j] = wealth > 0 ? ((units * p) / wealth) * 100 : 0;
+      cashShare += wealth > 0 ? cash / wealth : 0;
+      profit[j] = wealth - balance; dprofit[j] = du * p + dcash - balance;
+    }
+    const last = c[n - 1], value = units * last + cash, dvalue = du * last + dcash, yrs = Math.max(1 / 365.25, (t[n - 1] - t[i0]) / 365.25);
+    const cagr = (v) => (v > 0 ? (Math.pow(v / balance, 1 / yrs) - 1) * 100 : -100);
+    let max30 = 0, run = 0;
+    for (let j = 0; j < m; j++) { run += dbuy[j]; if (j >= 30) run -= dbuy[j - 30]; if (run > max30) max30 = run; }
+    const irr = cagr(value), dirr = cagr(dvalue);
+    return { reserve: true, fixed: true, share, i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv: balance, rec, value, units, cash, cashShare: cashShare / m, spent,
+             pnl: value - balance, irr, buys, sells, skips, max30, empty: empty < 0 ? null : t[i0 + empty], dempty: dempty < 0 ? null : t[i0 + dempty],
+             dca: { inv: balance, value: dvalue, pnl: dvalue - balance, irr: dirr }, edge: irr - dirr, wealthEdge: (value / dvalue - 1) * 100 };
+  }
+
   /* Режим «доля портфеля»: каждый день в резерв приходит unit долларов — столько же, сколько тратит DCA.
      План дня: 0 — пропуск (взнос копится); 1 — обычная покупка на дневной взнос; 1 + f — взнос и доля f накопленного резерва;
      -f — продать долю f позиции в резерв. Итог = позиция + резерв. */
@@ -409,12 +444,18 @@
     style();
     const st = h.strategies.find((x) => x.code === code) || h.strategies[0];
     const period = fitPeriod(h, o.period || "all"), i0 = startIndex(h, yearsOf(period)), unit = o.unit || 10;
-    const s = st.plan ? simulateReserve(h, st, i0, unit) : simulate(h, st, i0, unit);
+    const s = st.plan ? simulateReserve(h, st, i0, unit) : o.balance > 0 ? simulateBalance(h, st, i0, unit, o.balance) : simulate(h, st, i0, unit);
     const d = s.edge, isDca = st.code === "dca";
     const cls = isDca || d == null || Math.abs(d) < 0.05 ? "" : d > 0 ? "up" : "down";
     const anySell = s.rec > 0;
     const yrs = byYear(h, s);
-    const cells = s.reserve ? [
+    const cells = s.fixed ? [
+      ["Начальный баланс", money(s.inv)], ["Итог: позиция и остаток", money(s.value)],
+      ["Прибыль", money(s.pnl, true)], ["Прибыль DCA", money(s.dca.pnl, true)],
+      ["Свободно на счёте", money(s.cash)], ["Свободно в среднем", pct(s.cashShare * 100) + " капитала"],
+      ["Баланс закончился", s.empty ? fmtDate(s.empty) : "не закончился"], ["У DCA закончился", s.dempty ? fmtDate(s.dempty) : "не закончился"],
+      ["Дней с покупкой", s.buys.toLocaleString("ru-RU") + " из " + s.m.toLocaleString("ru-RU")], ["Макс. покупка за 30 дн", money(s.max30)],
+    ] : s.reserve ? [
       ["Внесено", money(s.inv)], ["Итог: позиция и резерв", money(s.value)],
       ["Прибыль", money(s.pnl, true)], ["Прибыль DCA", money(s.dca.pnl, true)],
       ["В резерве сейчас", money(s.cash)], ["Резерв в среднем", pct(s.cashShare * 100) + " капитала"],
@@ -424,7 +465,7 @@
       ["Прибыль", money(s.pnl, true)], isDca ? ["Дней", s.m.toLocaleString("ru-RU")] : ["Прибыль DCA", money(s.dca.pnl, true)],
       ["Дней с покупкой", s.buys.toLocaleString("ru-RU") + " из " + s.m.toLocaleString("ru-RU")], ["Макс. трата за 30 дн", money(s.max30)],
     ];
-    if (anySell) cells.push([s.reserve ? "Продано в резерв" : "Получено от продаж", money(s.rec)], ["Дней с продажей", s.sells.toLocaleString("ru-RU")]);
+    if (anySell) cells.push([s.fixed ? "Продано на счёт" : s.reserve ? "Продано в резерв" : "Получено от продаж", money(s.rec)], ["Дней с продажей", s.sells.toLocaleString("ru-RU")]);
     el.innerHTML = `<div class="ex">
       ${o.onBack ? '<button class="ex-back" data-back>‹ Стратегии</button>' : ""}
       ${o.bare ? "" : `<div class="ex-h">${esc(st.name)}</div><div class="ex-about">${esc(st.about)}</div>`}
@@ -439,7 +480,7 @@
       <div class="ex-grid">${cells.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <details class="ex-years"><summary>По годам</summary><div class="scroll"><table><thead><tr><th>Год</th><th>Куплено</th>${anySell ? "<th>Продано</th>" : ""}<th>Прибыль</th>${isDca ? "" : "<th>DCA</th>"}</tr></thead>
         <tbody>${yrs.map((r) => `<tr><td>${r.y}</td><td>${money(r.buy)}</td>${anySell ? `<td>${money(r.sell)}</td>` : ""}<td>${money(r.pnl, true)}</td>${isDca ? "" : `<td>${money(r.dpnl, true)}</td>`}</tr>`).join("")}</tbody></table></div></details>
-      <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ${s.reserve ? "Взнос " + money(unit) + " в день, как у DCA; резерв не приносит дохода" : "×1 = " + money(unit)}. Значки под свечой — покупки, над свечой — продажи: один значок — ×1, три — ×3. Прибыль по годам — накопленная с начала периода. Без комиссий и налогов.</div>
+      <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ${s.fixed ? "Начальный баланс " + money(s.inv) + ", ×1 = " + money(unit) + "; DCA тратит по ×1 в день с такого же баланса; свободные деньги дохода не приносят" : s.reserve ? "Взнос " + money(unit) + " в день, как у DCA; резерв не приносит дохода" : "×1 = " + money(unit)}. Значки под свечой — покупки, над свечой — продажи: один значок — ×1, три — ×3. Прибыль по годам — накопленная с начала периода. Без комиссий и налогов.</div>
       ${o.onSelect ? `<button class="ex-use" data-use ${st.code === o.active ? "disabled" : ""}>${st.code === o.active ? "Выбрана" : "Выбрать"}</button>` : ""}
     </div>`;
     candles(el.querySelector("[data-candles]"), h, s, unit, { win: o.win, base: o.base,
@@ -450,5 +491,5 @@
     const use = el.querySelector("[data-use]"); if (use) use.addEventListener("click", () => o.onSelect(st.code));
   }
 
-  window.Explorer = { simulate, simulateReserve, startIndex, list, detail, money, pct, price, fmtDate, CODES };
+  window.Explorer = { simulate, simulateReserve, simulateBalance, startIndex, list, detail, money, pct, price, fmtDate, CODES };
 })();
