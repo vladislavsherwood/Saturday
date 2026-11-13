@@ -727,6 +727,11 @@ for _sym, _t in (("ADA-USD", "ADA"), ("LTC-USD", "LTC"), ("LINK-USD", "LINK"), (
                  ("FIL-USD", "FIL"), ("NEAR-USD", "NEAR"), ("AAVE-USD", "AAVE")):
     ASSETS[_t.lower()] = {"symbol": _sym, "slug": _t.lower(), "title": _t, "ticker": _t, "bpy": 365, "skip": 205,
                           "pair": ("BTC-USD", _t + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
+# мемкоины; у монет с историей короче трёх с половиной лет индикаторы считаются с первых дней
+for _sym, _t, _skip in (("SHIB-USD", "SHIB", 205), ("PEPE24478-USD", "PEPE", 20), ("BONK-USD", "BONK", 20), ("WIF-USD", "WIF", 20),
+                        ("FLOKI-USD", "FLOKI", 205), ("FARTCOIN-USD", "FARTCOIN", 20)):
+    ASSETS[_t.lower()] = {"symbol": _sym, "slug": _t.lower(), "title": _t, "ticker": _t, "bpy": 365, "skip": _skip,
+                          "pair": ("BTC-USD", _t + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
@@ -776,8 +781,10 @@ def build_raw(asset):
 
 
 def main(out, page="gold"):
+    if page.startswith("list:"):                 # произвольный набор активов для расчётов: list:btc,eth,sol
+        PAGES[page], STORE[page] = (page[5:].split(","), "Набор активов"), "tmp"
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple') else page}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple') else page.replace(':', '_').replace(',', '_')[:40]}.json")
     simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов

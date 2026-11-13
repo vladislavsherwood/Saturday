@@ -100,7 +100,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
   }
   const ACTS = [-0.25, -0.1, -0.05, -0.02, 0, 1, 1.25, 1.5, 2], BASES = [0, 1];
   const newCond = () => { const ind = pick(KEYS); return { ind, op: rnd() < 0.5 ? '<' : '>', v: pick(Q[ind]) }; };
-  const newRule = () => ({ conds: Array.from({ length: maxConds > 1 && rnd() > 0.65 ? 2 : 1 }, newCond), act: pick(ACTS) });
+  const newRule = () => ({ conds: Array.from({ length: 1 + (maxConds > 1 && rnd() < 0.35 ? 1 : 0) + (maxConds > 2 && rnd() < 0.15 ? 1 : 0) }, newCond), act: pick(ACTS) });
   const clone = (S) => ({ base: S.base, rules: S.rules.map((r) => ({ act: r.act, conds: r.conds.map((c) => ({ ...c })) })) });
   function mutate(S0) {
     const S = clone(S0), u = rnd(), r = S.rules.length ? pick(S.rules) : null;
@@ -128,7 +128,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
       evals++;
       if (v >= curV || rnd() < Math.exp((v - curV) / T)) { curS = cand; curV = v; }
       if (v > bestV + 1e-9) { best = clone(cand); bestV = v; stall = 0; } else stall++;
-      if (v > 3 && pool.size < 4000) { const key = JSON.stringify(cand); if (!pool.has(key)) pool.set(key, v); }
+      if (v > 0 && pool.size < 4000) { const key = JSON.stringify(cand); if (!pool.has(key)) pool.set(key, v); }
       if (stall > 3000) { curS = rnd() < 0.5 ? clone(best) : { base: pick(BASES), rules: [newRule()] }; curV = evalS(A, curS); T = 2; stall = 0; }
     }
     T = Math.max(0.1, T * 0.985);
@@ -168,10 +168,12 @@ async function examOnly(args) {
 
 (async () => {
   if (process.argv[2] === '--exam') return examOnly(process.argv.slice(3));
-  const [file, secs, outPath, validFile, examFile, part = 'full'] = process.argv.slice(2);      // part = h1: поиск и отбор только на первой половине истории
+  const [file, secs, outPath, validFile, examFile, part = 'full', preset = 'simple'] = process.argv.slice(2);      // part = h1: поиск и отбор только на первой половине истории
   const browser = await chromium.launch();
   // четыре поиска разной сложности на наших активах
-  const cfg = [[5, 1, 2], [17, 2, 1], [23, 2, 2], [41, 3, 2]];
+  // наборы поисков: [зерно, правил не больше, условий в правиле не больше]
+  const cfg = { simple: [[5, 1, 2], [17, 2, 1], [23, 2, 2], [41, 3, 2]], big: [[5, 4, 3], [17, 5, 3], [23, 6, 3], [41, 6, 2]],
+                mix: [[5, 2, 2], [17, 3, 2], [23, 4, 3], [41, 6, 3]] }[preset];
   const res = await Promise.all(cfg.map(async ([seed, maxRules, maxConds]) =>
     (await open(browser, file, 's' + seed)).evaluate(inPage, { seed, mode: 'full', ms: Number(secs) * 1000, unit: 10, maxRules, maxConds, part })));
   const show = (S) => S.rules.map((r) => r.conds.map((c) => `${c.ind} ${c.op} ${c.v}`).join(' и ') + ' → ' + r.act).join(' | ') + ' | иначе ' + S.base;
