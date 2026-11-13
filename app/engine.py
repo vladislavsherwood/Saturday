@@ -30,6 +30,7 @@ STRATEGIES = {
     "fngx": ("Страх и жадность", "Покупает на страхе, продаёт на жадности", "crypto"),
     "usdt": ("USDT.D", "Больше при высокой доле USDT на рынке", "crypto"),
     "vix": ("VIX", "Больше при высоком индексе волатильности", "stock"),
+    "quiet": ("Тихая вершина", "Основная для криптовалют: продаёт на страхе и на тихой вершине рынка, докупает из резерва на панике и на развороте биткоина", "crypto"),
     "merged": ("Объединённая", "Продаёт на страхе и у вершины рынка, докупает из резерва на панике, у дна и на развороте", "crypto"),
 }
 
@@ -37,6 +38,10 @@ STRATEGIES = {
 # Правила проверяются по порядку, срабатывает первое. Пороги и проверки — app/found/merged.json, markers.py, merge.js.
 MERGED_RULES = [(1.5, "у дна рынка: взнос и половина резерва"), (1.5, "паника в стейблах: взнос и половина резерва"), (-1.0, "вершина рынка: продать всё"),
                 (-0.3, "сильный страх: продать 30%"), (-0.16, "страх: продать 16%"), (2.0, "разворот биткоина: взнос и весь резерв")]
+# Основная стратегия: стабильная с тихой вершиной (проверки — app/found, qtmix.js, new100.js). Ей не нужны рыночные ряды из EXTRA.
+QUIET_RULES = [(1.5, "паника в стейблах: взнос и половина резерва"), (-0.3, "сильный страх: продать 30%"), (-0.16, "страх: продать 16%"),
+               (2.0, "разворот биткоина: взнос и весь резерв"), (-0.1, "тихая вершина: продать 10%")]
+RESERVE = {"quiet": QUIET_RULES, "merged": MERGED_RULES}
 EXTRA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "market_extra.json")
 
 
@@ -52,7 +57,7 @@ def kind_of(symbol, quote_type):
 
 
 def default_strategy(kind):
-    return {"btc": "merged", "alt": "merged"}.get(kind, "dca")
+    return {"btc": "quiet", "alt": "quiet"}.get(kind, "dca")
 
 
 def _market_extra():
@@ -61,8 +66,8 @@ def _market_extra():
     return pd.DataFrame({k: d[k] for k in ("breadth", "btctx", "btcaddr", "tvldd", "mvrv")}, index=pd.to_datetime(d["t"], unit="D"), dtype=float)
 
 
-def _merged(close, kind):
-    """План объединённой стратегии по дням, номер сработавшего правила (−1 — ни одно) и подпись к сегодняшнему дню."""
+def _reserve_plans(close, kind):
+    """Планы стратегий с резервом по дням: {код: (план, номер сработавшего правила или −1, подпись к сегодняшнему дню)}."""
     idx = close.index
     full = data.dominances()
     d = full.reindex(idx, method="ffill")
@@ -72,22 +77,34 @@ def _merged(close, kind):
     btc = close if kind == "btc" else btc_all.reindex(idx, method="ffill")
     btcr30 = (btc / btc.shift(30) - 1) * 100
     btcath = (1 - btc_all / btc_all.cummax()).reindex(idx, method="ffill") * 100
-    hi90 = (close >= close.rolling(90, min_periods=60).max()).rolling(7, min_periods=1).max() > 0
-    ex = _market_extra().reindex(idx, method="ffill")
-    btcd90 = d["btc"] - d["btc"].shift(90)
-    topm = ((d["oth"] > 27.7).astype(int) + (ex["breadth"] > 88.9) + (ex["btctx"] < 0.978) + (btcd90 < -1.35) + (ex["btcaddr"] < 1.1))
-    botm = ((ex["tvldd"] > 59).astype(int) + (d["usdt"] > 6.52) + (btcath > 57.5) + (ex["mvrv"] < 1.3))
-    conds = [botm > 3, (usdt_r > 1.07) & (d["oth"] < 25), hi90 & (topm > 4), (fng < 40) & (d["usdt"] < 7.6), (fng < 52) & (d["usdt"] < 7.6), (btcr30 > 20) & (topm < 4)]
-    rule = np.select([c.fillna(False).values for c in conds], list(range(len(conds))), default=-1)
-    plan = np.where(rule >= 0, np.array([a for a, _ in MERGED_RULES])[np.maximum(rule, 0)], 1.0)
-    label = f"вершина {int(topm.iloc[-1])} из 5 · дно {int(botm.iloc[-1])} из 4"
-    return plan, rule, label
+    oth90 = d["oth"] - d["oth"].shift(90)
+    panic, strong, weak = (usdt_r > 1.07) & (d["oth"] < 25), (fng < 40) & (d["usdt"] < 7.6), (fng < 52) & (d["usdt"] < 7.6)
+    quiet_top = (btcath < 10) & (oth90 > 1.5)                # биткоин у максимума, а деньги перетекают в альткоины
+    out = {}
+
+    def build(code, conds, label):
+        rule = np.select([c.fillna(False).values for c in conds], list(range(len(conds))), default=-1)
+        plan = np.where(rule >= 0, np.array([a for a, _ in RESERVE[code]])[np.maximum(rule, 0)], 1.0)
+        out[code] = (plan, rule, label)
+
+    f, bd = fng.iloc[-1], btcath.iloc[-1]
+    build("quiet", [panic, strong, weak, btcr30 > 20, quiet_top],
+          f"страх и жадность {f:.0f} · биткоин {bd:.0f}% до максимума" if pd.notna(f) and pd.notna(bd) else "")
+    if os.path.exists(EXTRA):
+        hi90 = (close >= close.rolling(90, min_periods=60).max()).rolling(7, min_periods=1).max() > 0
+        ex = _market_extra().reindex(idx, method="ffill")
+        btcd90 = d["btc"] - d["btc"].shift(90)
+        topm = ((d["oth"] > 27.7).astype(int) + (ex["breadth"] > 88.9) + (ex["btctx"] < 0.978) + (btcd90 < -1.35) + (ex["btcaddr"] < 1.1))
+        botm = ((ex["tvldd"] > 59).astype(int) + (d["usdt"] > 6.52) + (btcath > 57.5) + (ex["mvrv"] < 1.3))
+        build("merged", [botm > 3, panic, hi90 & (topm > 4), strong, weak, (btcr30 > 20) & (topm < 4)],
+              f"вершина {int(topm.iloc[-1])} из 5 · дно {int(botm.iloc[-1])} из 4")
+    return out
 
 
-def position(symbol, kind, since, unit):
-    """Резерв и позиция на сегодня, если с даты since каждый день следовать плану объединённой стратегии, и сумма на сегодня."""
+def position(symbol, kind, since, unit, strategy="quiet"):
+    """Резерв и позиция на сегодня, если с даты since каждый день следовать плану стратегии с резервом, и сумма на сегодня."""
     s = series(symbol, kind)
-    st = next(x for x in s["strategies"] if x["code"] == "merged")
+    st = next(x for x in s["strategies"] if x["code"] == strategy)
     t, c, plan = s["t"], s["c"], st["plan"]
     start = (pd.Timestamp(since) - pd.Timestamp("1970-01-01")).days
     i0 = next((i for i, d in enumerate(t) if d >= start), len(t))
@@ -195,15 +212,15 @@ def series(symbol, kind):
         meta["vix"] = {"label": f"VIX {v.iloc[-1]:.0f}"} if pd.notna(v.iloc[-1]) else {}
 
     plans = {}
-    if kind in ("btc", "alt") and os.path.exists(EXTRA):
+    if kind in ("btc", "alt"):
         try:
-            plan, rule, label = _merged(close, kind)
-            plans["merged"] = plan
-            # для отметок и трёх полосок на главном экране план переводится в привычные −3…3
-            acts["merged"] = np.select([plan <= -1, plan <= -0.3, plan < 0, plan >= 2, plan > 1], [-3, -2, -1, 3, 2], default=1).astype(int)
-            meta["merged"] = {"label": label, "action": MERGED_RULES[rule[-1]][1] if rule[-1] >= 0 else "обычный взнос", "plan_today": float(plan[-1])}
+            for code, (plan, rule, label) in _reserve_plans(close, kind).items():
+                plans[code] = plan
+                # для отметок и трёх полосок на главном экране план переводится в привычные −3…3
+                acts[code] = np.select([plan <= -1, plan <= -0.3, plan < 0, plan >= 2, plan > 1], [-3, -2, -1, 3, 2], default=1).astype(int)
+                meta[code] = {"label": label, "action": RESERVE[code][rule[-1]][1] if rule[-1] >= 0 else "обычный взнос", "plan_today": float(plan[-1])}
         except Exception as e:  # noqa: BLE001
-            print("объединённая стратегия:", e)
+            print("стратегии с резервом:", e)
 
     keep = idx >= START
     out = {

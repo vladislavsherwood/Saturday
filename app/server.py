@@ -52,6 +52,10 @@ def init_db():
         create index if not exists purchases_day on purchases(day);
         """)
         con.execute("insert or ignore into settings values('unit', '10')")
+        if not con.execute("select 1 from settings where key='main_quiet'").fetchone():      # «Тихая вершина» — основная стратегия для всей крипты
+            if "strategy" in [r[1] for r in con.execute("pragma table_info(tickers)")]:
+                con.execute("update tickers set strategy='quiet' where kind in ('btc', 'alt')")
+            con.execute("insert into settings values('main_quiet', '1')")
         if "since" not in [r[1] for r in con.execute("pragma table_info(tickers)")]:      # с какого дня ведётся резерв объединённой стратегии
             con.execute("alter table tickers add column since text")
             con.execute("update tickers set since=?", (datetime.now(timezone.utc).strftime("%Y-%m-%d"),))
@@ -140,7 +144,7 @@ def api_today(_=Depends(auth)):
             item.update(d)
             item["amount"] = round(item["unit"] * d["mult"], 2)
             if d.get("reserve_mode"):                       # объединённая стратегия: сумма зависит от накопленного резерва и позиции
-                item.update(engine.position(t["symbol"], t["kind"], t["since"] or day, item["unit"]))
+                item.update(engine.position(t["symbol"], t["kind"], t["since"] or day, item["unit"], t["strategy"]))
                 if d["mult"] < 0 and abs(item["amount"]) < 0.005:      # продавать пока нечего: взнос просто идёт в резерв
                     item.update({"mult": 0, "amount": 0, "action": item["action"] + " — позиции ещё нет, взнос идёт в резерв"})
         except Exception as e:  # noqa: BLE001
