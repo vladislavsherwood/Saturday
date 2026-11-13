@@ -86,8 +86,8 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .mix i { display: block; height: 100%; }
   .mixl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--mute); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .mixl i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
-  .knobs { display: flex; flex-wrap: wrap; gap: 14px 10px; margin-top: 14px; }
-  .kcell { width: 104px; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 10px 4px 10px; border-radius: 18px; background: var(--surface); border: 2px solid transparent; }
+  .knobs { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin: 0 -4px; scrollbar-width: thin; }
+  .kcell { flex: none; width: 98px; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 8px 4px 8px; border-radius: 18px; background: var(--bg); border: 2px solid transparent; }
   .kcell.focus { border-color: var(--text); }
   .knob { position: relative; width: 76px; height: 76px; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; border-radius: 50%; }
   .knob:active { cursor: grabbing; }
@@ -104,6 +104,13 @@ PAGE = r"""<title>__PAGETITLE__</title>
   :root[data-theme="dark"] .bar .up { color: #3ecf8e; } :root[data-theme="dark"] .bar .down { color: #ff7a70; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kact.buy { color: #3ecf8e; } :root:not([data-theme="light"]) .kact.sell { color: #f08a5b; } }
   :root[data-theme="dark"] .kact.buy { color: #3ecf8e; } :root[data-theme="dark"] .kact.sell { color: #f08a5b; }
+  @media (max-width: 939px) {
+    body { padding-block: 12px 48px; }
+    h1 { font-size: 19px; } .lead, .mixl { display: none; }
+    .bar { gap: 2px 10px; font-size: 13.5px; padding: 6px 0; margin-top: 4px; } .bar b { font-size: 21px; }
+    .main { margin-top: 8px; } .card { padding: 10px 12px 18px; border-radius: 18px; }
+    .kcell { width: 88px; padding: 6px 2px; } .klabel { font-size: 11.5px; } .kact { font-size: 11px; }
+  }
   @media (min-width: 940px) {
     .main { grid-template-columns: 400px minmax(0, 1fr); }
     .left { order: -1; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
@@ -112,12 +119,11 @@ PAGE = r"""<title>__PAGETITLE__</title>
 </style>
 <div class="wrap">
   <h1>Конструктор стратегии <span>· __TITLE__</span></h1>
-  <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги — отметки покупок и продаж на графике перестроятся сразу.</p>
+  <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
   <div class="bar" id="bar"></div>
-  <div class="cap" style="margin-top:14px">Крутилки</div>
-  <div class="knobs" id="knobs"></div>
+
   <div class="main">
-    <div class="card" id="result"></div>
+    <div class="card"><div class="knobs" id="knobs"></div><div id="result"></div></div>
     <div class="left rules" id="left"></div>
   </div>
 </div>
@@ -235,14 +241,18 @@ function indPanel(c, g) {
 }
 
 /* ---------- результат ---------- */
-let LAST = null;
+let LAST = null, BASE = null;
+// снимок перед каждой правкой: с ним сравнивается график, пока вы меняете правило
+function snapshot() { if (LAST) BASE = LAST; }
 function results() {
   const { acts, who } = decide();
   const codes = Explorer.CODES;
   const mine = PCT() ? { plan: acts } : { acts: acts.map((a) => codes[a + 3]).join("") };
   const h = { ...H, strategies: [{ code: "mine", name: "Моя стратегия", about: summary(), ...mine }] };
   const focus = S.rules.find((r) => r.id === S.focus && r.on);
-  Explorer.detail(document.getElementById("result"), h, "mine", { period: S.period, unit: S.unit, win: WIN,
+  const years0 = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0, start0 = Explorer.startIndex(h, years0);
+  const base = BASE && BASE.i0 === start0 && BASE.m === N - start0 ? BASE : null;
+  Explorer.detail(document.getElementById("result"), h, "mine", { period: S.period, unit: S.unit, win: WIN, bare: true, base,
     onPeriod: (p) => { S.period = p; WIN = null; save(); results(); },
     onDraw: (el, g, sim) => {
       WIN = { a: g.a, b: g.b };
@@ -251,6 +261,11 @@ function results() {
   const years = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0;
   const i0 = Explorer.startIndex(h, years), s = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(h, h.strategies[0], i0, S.unit);
   LAST = s;
+  let came = 0, gone = 0;
+  if (base) for (let j = 0; j < s.m; j++) {
+    const now = s.dbuy[j] > 0 || s.dsell[j] > 0, was = base.dbuy[j] > 0 || base.dsell[j] > 0;
+    if (now && !was) came++; else if (!now && was) gone++;
+  }
   const d = s.edge, cls = d == null || Math.abs(d) < 0.05 ? "" : d > 0 ? "up" : "down";
   // распределение дней по действиям и сколько дней решает каждое правило
   const mix = {}, per = {};
@@ -264,6 +279,7 @@ function results() {
     <span class="${cls}">${d == null ? "" : Explorer.pct(d, true).replace("%", " п.п.") + " к DCA"}</span>
     ${s.reserve ? `<span class="${cls}">итог ${Explorer.pct(s.wealthEdge, true)} к DCA</span>` : ""}
     <span>прибыль ${Explorer.money(s.pnl, true)} · DCA ${Explorer.money(s.dca.pnl, true)}${s.reserve ? " · в резерве " + Explorer.money(s.cash) : " · вложено " + Explorer.money(s.inv) + " против " + Explorer.money(s.dca.inv)}</span>
+    ${base && (came || gone) ? `<span>к прежнему варианту: появилось ${came} дн со сделкой, ушло ${gone}</span>` : ""}
     <div style="flex-basis:100%"><div class="mix">${order.map((a) => `<i style="width:${(mix[a] / total) * 100}%;background:${COL[a]}"></i>`).join("")}</div>
     <div class="mixl">${order.map((a) => `<span><i style="background:${COL[a]}"></i>${actName(a)} — ${Math.round((mix[a] / total) * 100)}% дней</span>`).join("")}</div></div>`;
   document.querySelectorAll("[data-count]").forEach((el) => {
@@ -328,6 +344,7 @@ function setKnob(el, v) {
   box.addEventListener("pointerdown", (e) => {
     const el = e.target.closest(".knob"); if (!el) return;
     const k = info(el); if (!k) return;
+    snapshot();
     drag = { el, x: e.clientX, y: e.clientY, v: k.c.v, range: k.d.max - k.d.min };
     try { el.setPointerCapture(e.pointerId); } catch (err) {}
     setKnob(el, k.c.v); e.preventDefault();
@@ -338,7 +355,7 @@ function setKnob(el, v) {
   box.addEventListener("keydown", (e) => {
     const el = e.target.closest(".knob"); if (!el) return;
     const k = info(el), dir = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
-    if (k && dir) { setKnob(el, k.c.v + dir * k.d.step); e.preventDefault(); }
+    if (k && dir) { snapshot(); setKnob(el, k.c.v + dir * k.d.step); e.preventDefault(); }
   });
   box.addEventListener("wheel", (e) => { const el = e.target.closest(".knob"); if (!el) return; const k = info(el); if (k) { setKnob(el, k.c.v + (e.deltaY < 0 ? 1 : -1) * k.d.step); e.preventDefault(); } }, { passive: false });
 })();
@@ -388,6 +405,8 @@ function rulesPanel() {
 }
 function ruleOf(target) { const box = target.closest("[data-rule]"); return box ? S.rules.find((r) => String(r.id) === box.dataset.rule) : null; }
 const left = document.getElementById("left");
+left.addEventListener("pointerdown", snapshot, true);
+left.addEventListener("keydown", (e) => { if (e.target.matches("input")) snapshot(); }, true);
 left.addEventListener("input", (e) => {
   const f = e.target.dataset.f, r = ruleOf(e.target);
   if (!r || f !== "v") return;

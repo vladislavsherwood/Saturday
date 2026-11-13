@@ -9,6 +9,7 @@
   .ex { --viz-buy: #1baf7a; --viz-sell: #eb6834; --viz-strat: #2a78d6; --viz-ref: #8b9098; --good: #0c8a4a; --badc: #d1483f; }
   :root[data-theme="dark"] .ex { --viz-buy: #199e70; --viz-sell: #d95926; --viz-strat: #3987e5; --viz-ref: #7d858e; --good: #3ecf8e; --badc: #ff7a70; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ex { --viz-buy: #199e70; --viz-sell: #d95926; --viz-strat: #3987e5; --viz-ref: #7d858e; --good: #3ecf8e; --badc: #ff7a70; } }
+  .ex [hidden] { display: none !important; }
   .ex-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--bg); border-radius: 12px; padding: 3px; margin: 18px 0 10px; }
   .ex-seg button { padding: 8px 0; border-radius: 9px; font-weight: 700; font-size: 14px; color: var(--mute); }
   .ex-seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
@@ -203,10 +204,11 @@
   function candles(box, h, s, unit, opts) {
     opts = opts || {};
     const m = s.m, i0 = s.i0, t = h.t, C = h.c, O = h.o || h.c, Hi = h.h || h.c, Lo = h.l || h.c;
-    const anySell = s.rec > 0;
+    const base = opts.base && opts.base.m === m && opts.base.i0 === i0 ? opts.base : null;
+    const anySell = s.rec > 0 || (base && base.rec > 0);
     const w0 = opts.win;
     const win = w0 && w0.b <= m && w0.a >= 0 && w0.b - w0.a >= 30 ? { a: w0.a, b: w0.b } : { a: 0, b: m };
-    box.innerHTML = `<div class="ex-cap"><span>Цена и сделки</span><span><i class="mk">${TRI_UP}покупка</i>${anySell ? `<i class="mk">${TRI_DN}продажа</i>` : ""}</span></div>
+    box.innerHTML = `<div class="ex-cap"><span>Цена и сделки</span><span>${base ? '<i class="mk"><svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 1L10 9H1z" fill="none" stroke="var(--text)" stroke-width="1.6"/></svg>появилось</i><i class="mk"><svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 1L10 9H1z" fill="none" stroke="var(--mute)" stroke-width="1.2" stroke-dasharray="2 1.5"/></svg>ушло</i>' : ""}<i class="mk">${TRI_UP}покупка</i>${anySell ? `<i class="mk">${TRI_DN}продажа</i>` : ""}</span></div>
       <div class="ex-plot ex-candles"><div class="ex-tip"></div><div data-svg></div></div>
       <div class="ex-zoom"><button data-z="out" aria-label="Отдалить">−</button><button data-z="in" aria-label="Приблизить">+</button>
         <button data-z="all" class="wide">Весь период</button><span data-range></span></div>`;
@@ -220,13 +222,14 @@
       let lo = Infinity, hi = -Infinity;
       for (let q = 0; q < n; q++) {
         const ja = win.a + q * k, jb = Math.min(win.b, ja + k);
-        let hh = -Infinity, ll = Infinity, buy = 0, sell = 0, bd = 0, sd = 0;
+        let hh = -Infinity, ll = Infinity, buy = 0, sell = 0, bd = 0, sd = 0, gb = 0, gs = 0;
         for (let j = ja; j < jb; j++) {
           const i = i0 + j;
           if (Hi[i] > hh) hh = Hi[i]; if (Lo[i] < ll) ll = Lo[i];
           if (s.dbuy[j] > 0) { buy += s.dbuy[j]; bd++; } if (s.dsell[j] > 0) { sell += s.dsell[j]; sd++; }
+          if (base) { gb += base.dbuy[j]; gs += base.dsell[j]; }
         }
-        bk.push({ ja, jb, o: O[i0 + ja], c: C[i0 + jb - 1], h: hh, l: ll, buy, sell, bd, sd });
+        bk.push({ ja, jb, o: O[i0 + ja], c: C[i0 + jb - 1], h: hh, l: ll, buy, sell, bd, sd, gb, gs });
         if (hh > hi) hi = hh; if (ll < lo) lo = ll;
       }
       const lmin = Math.log(lo), lmax = Math.log(hi) > lmin ? Math.log(hi) : lmin + 0.01;
@@ -257,14 +260,17 @@
         // число значков = средний размер сделки за свечу: один — ×1, три — ×3
         const days = b.jb - b.ja, r = Math.max(2.2, Math.min(4.6, cw * 0.44)), stepY = r * 1.6 + 1.5;
         const level = (sum) => Math.max(1, Math.min(3, Math.round(sum / (unit * days))));
-        if (b.buy > 0) for (let q2 = 0; q2 < level(b.buy); q2++) {
-          const y = Y(b.l) + 4 + q2 * stepY;
-          marks += `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${r.toFixed(1)} ${(r * 1.6).toFixed(1)}h${(-2 * r).toFixed(1)}z" fill="var(--viz-buy)"/>`;
-        }
-        if (b.sell > 0) for (let q2 = 0; q2 < level(b.sell); q2++) {
-          const y = Y(b.h) - 4 - q2 * stepY;
-          marks += `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${r.toFixed(1)} ${(-r * 1.6).toFixed(1)}h${(-2 * r).toFixed(1)}z" fill="var(--viz-sell)"/>`;
-        }
+        const tri = (y, dir, attrs) => `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${r.toFixed(1)} ${(dir * r * 1.6).toFixed(1)}h${(-2 * r).toFixed(1)}z" ${attrs}/>`;
+        const draw = (now, was, y0, dir, col) => {
+          if (now > 0) {
+            const fresh = base && was === 0 ? ` stroke="var(--text)" stroke-width="1.4"` : "";
+            for (let q2 = 0; q2 < level(now); q2++) marks += tri(y0 + dir * q2 * stepY, dir, `fill="${col}"${fresh}`);
+          } else if (base && was > 0) {
+            for (let q2 = 0; q2 < level(was); q2++) marks += tri(y0 + dir * q2 * stepY, dir, 'fill="none" stroke="var(--mute)" stroke-width="1" stroke-dasharray="2 1.5"');
+          }
+        };
+        draw(b.buy, b.gb, Y(b.l) + 4, 1, "var(--viz-buy)");
+        draw(b.sell, b.gs, Y(b.h) - 4, -1, "var(--viz-sell)");
       });
       const last = bk[bk.length - 1];
       holder.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Свечной график цены с отметками покупок и продаж">
@@ -411,13 +417,14 @@
     if (anySell) cells.push([s.reserve ? "Продано в резерв" : "Получено от продаж", money(s.rec)], ["Дней с продажей", s.sells.toLocaleString("ru-RU")]);
     el.innerHTML = `<div class="ex">
       ${o.onBack ? '<button class="ex-back" data-back>‹ Стратегии</button>' : ""}
-      <div class="ex-h">${esc(st.name)}</div><div class="ex-about">${esc(st.about)}</div>
-      ${seg(period, h)}
-      <div class="ex-hero"><b>${pct(s.irr, true)}</b><span>в год</span>
+      ${o.bare ? "" : `<div class="ex-h">${esc(st.name)}</div><div class="ex-about">${esc(st.about)}</div>`}
+      ${o.bare ? "" : seg(period, h)}
+      <div class="ex-hero" ${o.bare ? "hidden" : ""}><b>${pct(s.irr, true)}</b><span>в год</span>
         ${isDca ? "" : `<span class="ex-delta ${cls}" style="font-size:15px">${d == null ? "" : pct(d, true).replace("%", " п.п.") + " к DCA"}</span>`}
         ${s.reserve ? `<span class="ex-delta ${cls}" style="font-size:15px">итог ${pct(s.wealthEdge, true)} к DCA</span>` : ""}</div>
       <div data-candles></div>
       <div data-extra></div>
+      ${o.bare ? seg(period, h) : ""}
       <div data-profit></div>
       <div class="ex-grid">${cells.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <details class="ex-years"><summary>По годам</summary><div class="scroll"><table><thead><tr><th>Год</th><th>Куплено</th>${anySell ? "<th>Продано</th>" : ""}<th>Прибыль</th>${isDca ? "" : "<th>DCA</th>"}</tr></thead>
@@ -425,7 +432,7 @@
       <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ${s.reserve ? "Взнос " + money(unit) + " в день, как у DCA; резерв не приносит дохода" : "×1 = " + money(unit)}. Значки под свечой — покупки, над свечой — продажи: один значок — ×1, три — ×3. Прибыль по годам — накопленная с начала периода. Без комиссий и налогов.</div>
       ${o.onSelect ? `<button class="ex-use" data-use ${st.code === o.active ? "disabled" : ""}>${st.code === o.active ? "Выбрана" : "Выбрать"}</button>` : ""}
     </div>`;
-    candles(el.querySelector("[data-candles]"), h, s, unit, { win: o.win,
+    candles(el.querySelector("[data-candles]"), h, s, unit, { win: o.win, base: o.base,
       onDraw: o.onDraw ? (g) => o.onDraw(el.querySelector("[data-extra]"), g, s) : null });
     profitChart(el.querySelector("[data-profit]"), h, s);
     el.querySelectorAll("[data-period]").forEach((b) => b.addEventListener("click", () => o.onPeriod && o.onPeriod(b.dataset.period)));
