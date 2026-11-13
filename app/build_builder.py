@@ -81,9 +81,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .mode button.on { background: var(--text); color: var(--bg); }
   .hint { color: var(--mute); font-size: 13.5px; font-weight: 600; margin: 0 2px 6px; line-height: 1.4; }
   .amt { display: inline-flex; align-items: center; gap: 6px; color: var(--mute); font-weight: 700; font-size: 14px; margin-top: 2px; }
-  .knob.inrule { margin: 4px 6px 0 0; flex: none; }
-  .acts::after { content: ""; flex-basis: 100%; height: 0; order: 1; }
-  .acts .knob.inrule, .acts .amt { order: 2; }
+  .acts .amt { flex-basis: 100%; }
   .amt input { width: 74px; padding: 7px 8px; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; }
   .btn { padding: 11px 16px; border-radius: 14px; background: var(--surface); font-weight: 750; }
@@ -404,7 +402,7 @@ function setKnob(el, v) {
   S.focus = r.id;
   if (key === "amt") {
     r.pact = actOf(r) < 0 ? -v / 100 : +(1 + v / 100).toFixed(4);
-    const twin = document.getElementById("amt-" + rid); if (twin) twin.value = v;
+    for (const pre of ["amt-", "amts-"]) { const twin = document.getElementById(pre + rid); if (twin) twin.value = v; }
     left.querySelectorAll(`[data-rule="${rid}"] .act`).forEach((x) => x.classList.toggle("on", Number(x.dataset.act) === r.pact));
     // подпись «продать N%» есть и у соседних крутилок этого правила
     document.querySelectorAll(`.kcell[data-kr="${rid}"] .kact`).forEach((x) => { if (!["и", "% позиции", "% сверх взноса"].includes(x.textContent)) x.textContent = actName(r.pact); });
@@ -480,9 +478,9 @@ function rulesPanel() {
       ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}
       <button class="link" data-f="${r.b ? "delb" : "addb"}">${r.b ? "убрать второе условие" : "+ второе условие"}</button>
       <div class="acts"><span>то</span>${ACTS().map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${actOf(r) === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}
-        ${PCT() && actOf(r) !== 0 ? `<div class="knob inrule" data-knob="${r.id}:amt" role="slider" tabindex="0" aria-label="${actOf(r) < 0 ? AMT.name : AMT_BUY.name}" aria-valuemin="${kget(r, "amt").d.min}" aria-valuemax="${kget(r, "amt").d.max}" aria-valuenow="${kget(r, "amt").v}">${knobInner(r, "amt")}</div>` : ""}
         ${PCT() && actOf(r) < 0 ? `<label class="amt">или <input type="number" data-f="amt" id="amt-${r.id}" min="0.5" max="50" step="0.5" value="${+(-actOf(r) * 100).toFixed(2)}" aria-label="Сколько продавать, процент позиции"> % позиции</label>` : ""}
         ${PCT() && actOf(r) >= 1 ? `<label class="amt">взнос и <input type="number" data-f="amt" id="amt-${r.id}" min="0" max="100" step="5" value="${+((actOf(r) - 1) * 100).toFixed(2)}" aria-label="Сколько добавить из резерва, процент"> % резерва</label>` : ""}</div>
+      ${PCT() && actOf(r) !== 0 ? `<input type="range" data-f="amt" id="amts-${r.id}" min="${kget(r, "amt").d.min}" max="${kget(r, "amt").d.max}" step="${kget(r, "amt").d.step}" value="${kget(r, "amt").v}" aria-label="${actOf(r) < 0 ? AMT.name : AMT_BUY.name}">` : ""}
     </div>`).join("") + `
     <div class="rule" data-rule="base"><div class="rhead"><div class="rnum">…</div><span class="sp" data-count="0" style="text-align:left"></span></div>
       <div class="acts"><span>иначе</span>${ACTS().filter(([a]) => a >= 0 && (!PCT() || a <= 1)).map(([a, n]) => `<button class="act ${baseAct() === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
@@ -503,6 +501,7 @@ left.addEventListener("input", (e) => {
     if (actOf(r) < 0) { if (!(v > 0)) return; r.pact = -Math.min(50, Math.max(0.1, v)) / 100; }
     else r.pact = +(1 + Math.min(100, v) / 100).toFixed(4);
     S.focus = r.id;
+    for (const pre of ["amt-", "amts-"]) { const twin = document.getElementById(pre + r.id); if (twin && twin !== e.target) twin.value = kget(r, "amt").v; }
     left.querySelectorAll(`[data-rule="${r.id}"] .act`).forEach((x) => x.classList.toggle("on", Number(x.dataset.act) === r.pact));
     knobs(); save(); results(); return;
   }
