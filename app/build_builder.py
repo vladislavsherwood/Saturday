@@ -170,16 +170,22 @@ function setup(key, quiet) {
   if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
   if (RAW.fng) IND.fng = { short: "Страх и жадность", name: "Индекс страха и жадности", min: 5, max: 95, step: 1, def: 25, v: fill(RAW.fng) };
   if (RAW.usdt) IND.usdt = { short: "USDT.D / SMA200", name: "USDT.D к средней за 200 дней", min: 0.6, max: 1.6, step: 0.01, def: 1.2, v: ratio(fill(RAW.usdt), 200) };
+  if (RAW.dom) {
+    IND.usdtd = { short: "USDT.D, %", name: "USDT.D — доля USDT на рынке, %", min: 3, max: 8, step: 0.1, def: 6.5, v: fill(RAW.dom.usdt) };
+    IND.btcd = { short: "BTC.D, %", name: "BTC.D — доля биткоина, %", min: 40, max: 65, step: 0.5, def: 58, v: fill(RAW.dom.btc) };
+    IND.ethd = { short: "ETH.D, %", name: "ETH.D — доля эфира, %", min: 8, max: 20, step: 0.5, def: 12, v: fill(RAW.dom.eth) };
+    IND.othd = { short: "Альты, %", name: "Доля альткоинов (без BTC, ETH, USDT), %", min: 20, max: 45, step: 0.5, def: 28, v: fill(RAW.dom.oth) };
+  }
   if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
-  for (const key of ["sma200", "sma50", "dd", "ret30", "ret90", "dxy", "usdt", "pair"]) {
+  for (const key of ["sma200", "sma50", "dd", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
     const d = IND[key]; if (!d) continue;
     const vals = d.v.filter((x) => x != null && !isNaN(x)).sort((x, y) => x - y); if (vals.length < 50) continue;
     const q = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
-    const big = d.step >= 1 ? 5 : 0.05;
+    const big = d.step >= 1 ? 5 : d.step >= 0.1 ? 1 : 0.05;
     const lo = Math.floor(q(0.003) / big) * big, hi = Math.ceil(q(0.997) / big) * big;
     d.min = key === "dd" ? 0 : +Math.min(d.min, lo).toFixed(3); d.max = +Math.max(d.max, hi).toFixed(3);
-    if (d.max - d.min > 250 * d.step) d.step = d.step >= 1 ? 5 : 0.05;
+    if (d.max - d.min > 250 * d.step) d.step = d.step >= 1 ? 5 : d.step >= 0.1 ? 0.5 : 0.05;
   }
   SKIP = RAW.skip;                             // разогрев индикаторов не входит в расчёт
   H = { t: RAW.t.slice(SKIP), c: RAW.c.slice(SKIP), o: RAW.o.slice(SKIP), h: RAW.h.slice(SKIP), l: RAW.l.slice(SKIP) };
@@ -404,6 +410,10 @@ const PRESETS = [
   ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
   ["Продавать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 80 }, act: -1 }, "top"],
   ["Продавать, когда цена выше средней за 200 дней на…", { a: { ind: "sma200", op: ">", v: 1.25 }, act: -1 }, "top"],
+  ["Покупать ×2, когда USDT.D выше…", { a: { ind: "usdtd", op: ">", v: 6.5 }, act: 2 }, "end"],
+  ["Не покупать, когда USDT.D ниже…", { a: { ind: "usdtd", op: "<", v: 4.5 }, act: 0 }, "top"],
+  ["Покупать ×2, когда BTC.D выше…", { a: { ind: "btcd", op: ">", v: 60 }, act: 2 }, "end"],
+  ["Покупать ×2, когда доля альткоинов ниже…", { a: { ind: "othd", op: "<", v: 24 }, act: 2 }, "end"],
   ["Своё правило", { a: { ind: "ret30", op: "<", v: -5 }, act: 2 }, "end"],
 ];
 
@@ -464,7 +474,7 @@ left.addEventListener("click", (e) => {
   const f = t.dataset.f, k = r ? S.rules.indexOf(r) : -1;
   if (t.dataset.tool === "add") {
     const box = document.getElementById("presets");
-    box.innerHTML = box.innerHTML ? "" : '<div class="presets">' + PRESETS.map((x, n) => `<button data-preset="${n}">${x[0]}</button>`).join("") + "</div>";
+    box.innerHTML = box.innerHTML ? "" : '<div class="presets">' + PRESETS.map((x, n) => (IND[x[1].a.ind] ? `<button data-preset="${n}">${x[0]}</button>` : "")).join("") + "</div>";
     return;
   }
   else if (t.dataset.preset !== undefined) {
@@ -569,7 +579,9 @@ def build_raw(asset):
         raw["dxy"] = r6(data.history("DX-Y.NYB")[0].reindex(idx, method="ffill").values)
     if cfg.get("crypto"):
         raw["fng"] = r6(data.fear_greed().reindex(idx, method="ffill").values)
-        raw["usdt"] = r6(data.usdt_dominance().reindex(idx, method="ffill").values)
+        dom = data.dominances().reindex(idx, method="ffill")
+        raw["usdt"] = r6(dom["usdt"].values)
+        raw["dom"] = {k: [None if x != x else round(float(x), 3) for x in dom[k].values] for k in ("usdt", "btc", "eth", "oth")}
     if cfg.get("pair"):
         raw["pair"] = r6(data.history(cfg["pair"][0])[0].reindex(idx, method="ffill").values)
         raw["pairName"] = cfg["pair"][1]

@@ -133,6 +133,13 @@ def mvrv_history():
 
 def usdt_dominance():
     """USDT.D по дням, в процентах (капитализация USDT / вся капитализация рынка)."""
+    return dominances()["usdt"].dropna()
+
+
+def dominances():
+    """Доли рынка по дням, в процентах: usdt, btc, eth и остальные (всё, кроме этих трёх).
+
+    Считается из капитализаций: монета / вся капитализация рынка."""
     base = "https://api.coinmarketcap.com/data-api/v3"
 
     def load():
@@ -141,10 +148,25 @@ def usdt_dominance():
             d = _get(f"{base}/global-metrics/quotes/historical?format=chart&interval=1d&timeStart={a}&timeEnd={b}", timeout=60)
             for q in d["data"]["quotes"]:
                 total[q["timestamp"][:10]] = q["quote"][0]["totalMarketCap"]
-        u = _get(f"{base}/cryptocurrency/historical?id=825&convertId=2781&timeStart=1420070400&timeEnd=1893456000&interval=1d",
-                 timeout=60)
-        usdt = {q["timeOpen"][:10]: q["quote"]["marketCap"] for q in u["data"]["quotes"]}
-        days = sorted(k for k in total if k in usdt and total[k])
-        return {"t": days, "v": [usdt[k] / total[k] * 100 for k in days]}
-    d = _cached("usdt_d.json", 12 * 3600, load)
-    return pd.Series(d["v"], index=pd.to_datetime(d["t"])).sort_index()
+        caps = {}
+        this_year = datetime.now(timezone.utc).year
+        for name, cid in (("btc", 1), ("eth", 1027), ("usdt", 825)):
+            caps[name] = {}
+            for year in range(2015, this_year + 1):          # длинный запрос источник отдаёт по неделям, годовой — по дням
+                t0 = int(datetime(year, 1, 1, tzinfo=timezone.utc).timestamp())
+                t1 = int(datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp())
+                u = _get(f"{base}/cryptocurrency/historical?id={cid}&convertId=2781&timeStart={t0}&timeEnd={t1}&interval=1d",
+                         timeout=60)
+                for q in (u.get("data") or {}).get("quotes") or []:
+                    caps[name][q["timeOpen"][:10]] = q["quote"]["marketCap"]
+                time.sleep(0.25)
+        days = sorted(k for k in total if total[k] and k in caps["btc"])
+        out = {"t": days}
+        for name in caps:
+            out[name] = [(caps[name].get(k) or 0) / total[k] * 100 for k in days]
+        return out
+    d = _cached("dominances_daily.json", 12 * 3600, load)
+    df = pd.DataFrame({k: d[k] for k in ("usdt", "btc", "eth")}, index=pd.to_datetime(d["t"])).sort_index()
+    df = df.where(df > 0)                                  # до появления монеты доли нет
+    df["oth"] = 100 - df["btc"] - df["eth"].fillna(0) - df["usdt"].fillna(0)
+    return df
