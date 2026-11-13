@@ -51,7 +51,8 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
   // итог к DCA одного актива, %: комиссия FEE, сделка через lag+1 дней после решения
   function edgeOf(X, S, lag) {
     // pnl — прибыль позиции к средней цене покупки, %: зависит от самих сделок, поэтому считается по ходу расчёта
-    const P = new Float64Array(X.c.length).fill(NaN), I = (k) => (k === 'pnl' ? P : X.ind[k]);
+    // cashp — какая доля счёта лежит в резерве, %
+    const P = new Float64Array(X.c.length).fill(NaN), Q = new Float64Array(X.c.length).fill(NaN), I = (k) => (k === 'pnl' ? P : k === 'cashp' ? Q : X.ind[k]);
     const rs = S.rules.filter((r) => r.conds.every((cd) => I(cd.ind)));
     const arrs = rs.map((r) => r.conds.map((cd) => [I(cd.ind), cd.op === '<', cd.v])), acts = rs.map((r) => r.act);
     let cash = 0, units = 0, sells = 0, buys = 0, cost = 0;
@@ -61,6 +62,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
       if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cost *= 1 + a; cash += amt * (1 - FEE); sells++; } }
       else if (a > 0) { const amt = Math.min(cash, unit + (a - 1) * before); units += (amt * (1 - FEE)) / p; cost += amt; cash -= amt; buys++; }
       if (cost > 0) P[i] = ((units * p) / cost - 1) * 100;
+      Q[i] = (cash / (cash + units * p)) * 100;
     }
     return { e: ((units * X.c[X.b - 1] + cash) / X.dca - 1) * 100, sells, buys };
   }

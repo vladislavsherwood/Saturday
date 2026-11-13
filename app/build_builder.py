@@ -236,9 +236,11 @@ function setup(key, quiet) {
     IND.ethd = { short: "ETH.D, %", name: "ETH.D — доля эфира, %", min: 8, max: 20, step: 0.5, def: 12, v: fill(RAW.dom.eth) };
     IND.othd = { short: "Альты, %", name: "Доля альткоинов (без BTC, ETH, USDT), %", min: 20, max: 45, step: 0.5, def: 28, v: fill(RAW.dom.oth) };
   }
+  // состояние всего рынка: изменение биткоина за 30 дней (для самого биткоина — его собственное)
+  if (RAW.fng) IND.btcr30 = { need: 30, short: "BTC за месяц, %", name: "Биткоин за 30 дней, %", min: -30, max: 40, step: 1, def: 20, v: change(RAW.pair ? fill(RAW.pair) : C, 30) };
   if (RAW.pair) IND.pair = { need: 200, short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
-  for (const key of ["sma200", "sma50", "dd", "ath", "ret1", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
+  for (const key of ["sma200", "sma50", "dd", "ath", "ret1", "ret30", "ret90", "btcr30", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
     const d = IND[key]; if (!d) continue;
     const vals = d.v.filter((x) => x != null && !isNaN(x)).sort((x, y) => x - y); if (vals.length < 50) continue;
     const q = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
@@ -547,6 +549,7 @@ const PRESETS = [
   ["Структура: продавать при выходе из восходящей структуры (пробой последней впадины)", { a: { ind: "st15", op: ">", v: 0 }, b: { ind: "sl15", op: "<", v: 1 }, act: -1 }, "top"],
   ["Структура: не покупать в нисходящей структуре", { a: { ind: "st15", op: "<", v: 0 }, b: null, act: 0 }, "top"],
   ["Структура: покупать ×2 на пробое последней вершины", { a: { ind: "sh15", op: ">", v: 1 }, b: null, act: 2 }, "end"],
+  ["Рынок: покупать ×2, когда биткоин вырос за месяц больше чем на 20%", { a: { ind: "btcr30", op: ">", v: 20 }, b: null, act: 2 }, "end"],
   ["Свечи: покупать ×2 на седьмой красной свече подряд", { a: { ind: "red", op: ">", v: 6 }, b: null, act: 2 }, "end"],
   ["Свечи: продавать на седьмой зелёной свече подряд", { a: { ind: "green", op: ">", v: 6 }, b: null, act: -1 }, "top"],
   ["Объём: покупать ×2 при всплеске объёма на падении", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: "<", v: 0 }, act: 2 }, "end"],
@@ -778,8 +781,9 @@ PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypt
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
 PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "Экзаменационные монеты")
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
+PAGES["impulse"] = (PAGES["crypto"][0], "Стратегия с возвратом")      # мягкая с градацией продаж и возвратом резерва на импульсе биткоина
 PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -825,12 +829,12 @@ def main(out, page="gold"):
     if page.startswith("list:"):                 # произвольный набор активов для расчётов: list:btc,eth,sol
         PAGES[page], STORE[page] = (page[5:].split(","), "Набор активов"), "tmp"
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple') else page.replace(':', '_').replace(',', '_')[:40]}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse') else page.replace(':', '_').replace(',', '_')[:40]}.json")
     simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
         best = {"w": best}
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else json.load(open(os.path.join(HERE, "impulse_crypto.json"), encoding="utf-8")) if page == "impulse" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP)
