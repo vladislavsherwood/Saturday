@@ -94,7 +94,8 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .bar b { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
   .bar .up { color: #0c8a4a; } .bar .down { color: #d1483f; } .bar span { color: var(--mute); }
   .avg { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 13px; font-weight: 700; color: var(--mute); padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
-  .bar .avg b { font-size: 14px; font-weight: 800; color: var(--text); letter-spacing: 0; margin-right: 6px; }
+  .bar .avg b { font-size: 19px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; margin-right: 2px; }
+  .avg > span { margin-right: 6px; }
   .avg button { padding: 3px 9px; border-radius: 999px; background: var(--surface); font-weight: 750; font-size: 12.5px; color: var(--text); }
   .avg button.on { box-shadow: inset 0 0 0 1.5px var(--text); }
   .avg i { font-style: normal; color: var(--mute); }
@@ -127,6 +128,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
     body { padding-block: 12px 48px; }
     h1 { font-size: 19px; } .lead, .mixl { display: none; }
     .bar { gap: 2px 10px; font-size: 13.5px; padding: 6px 0; margin-top: 4px; } .bar b { font-size: 21px; }
+    .avg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; } .avg button { flex: none; }
     .main { margin-top: 8px; } .card { padding: 10px 12px 18px; border-radius: 18px; }
     .kcell { width: 88px; padding: 6px 2px; } .klabel { font-size: 11.5px; } .kact { font-size: 11px; }
   }
@@ -325,13 +327,13 @@ function results() {
       setup(k, true);
       const dd = decide(), st = PCT() ? { plan: dd.acts } : { acts: dd.acts.map((a) => codes[a + 3]).join("") };
       const hh = { ...H, strategies: [st] }, sm = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(hh, st, Explorer.startIndex(hh, years), S.unit);
-      return { k, name: RAW.ticker, v: PCT() ? sm.wealthEdge : sm.edge };
+      return { k, name: RAW.ticker, v: PCT() ? sm.wealthEdge : sm.edge, w: sm.m };
     });
     setup(cur, true);
-    const ok = rows.filter((r) => r.v != null && isFinite(r.v)), mean = ok.reduce((x, r) => x + r.v, 0) / (ok.length || 1);
+    const ok = rows.filter((r) => r.v != null && isFinite(r.v)), mean = ok.reduce((x, r) => x + r.v * r.w, 0) / (ok.reduce((x, r) => x + r.w, 0) || 1);
     const unitTxt = PCT() ? "%" : " п.п.", f = (v) => (v == null || !isFinite(v) ? "—" : Explorer.pct(v, true).replace("%", unitTxt));
     const c = (v) => (v == null || Math.abs(v) < 0.05 ? "" : v > 0 ? "up" : "down");
-    document.getElementById("bar").insertAdjacentHTML("afterbegin", `<div class="avg"><span>В среднем по ${rows.length}:</span> <b class="${c(mean)}">${f(mean)} к DCA</b>
+    document.getElementById("bar").insertAdjacentHTML("afterbegin", `<div class="avg"><b class="${c(mean)}" title="Средневзвешенное: вес актива — длина его истории в расчёте">${f(mean)}</b><span>средневзв. по ${rows.length} к DCA</span>
       ${rows.map((r) => `<button class="${r.k === cur ? "on" : ""}" data-tk="${r.k}">${r.name} <i class="${c(r.v)}">${f(r.v)}</i></button>`).join("")}</div>`);
   }
   document.documentElement.style.setProperty("--barh", document.getElementById("bar").offsetHeight + "px");
@@ -602,12 +604,21 @@ ASSETS = {
             "crypto": True, "rules": CRYPTO_RULES},
     "doge": {"symbol": "DOGE-USD", "slug": "doge", "title": "Dogecoin", "ticker": "DOGE", "bpy": 365, "skip": 205,
              "pair": ("BTC-USD", "DOGE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    "xrp": {"symbol": "XRP-USD", "slug": "xrp", "title": "XRP", "ticker": "XRP", "bpy": 365, "skip": 205,
+            "pair": ("BTC-USD", "XRP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    "bnb": {"symbol": "BNB-USD", "slug": "bnb", "title": "BNB", "ticker": "BNB", "bpy": 365, "skip": 205,
+            "pair": ("BTC-USD", "BNB/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    # Toncoin в 2026 году переименован в Gram; на Yahoo история оборвана, берём сплошную с CoinMarketCap
+    "ton": {"cmc": 11419, "slug": "ton", "title": "Toncoin (теперь Gram)", "ticker": "TON", "bpy": 365, "skip": 205,
+            "pair": ("BTC-USD", "TON/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    "useless": {"symbol": "USELESS36828-USD", "slug": "useless", "title": "Useless Coin", "ticker": "USELESS", "bpy": 365, "skip": 20,
+                "pair": ("BTC-USD", "USELESS/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
     "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
-PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "pump"], "Конструктор стратегии SOL")}
+PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "pump", "useless"], "Конструктор стратегии SOL")}
 STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
@@ -616,9 +627,11 @@ STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
 
 def build_raw(asset):
     cfg = ASSETS[asset]
-    symbol = cfg["symbol"]
-    data.history(symbol)
-    df = data.ohlc(symbol)
+    if cfg.get("cmc"):
+        df = data.cmc_ohlc(cfg["cmc"])
+    else:
+        data.history(cfg["symbol"])
+        df = data.ohlc(cfg["symbol"])
     df = df[df.index >= FROM]
     idx = df.index
     epoch = idx[0].__class__("1970-01-01")

@@ -170,3 +170,26 @@ def dominances():
     df = df.where(df > 0)                                  # до появления монеты доли нет
     df["oth"] = 100 - df["btc"] - df["eth"].fillna(0) - df["usdt"].fillna(0)
     return df
+
+
+def cmc_ohlc(cid):
+    """Дневные свечи монеты по её номеру на CoinMarketCap — для монет, которых нет или которые переименованы на Yahoo."""
+    base = "https://api.coinmarketcap.com/data-api/v3"
+
+    def load():
+        rows = {}
+        for year in range(2013, datetime.now(timezone.utc).year + 1):
+            t0 = int(datetime(year, 1, 1, tzinfo=timezone.utc).timestamp())
+            t1 = int(datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp())
+            u = _get(f"{base}/cryptocurrency/historical?id={cid}&convertId=2781&timeStart={t0}&timeEnd={t1}&interval=1d", timeout=60)
+            for q in (u.get("data") or {}).get("quotes") or []:
+                x = q["quote"]
+                rows[q["timeOpen"][:10]] = [x["open"], x["high"], x["low"], x["close"]]
+            time.sleep(0.25)
+        days = sorted(rows)
+        return {"t": days, "v": [rows[k] for k in days]}
+    d = _cached(f"cmc_{cid}.json", 6 * 3600, load)
+    df = pd.DataFrame(d["v"], index=pd.to_datetime(d["t"]), columns=["o", "h", "l", "c"]).astype(float)
+    df = df[df["c"] > 0]
+    today = pd.Timestamp(datetime.now(timezone.utc).date())
+    return df[df.index < today]
