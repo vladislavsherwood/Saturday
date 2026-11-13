@@ -36,6 +36,9 @@ const inject = (EX) => {
       const c = H.c, hi = c.map((x, i) => { for (let j = Math.max(0, i - 6); j <= i; j++) { let top = j >= 60; for (let q = Math.max(0, j - 89); q < j && top; q++) if (c[q] > c[j]) top = false; if (top) return 1; } return 0; });
       const lo = c.map((x, i) => { for (let j = Math.max(0, i - 6); j <= i; j++) { let bot = j >= 60; for (let q = Math.max(0, j - 89); q < j && bot; q++) if (c[q] < c[j]) bot = false; if (bot) return 1; } return 0; });
       add('hi90', hi); add('lo90', lo);
+      // «тихая вершина»: биткоин в 10% от исторического максимума, а доля альткоинов выросла на 1,5+ п.п. за 90 дней
+      const od90 = diff(IND.othd.v, 90);
+      add('oth90', od90); add('qt', c.map((x, i) => (bath[i] < 10 && od90[i] > 1.5 ? 1 : 0)));
       const g = (k) => IND[k].v, pr = IND.pair ? IND.pair.v : c.map(() => NaN);
       add('topn', c.map((x, i) => (g('othd')[i] > 27.7) + (g('breadth')[i] > 88.9) + (pr[i] > 1.38) + (g('btctx')[i] < 0.978) + (g('btcd90')[i] < -1.35) + (g('btcaddr')[i] < 1.1)));
       add('botn', c.map((x, i) => (g('tvldd')[i] > 59) + (g('usdtd')[i] > 6.52) + (bath[i] > 57.5) + (g('mvrv')[i] < 1.3) + (g('sma200')[i] < 0.532)));
