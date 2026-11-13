@@ -783,7 +783,7 @@ PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
 PAGES["impulse"] = (PAGES["crypto"][0], "Стратегия с возвратом")      # мягкая с градацией продаж и возвратом резерва на импульсе биткоина
 PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse2"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
