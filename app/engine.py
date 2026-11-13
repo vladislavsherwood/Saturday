@@ -82,14 +82,34 @@ def _reserve_plans(close, kind):
     quiet_top = (btcath < 10) & (oth90 > 1.5)                # биткоин у максимума, а деньги перетекают в альткоины
     out = {}
 
-    def build(code, conds, label):
+    def build(code, conds, label, state=None):
         rule = np.select([c.fillna(False).values for c in conds], list(range(len(conds))), default=-1)
         plan = np.where(rule >= 0, np.array([a for a, _ in RESERVE[code]])[np.maximum(rule, 0)], 1.0)
-        out[code] = (plan, rule, label)
+        out[code] = (plan, rule, label, state)
+
+    def cond(name, series, op, target, lo, hi, unit="", digits=0):
+        """Одно условие правила на сегодня: значение, порог, выполнено ли, и края шкалы для показа."""
+        v = series.iloc[-1]
+        ok = bool(pd.notna(v) and (v < target if op == "<" else v > target))
+        prev = series.iloc[-8] if len(series) > 8 else np.nan          # неделю назад — чтобы показать, куда движется
+        return {"name": name, "value": None if pd.isna(v) else round(float(v), 3), "op": op, "target": target, "ok": ok, "lo": lo, "hi": hi, "unit": unit,
+                "digits": digits, "week": None if pd.isna(prev) else round(float(prev), 3)}
 
     f, bd = fng.iloc[-1], btcath.iloc[-1]
+    c_fng = lambda t: cond("Страх и жадность", fng, "<", t, 0, 100)                                  # noqa: E731
+    c_usdt = cond("Доля USDT на рынке", d["usdt"], "<", 7.6, 2, 10, "%", 1)
+    state = [
+        {"title": "Паника в стейблах", "what": "взнос и половина резерва", "kind": "buy", "why": "Деньги бегут в стейблкоины, а альткоины уже сдулись — рынок напуган сильнее обычного.",
+         "conds": [cond("USDT.D к своей средней", usdt_r, ">", 1.07, 0.6, 1.6, "×", 2), cond("Доля альткоинов", d["oth"], "<", 25, 15, 40, "%", 1)]},
+        {"title": "Сильный страх", "what": "продать 30%", "kind": "sell", "why": "Страх уже есть, а в стейблы ещё не убежали — так выглядит начало падения.", "conds": [c_fng(40), c_usdt]},
+        {"title": "Страх", "what": "продать 16%", "kind": "sell", "why": "То же самое, но слабее: продаём понемногу.", "conds": [c_fng(52), c_usdt]},
+        {"title": "Разворот биткоина", "what": "взнос и весь резерв", "kind": "buy", "why": "Биткоин резко вырос за месяц — тревога снята, резерв возвращается в рынок.",
+         "conds": [cond("Биткоин за 30 дней", btcr30, ">", 20, -40, 60, "%", 0)]},
+        {"title": "Тихая вершина", "what": "продать 10%", "kind": "sell", "why": "Биткоин у максимума, а деньги перетекают в альткоины — поздняя стадия роста.",
+         "conds": [cond("Биткоин до максимума", btcath, "<", 10, 0, 80, "%", 0), cond("Доля альткоинов за 90 дней", oth90, ">", 1.5, -6, 6, " п.п.", 1)]},
+    ]
     build("quiet", [panic, strong, weak, btcr30 > 20, quiet_top],
-          f"страх и жадность {f:.0f} · биткоин {bd:.0f}% до максимума" if pd.notna(f) and pd.notna(bd) else "")
+          f"страх и жадность {f:.0f} · биткоин {bd:.0f}% до максимума" if pd.notna(f) and pd.notna(bd) else "", state)
     if os.path.exists(EXTRA):
         hi90 = (close >= close.rolling(90, min_periods=60).max()).rolling(7, min_periods=1).max() > 0
         ex = _market_extra().reindex(idx, method="ffill")
@@ -214,11 +234,12 @@ def series(symbol, kind):
     plans = {}
     if kind in ("btc", "alt"):
         try:
-            for code, (plan, rule, label) in _reserve_plans(close, kind).items():
+            for code, (plan, rule, label, state) in _reserve_plans(close, kind).items():
                 plans[code] = plan
                 # для отметок и трёх полосок на главном экране план переводится в привычные −3…3
                 acts[code] = np.select([plan <= -1, plan <= -0.3, plan < 0, plan >= 2, plan > 1], [-3, -2, -1, 3, 2], default=1).astype(int)
-                meta[code] = {"label": label, "action": RESERVE[code][rule[-1]][1] if rule[-1] >= 0 else "обычный взнос", "plan_today": float(plan[-1])}
+                meta[code] = {"label": label, "action": RESERVE[code][rule[-1]][1] if rule[-1] >= 0 else "обычный взнос", "plan_today": float(plan[-1]),
+                              "rule": int(rule[-1]), "state": state}
         except Exception as e:  # noqa: BLE001
             print("стратегии с резервом:", e)
 
@@ -246,4 +267,4 @@ def decide(symbol, kind, strategy):
     st = next((x for x in s["strategies"] if x["code"] == strategy), s["strategies"][0])
     return {"mult": st["today"], "price": s["price"], "currency": s["currency"], "as_of": s["as_of"],
             "label": st.get("label"), "edges": st.get("edges"), "value": st.get("value"),
-            "action": st.get("action"), "reserve_mode": "plan" in st}
+            "action": st.get("action"), "reserve_mode": "plan" in st, "plan_today": st.get("plan_today"), "rule": st.get("rule"), "state": st.get("state")}

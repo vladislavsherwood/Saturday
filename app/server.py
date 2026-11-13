@@ -51,6 +51,11 @@ def init_db():
             id integer primary key autoincrement, day text, symbol text, amount real, price real, mult real);
         create index if not exists purchases_day on purchases(day);
         """)
+        cols = [r[1] for r in con.execute("pragma table_info(purchases)")]          # журнал сделок: покупки и продажи с количеством
+        for name, kind in (("side", "text default 'buy'"), ("qty", "real"), ("fee", "real default 0"), ("source", "text default 'plan'")):
+            if name not in cols:
+                con.execute(f"alter table purchases add column {name} {kind}")
+        con.execute("update purchases set qty = amount / price where qty is null and price > 0")
         con.execute("insert or ignore into settings values('unit', '10')")
         if not con.execute("select 1 from settings where key='main_quiet'").fetchone():      # «Тихая вершина» — основная стратегия для всей крипты
             if "strategy" in [r[1] for r in con.execute("pragma table_info(tickers)")]:
@@ -122,40 +127,72 @@ def index():
     return FileResponse(os.path.join(HERE, "web", "index.html"), headers={"Cache-Control": "no-cache"})
 
 
+def ledger(con):
+    """Итоги журнала сделок по тикерам: куплено и продано в долларах, количество монет, себестоимость остатка, сделки за сегодня."""
+    day, out = today(), {}
+    for r in con.execute("select symbol, side, amount, qty, day from purchases order by day, id"):
+        o = out.setdefault(r["symbol"], {"bought": 0.0, "sold": 0.0, "qty": 0.0, "cost": 0.0, "today": 0.0, "n": 0})
+        amount, qty = abs(r["amount"] or 0), r["qty"] or 0
+        if r["side"] == "sell":
+            o["sold"] += amount
+            if o["qty"] > 0:                      # продажа уменьшает себестоимость в той же доле, что и остаток
+                o["cost"] *= max(0.0, 1 - qty / o["qty"])
+            o["qty"] = max(0.0, o["qty"] - qty)
+        else:
+            o["bought"] += amount
+            o["cost"] += amount
+            o["qty"] += qty
+        o["n"] += 1
+        if r["day"] == day:
+            o["today"] += -amount if r["side"] == "sell" else amount
+    return out
+
+
 @app.get("/api/today")
 def api_today(_=Depends(auth)):
     unit = float(setting("unit", "10"))
     day = today()
     with db() as con:
         tickers = [dict(r) for r in con.execute("select * from tickers order by pos, symbol")]
-        done = {r["symbol"]: r["amount"] for r in con.execute(
-            "select symbol, sum(amount) amount from purchases where day=? group by symbol", (day,))}
-        totals = {r["symbol"]: r["amount"] for r in con.execute(
-            "select symbol, sum(amount) amount from purchases group by symbol")}
+        books = ledger(con)
 
     def one(t):
+        bk = books.get(t["symbol"], {"bought": 0.0, "sold": 0.0, "qty": 0.0, "cost": 0.0, "today": 0.0, "n": 0})
         item = {"symbol": t["symbol"], "name": t["name"], "kind": t["kind"], "strategy": t["strategy"],
                 "strategy_name": engine.STRATEGIES.get(t["strategy"], ("?",))[0],
-                "unit": t["unit"] or unit, "custom_unit": t["unit"],
-                "allowed": engine.allowed(t["kind"]),
-                "done": done.get(t["symbol"], 0), "invested": totals.get(t["symbol"], 0)}
+                "unit": t["unit"] or unit, "custom_unit": t["unit"], "allowed": engine.allowed(t["kind"]),
+                "done": abs(bk["today"]) if bk["today"] else 0, "done_side": "sell" if bk["today"] < 0 else "buy", "invested": bk["bought"] - bk["sold"], "trades": bk["n"]}
         try:
             d = engine.decide(t["symbol"], t["kind"], t["strategy"])
             item.update(d)
+            price, qty = d["price"], max(0.0, bk["qty"])
+            item.update({"qty": qty, "holding": round(qty * price, 2), "avg_price": round(bk["cost"] / qty, 8) if qty > 1e-12 else None, "cost": round(bk["cost"], 2),
+                         "profit": round(qty * price + bk["sold"] - bk["bought"], 2)})
             item["amount"] = round(item["unit"] * d["mult"], 2)
-            if d.get("reserve_mode"):                       # объединённая стратегия: сумма зависит от накопленного резерва и позиции
-                item.update(engine.position(t["symbol"], t["kind"], t["since"] or day, item["unit"], t["strategy"]))
-                if d["mult"] < 0 and abs(item["amount"]) < 0.005:      # продавать пока нечего: взнос просто идёт в резерв
-                    item.update({"mult": 0, "amount": 0, "action": item["action"] + " — позиции ещё нет, взнос идёт в резерв"})
+            if d.get("reserve_mode"):
+                # резерв — это взносы с дня добавления тикера, которые ещё не потрачены, плюс всё вырученное с продаж; считается по реальным сделкам
+                days = (datetime.strptime(day, "%Y-%m-%d") - datetime.strptime(t["since"] or day, "%Y-%m-%d")).days + 1
+                reserve = max(0.0, item["unit"] * days - bk["bought"] + bk["sold"])
+                a, before = d["plan_today"], max(0.0, reserve - item["unit"])
+                if a < 0:
+                    amount = a * qty * price
+                else:
+                    amount = min(reserve, item["unit"] + (a - 1) * before) if a > 0 else 0.0
+                item.update({"reserve": round(reserve, 2), "amount": round(amount, 2), "share": -a if a < 0 else (a - 1 if a > 1 else 0)})
+                if a < 0 and abs(amount) < 0.005:
+                    item.update({"mult": 0, "amount": 0, "nothing_to_sell": True})
         except Exception as e:  # noqa: BLE001
             item.update({"mult": None, "amount": 0, "error": f"нет данных: {e}"})
         return item
 
     items = list(pool.map(one, tickers))
-    left = sum(i["amount"] for i in items if not i["done"] and i["amount"] > 0)
+    todo = [i for i in items if not i["done"]]
     return {"day": day, "unit": unit, "items": items,
             "total": round(sum(i["amount"] for i in items if i["amount"] > 0), 2),
-            "left": round(left, 2),
+            "left": round(sum(i["amount"] for i in todo if i["amount"] > 0), 2),
+            "sell_left": round(-sum(i["amount"] for i in todo if i["amount"] < 0), 2),
+            "reserve": round(sum(i.get("reserve") or 0 for i in items), 2), "holding": round(sum(i.get("holding") or 0 for i in items), 2),
+            "scan": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
             "strategies": {k: {"name": v[0], "about": v[1]} for k, v in engine.STRATEGIES.items()}}
 
 
@@ -254,6 +291,71 @@ def set_unit(u: Unit, _=Depends(auth)):
     return {"ok": True}
 
 
+class Trade(BaseModel):
+    symbol: str
+    side: str = "buy"                 # buy | sell
+    amount: float                     # сумма сделки в долларах, всегда положительная
+    qty: float | None = None          # сколько монет; если не задано — считается из суммы и цены
+    price: float | None = None
+    fee: float = 0
+    day: str | None = None            # ГГГГ-ММ-ДД, по умолчанию сегодня
+    source: str = "manual"            # plan — отмечено по плану, scan — со скриншота, manual — введено руками
+
+
+@app.post("/api/trades")
+def add_trade(t: Trade, _=Depends(auth)):
+    if t.side not in ("buy", "sell") or not t.amount > 0:
+        raise HTTPException(400, "Нужна сторона сделки и сумма больше нуля")
+    day = t.day or today()
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Дата должна быть в виде ГГГГ-ММ-ДД")
+    with db() as con:
+        if not con.execute("select 1 from tickers where symbol=?", (t.symbol,)).fetchone():
+            raise HTTPException(404, "Сначала добавьте этот тикер")
+        qty = t.qty if t.qty and t.qty > 0 else (t.amount / t.price if t.price and t.price > 0 else None)
+        price = t.price if t.price and t.price > 0 else (t.amount / qty if qty else None)
+        if not qty:
+            raise HTTPException(400, "Нужно количество монет или цена")
+        con.execute("insert into purchases(day, symbol, amount, price, mult, side, qty, fee, source) values(?,?,?,?,?,?,?,?,?)",
+                    (day, t.symbol, t.amount, price, None, t.side, qty, t.fee or 0, t.source))
+        since = con.execute("select since from tickers where symbol=?", (t.symbol,)).fetchone()["since"]
+        if not since or day < since:           # сделка раньше дня добавления тикера — учёт резерва начинается с неё
+            con.execute("update tickers set since=? where symbol=?", (day, t.symbol))
+    return {"ok": True}
+
+
+@app.get("/api/trades")
+def list_trades(symbol: str, _=Depends(auth)):
+    with db() as con:
+        return [dict(r) for r in con.execute("select id, day, side, amount, qty, price, fee, source from purchases where symbol=? order by day desc, id desc limit 200", (symbol,))]
+
+
+@app.delete("/api/trades/{trade_id}")
+def delete_trade(trade_id: int, _=Depends(auth)):
+    with db() as con:
+        con.execute("delete from purchases where id=?", (trade_id,))
+    return {"ok": True}
+
+
+class Shot(BaseModel):
+    image: str                        # картинка в base64 (без префикса data:)
+    media_type: str = "image/jpeg"
+
+
+@app.post("/api/scan")
+def scan_trade(shot: Shot, _=Depends(auth)):
+    """Читает скриншот сделки и возвращает черновик записи. В журнал ничего не пишет — запись делает /api/trades после подтверждения."""
+    import scan
+    with db() as con:
+        tickers = [r["symbol"] for r in con.execute("select symbol from tickers")]
+    try:
+        return scan.read(shot.image, shot.media_type, tickers, today())
+    except scan.ScanError as e:
+        raise HTTPException(e.status, str(e))
+
+
 class Done(BaseModel):
     symbol: str
     amount: float
@@ -263,10 +365,10 @@ class Done(BaseModel):
 
 @app.post("/api/done")
 def mark_done(d: Done, _=Depends(auth)):
-    with db() as con:
-        con.execute("insert into purchases(day, symbol, amount, price, mult) values(?,?,?,?,?)",
-                    (today(), d.symbol, d.amount, d.price, d.mult))
-    return {"ok": True}
+    """Отметить сделку дня как выполненную по плану: по цене из приложения. Отрицательная сумма — продажа."""
+    if not d.price or not d.amount:
+        raise HTTPException(400, "Нет суммы или цены")
+    return add_trade(Trade(symbol=d.symbol, side="sell" if d.amount < 0 else "buy", amount=abs(d.amount), price=d.price, source="plan"), _)
 
 
 @app.delete("/api/done/{symbol}")
