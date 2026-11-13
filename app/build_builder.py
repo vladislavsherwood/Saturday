@@ -80,7 +80,10 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .mode button { padding: 10px 6px; border-radius: 11px; font-weight: 750; color: var(--mute); }
   .mode button.on { background: var(--text); color: var(--bg); }
   .hint { color: var(--mute); font-size: 13.5px; font-weight: 600; margin: 0 2px 6px; line-height: 1.4; }
-  .amt { display: inline-flex; align-items: center; gap: 6px; color: var(--mute); font-weight: 700; font-size: 14px; flex-basis: 100%; margin-top: 2px; }
+  .amt { display: inline-flex; align-items: center; gap: 6px; color: var(--mute); font-weight: 700; font-size: 14px; margin-top: 2px; }
+  .knob.inrule { margin: 4px 6px 0 0; flex: none; }
+  .acts::after { content: ""; flex-basis: 100%; height: 0; order: 1; }
+  .acts .knob.inrule, .acts .amt { order: 2; }
   .amt input { width: 74px; padding: 7px 8px; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; }
   .btn { padding: 11px 16px; border-radius: 14px; background: var(--surface); font-weight: 750; }
@@ -107,6 +110,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .knob:active { cursor: grabbing; }
   .knob svg { display: block; }
   .knob b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; pointer-events: none; }
+  .knob b.sm { font-size: 13.5px; letter-spacing: -0.03em; }
   .klabel { font-size: 12.5px; font-weight: 700; margin-top: 6px; line-height: 1.2; }
   .kact { font-size: 12px; font-weight: 750; color: var(--mute); margin-top: 2px; }
   .kact.buy { color: #0c8a4a; } .kact.sell { color: #c2511f; }
@@ -128,6 +132,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   }
   @media (min-width: 940px) {
     .main { grid-template-columns: 400px minmax(0, 1fr); }
+    .knobs { position: sticky; top: var(--barh, 96px); z-index: 5; background: var(--surface); padding-top: 10px; margin-top: -10px; box-shadow: 0 8px 10px -10px rgba(0,0,0,.25); }
     .left { order: -1; position: sticky; top: calc(var(--barh, 96px) + 8px); max-height: calc(100vh - var(--barh, 96px) - 20px); overflow: auto; padding-right: 4px; }
   }
 </style>
@@ -367,7 +372,8 @@ function kget(r, key) {
 }
 function knobInner(r, key) {
   const { v, d } = kget(r, key), frac = Math.max(0, Math.min(1, (v - d.min) / (d.max - d.min)));
-  return knobSvg(frac, actColor(actOf(r))) + `<b>${key === "amt" ? fmtN(v) + "%" : fmtV(r[key])}</b>`;
+  const txt = key === "amt" ? fmtN(v) + "%" : fmtV(r[key]);
+  return knobSvg(frac, actColor(actOf(r))) + `<b class="${txt.length > 4 ? "sm" : ""}">${txt}</b>`;
 }
 function knobs() {
   const el = document.getElementById("knobs");
@@ -404,13 +410,12 @@ function setKnob(el, v) {
     r[key].v = v;
     for (const pre of ["n-", "s-"]) { const twin = document.getElementById(pre + rid + "-" + key); if (twin) twin.value = v; }
   }
-  el.innerHTML = knobInner(r, key); el.setAttribute("aria-valuenow", v);
+  document.querySelectorAll(`[data-knob="${rid}:${key}"]`).forEach((x) => { x.innerHTML = knobInner(r, key); x.setAttribute("aria-valuenow", v); });
   document.querySelectorAll(".kcell").forEach((x) => x.classList.toggle("focus", x.dataset.kr === rid));
   left.querySelectorAll(".rule").forEach((x) => x.classList.toggle("focus", x.dataset.rule === rid));
   save(); results();
 }
-(function () {
-  const box = document.getElementById("knobs");
+function bindKnobs(box) {
   let drag = null;
   const info = (el) => { const [rid, key] = el.dataset.knob.split(":"), r = S.rules.find((x) => String(x.id) === rid); if (!r) return null; const k = kget(r, key); return { c: { v: k.v }, d: k.d }; };
   box.addEventListener("pointerdown", (e) => {
@@ -430,7 +435,8 @@ function setKnob(el, v) {
     if (k && dir) { snapshot(); setKnob(el, k.c.v + dir * k.d.step); e.preventDefault(); }
   });
   box.addEventListener("wheel", (e) => { const el = e.target.closest(".knob"); if (!el) return; const k = info(el); if (k) { setKnob(el, k.c.v + (e.deltaY < 0 ? 1 : -1) * k.d.step); e.preventDefault(); } }, { passive: false });
-})();
+}
+bindKnobs(document.getElementById("knobs"));
 const PRESETS = [
   ["Не покупать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 70 }, act: 0 }, "top"],
   ["Не покупать, когда цена выше средней за 200 дней на…", { a: { ind: "sma200", op: ">", v: 1.15 }, act: 0 }, "top"],
@@ -472,6 +478,7 @@ function rulesPanel() {
       ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}
       <button class="link" data-f="${r.b ? "delb" : "addb"}">${r.b ? "убрать второе условие" : "+ второе условие"}</button>
       <div class="acts"><span>то</span>${ACTS().map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${actOf(r) === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}
+        ${PCT() && actOf(r) !== 0 ? `<div class="knob inrule" data-knob="${r.id}:amt" role="slider" tabindex="0" aria-label="${actOf(r) < 0 ? AMT.name : AMT_BUY.name}" aria-valuemin="${kget(r, "amt").d.min}" aria-valuemax="${kget(r, "amt").d.max}" aria-valuenow="${kget(r, "amt").v}">${knobInner(r, "amt")}</div>` : ""}
         ${PCT() && actOf(r) < 0 ? `<label class="amt">или <input type="number" data-f="amt" id="amt-${r.id}" min="0.5" max="50" step="0.5" value="${+(-actOf(r) * 100).toFixed(2)}" aria-label="Сколько продавать, процент позиции"> % позиции</label>` : ""}
         ${PCT() && actOf(r) >= 1 ? `<label class="amt">взнос и <input type="number" data-f="amt" id="amt-${r.id}" min="0" max="100" step="5" value="${+((actOf(r) - 1) * 100).toFixed(2)}" aria-label="Сколько добавить из резерва, процент"> % резерва</label>` : ""}</div>
     </div>`).join("") + `
@@ -484,6 +491,7 @@ function rulesPanel() {
 function ruleOf(target) { const box = target.closest("[data-rule]"); return box ? S.rules.find((r) => String(r.id) === box.dataset.rule) : null; }
 const left = document.getElementById("left");
 left.addEventListener("pointerdown", snapshot, true);
+bindKnobs(left);
 left.addEventListener("keydown", (e) => { if (e.target.matches("input")) snapshot(); }, true);
 left.addEventListener("input", (e) => {
   const f = e.target.dataset.f, r = ruleOf(e.target);
