@@ -40,6 +40,8 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .wrap { max-width: 1180px; margin: 0 auto; }
   h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin: 0; }
   h1 span { color: var(--mute); }
+  .ver { color: var(--mute); font-size: 12px; font-weight: 650; margin-top: 2px; }
+  .kmode { flex: none; align-self: center; max-width: 190px; padding: 12px 14px; border-radius: 16px; background: var(--text); color: var(--bg); font-weight: 750; font-size: 13.5px; line-height: 1.25; text-align: left; }
   .tks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .tks:empty { display: none; }
   .tk { padding: 8px 16px; border-radius: 999px; background: var(--surface); font-weight: 800; font-size: 15px; }
@@ -131,6 +133,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
 </style>
 <div class="wrap">
   <h1>Конструктор стратегии <span id="asset"></span></h1>
+  <div class="ver">версия __STAMP__</div>
   <div class="tks" id="tks"></div>
   <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
   <div class="bar" id="bar"></div>
@@ -381,6 +384,7 @@ function knobs() {
         <div class="kact ${act > 0 ? "buy" : act < 0 ? "sell" : ""}">${sub}</div></div>`;
     }).join("");
   }).join("") : '<div class="lead" style="margin:0">Добавьте правило — у него появится крутилка.</div>';
+  if (!PCT()) el.insertAdjacentHTML("beforeend", '<button class="kmode" data-mode="pct">Сейчас размер сделки — ×1–×3. Нажмите, чтобы задавать его процентом на крутилке</button>');
 }
 function setKnob(el, v) {
   const [rid, key] = el.dataset.knob.split(":"), r = S.rules.find((x) => String(x.id) === rid);
@@ -541,6 +545,7 @@ left.addEventListener("click", (e) => {
   save(); rulesPanel(); results();
 });
 document.getElementById("knobs").addEventListener("click", (e) => {
+  if (e.target.closest("[data-mode]")) { snapshot(); S.mode = "pct"; WIN = null; save(); rulesPanel(); results(); return; }
   const cell = e.target.closest(".kcell"); if (!cell || e.target.closest(".knob")) return;
   S.focus = Number(cell.dataset.kr); save(); rulesPanel(); results();
 });
@@ -598,6 +603,9 @@ PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypt
 STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
+STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
+
+
 def build_raw(asset):
     cfg = ASSETS[asset]
     symbol = cfg["symbol"]
@@ -632,7 +640,7 @@ def main(out, page="gold"):
     sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
-            .replace("__PAGETITLE__", title))
+            .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP))
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"{out}: {os.path.getsize(out) // 1024} КБ")
