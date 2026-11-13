@@ -151,7 +151,23 @@ async function open(browser, file, tag) {
   return page;
 }
 
+// Экзамен готовой стратегии: node app/simple.js --exam <стратегия.json> <название=страница.html> ...
+async function examOnly(args) {
+  const [stratFile, ...pages] = args, S = JSON.parse(fs.readFileSync(stratFile, 'utf8'));
+  const browser = await chromium.launch(), out = {};
+  for (const spec of pages) {
+    const [name, file] = spec.split('=');
+    const c = await (await open(browser, file, 'ex' + name)).evaluate(inPage, { seed: 1, unit: 10, evalOnly: S });
+    out[name] = c;
+    for (const [t, x] of [['вся история', c.full], ['первая половина', c.h1], ['вторая половина', c.h2]])
+      console.log(`${name}, ${t}: в плюсе ${x.per.filter((p) => Math.min(p[1], p[2]) > 0).length} из ${x.per.length}, худший ${x.worst.toFixed(1)}%, средний ${x.mean.toFixed(0)}%, средневзв. ${x.wavg.toFixed(0)}% | ` + x.per.map((p) => `${p[0]} ${Math.round(p[1])}/${Math.round(p[2])}`).join(', '));
+  }
+  fs.writeFileSync(stratFile + '.exam.json', JSON.stringify(out));
+  await browser.close();
+}
+
 (async () => {
+  if (process.argv[2] === '--exam') return examOnly(process.argv.slice(3));
   const [file, secs, outPath, validFile, examFile, part = 'full'] = process.argv.slice(2);      // part = h1: поиск и отбор только на первой половине истории
   const browser = await chromium.launch();
   // четыре поиска разной сложности на наших активах
