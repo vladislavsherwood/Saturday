@@ -175,13 +175,13 @@ def dominances():
     return df
 
 
-def cmc_ohlc(cid):
+def cmc_ohlc(cid, from_year=2013):
     """Дневные свечи монеты по её номеру на CoinMarketCap — для монет, которых нет или которые переименованы на Yahoo."""
     base = "https://api.coinmarketcap.com/data-api/v3"
 
     def load():
         rows = {}
-        for year in range(2013, datetime.now(timezone.utc).year + 1):
+        for year in range(from_year, datetime.now(timezone.utc).year + 1):
             t0 = int(datetime(year, 1, 1, tzinfo=timezone.utc).timestamp())
             t1 = int(datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp())
             u = _get(f"{base}/cryptocurrency/historical?id={cid}&convertId=2781&timeStart={t0}&timeEnd={t1}&interval=1d", timeout=60)

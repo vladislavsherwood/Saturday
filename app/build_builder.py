@@ -783,7 +783,7 @@ PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
 PAGES["impulse"] = (PAGES["crypto"][0], "Стратегия с возвратом")      # мягкая с градацией продаж и возвратом резерва на импульсе биткоина
 PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse2"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse3"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -794,7 +794,7 @@ def build_raw(asset):
     if cfg.get("exchange"):
         df = data.exchange_ohlc(*cfg["exchange"])
     elif cfg.get("cmc"):
-        df = data.cmc_ohlc(cfg["cmc"])
+        df = data.cmc_ohlc(cfg["cmc"], cfg.get("from_year", 2013))
     else:
         data.history(cfg["symbol"])
         df = data.ohlc(cfg["symbol"])
@@ -826,10 +826,18 @@ def build_raw(asset):
 
 
 def main(out, page="gold"):
+    if page.startswith("file:"):                 # набор монет по номерам CoinMarketCap из файла: [{"cid", "ticker", "name", "skip"}]
+        keys = []
+        for c in json.load(open(page[5:], encoding="utf-8")):
+            k = "x" + str(c["cid"])
+            ASSETS[k] = {"cmc": c["cid"], "from_year": c.get("year", 2013), "slug": k, "title": c["name"], "ticker": c["ticker"], "bpy": 365, "skip": c["skip"],
+                         "pair": ("BTC-USD", c["ticker"] + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
+            keys.append(k)
+        PAGES[page], STORE[page] = (keys, "Новые монеты"), "tmp"
     if page.startswith("list:"):                 # произвольный набор активов для расчётов: list:btc,eth,sol
         PAGES[page], STORE[page] = (page[5:].split(","), "Набор активов"), "tmp"
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse') else page.replace(':', '_').replace(',', '_')[:40]}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse') else page.replace(':', '_').replace(',', '_').replace('/', '_')[-40:]}.json")
     simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
