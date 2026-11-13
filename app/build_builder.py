@@ -720,10 +720,16 @@ ASSETS = {
     "pump": {"exchange": ("PUMPUSDT", "PUMP"), "src": "Binance, до 11.09.2025 — Hyperliquid", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
+# монеты для проверки: в поиске стратегий не участвуют
+for _sym, _t in (("ADA-USD", "ADA"), ("LTC-USD", "LTC"), ("LINK-USD", "LINK"), ("AVAX-USD", "AVAX"), ("TRX-USD", "TRX"),
+                 ("XLM-USD", "XLM"), ("DOT-USD", "DOT"), ("BCH-USD", "BCH")):
+    ASSETS[_t.lower()] = {"symbol": _sym, "slug": _t.lower(), "title": _t, "ticker": _t, "bpy": 365, "skip": 205,
+                          "pair": ("BTC-USD", _t + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
+PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
