@@ -147,7 +147,9 @@ def dominances():
         for a, b in (("2015-01-01", "2019-12-31"), ("2020-01-01", "2024-12-31"), ("2025-01-01", "2030-01-01")):
             d = _get(f"{base}/global-metrics/quotes/historical?format=chart&interval=1d&timeStart={a}&timeEnd={b}", timeout=60)
             for q in d["data"]["quotes"]:
-                total[q["timestamp"][:10]] = q["quote"][0]["totalMarketCap"]
+                # источник ставит на значение метку следующей полуночи: «13 ноября 00:00» — это итог дня 12 ноября
+                day = (datetime.fromisoformat(q["timestamp"][:10]) - timedelta(days=1)).strftime("%Y-%m-%d")
+                total[day] = q["quote"][0]["totalMarketCap"]
         caps = {}
         this_year = datetime.now(timezone.utc).year
         for name, cid in (("btc", 1), ("eth", 1027), ("usdt", 825)):
@@ -165,7 +167,7 @@ def dominances():
         for name in caps:
             out[name] = [(caps[name].get(k) or 0) / total[k] * 100 for k in days]
         return out
-    d = _cached("dominances_daily.json", 12 * 3600, load)
+    d = _cached("dominances_v3.json", 12 * 3600, load)
     df = pd.DataFrame({k: d[k] for k in ("usdt", "btc", "eth")}, index=pd.to_datetime(d["t"])).sort_index()
     df = df.where(df > 0)                                  # до появления монеты доли нет
     df["oth"] = 100 - df["btc"] - df["eth"].fillna(0) - df["usdt"].fillna(0)
