@@ -83,6 +83,14 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .amt { display: inline-flex; align-items: center; gap: 6px; color: var(--mute); font-weight: 700; font-size: 14px; margin-top: 2px; }
   .acts .amt { flex-basis: 100%; }
   .amt input { width: 74px; padding: 7px 8px; }
+  .caprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .btn.sm { padding: 8px 14px; border-radius: 12px; font-size: 14px; }
+  .kadd { flex: none; width: 76px; align-self: stretch; min-height: 96px; border-radius: 18px; border: 2px dashed var(--faint); font-size: 26px; font-weight: 700; color: var(--mute); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+  .kadd span { font-size: 12px; font-weight: 750; margin-top: 4px; }
+  .modal { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .modal[hidden] { display: none; }
+  .sheetm { background: var(--bg); border-radius: 22px; padding: 14px 14px 16px; width: min(440px, 100%); max-height: min(86vh, 720px); overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .mhead { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; } .mhead b { font-size: 18px; font-weight: 800; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; }
   .btn { padding: 11px 16px; border-radius: 14px; background: var(--surface); font-weight: 750; }
   .btn.dark { background: var(--text); color: var(--bg); }
@@ -143,6 +151,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
   <div class="bar" id="bar"></div>
 
+  <div class="modal" id="modal" hidden></div>
   <div class="main">
     <div class="card"><div class="knobs" id="knobs"></div><div id="result"></div></div>
     <div class="left rules" id="left"></div>
@@ -390,6 +399,7 @@ function knobs() {
         <div class="kact ${act > 0 ? "buy" : act < 0 ? "sell" : ""}">${sub}</div></div>`;
     }).join("");
   }).join("") : '<div class="lead" style="margin:0">Добавьте правило — у него появится крутилка.</div>';
+  el.insertAdjacentHTML("beforeend", '<button class="kadd" data-tool="add" aria-label="Добавить правило">+<span>правило</span></button>');
   if (!PCT()) el.insertAdjacentHTML("beforeend", '<button class="kmode" data-mode="pct">Сейчас размер сделки — ×1–×3. Нажмите, чтобы задавать его процентом на крутилке</button>');
 }
 function setKnob(el, v) {
@@ -452,6 +462,25 @@ const PRESETS = [
   ["Своё правило", { a: { ind: "ret30", op: "<", v: -5 }, act: 2 }, "end"],
 ];
 
+function openPresets() {
+  const m = document.getElementById("modal");
+  m.innerHTML = `<div class="sheetm" role="dialog" aria-label="Новое правило"><div class="mhead"><b>Новое правило</b><button class="ib" data-close aria-label="Закрыть">×</button></div>
+    <div class="presets">${PRESETS.map((x, n) => (IND[x[1].a.ind] ? `<button data-preset="${n}">${x[0]}</button>` : "")).join("")}</div></div>`;
+  m.hidden = false;
+}
+function closePresets() { const m = document.getElementById("modal"); m.hidden = true; m.innerHTML = ""; }
+document.getElementById("modal").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-preset]");
+  if (!b) { if (e.target.id === "modal" || e.target.closest("[data-close]")) closePresets(); return; }
+  snapshot();
+  const [, tpl, where] = PRESETS[Number(b.dataset.preset)], id = Math.max(0, ...S.rules.map((x) => x.id)) + 1;
+  const rule = { id, on: true, a: { ...tpl.a }, b: null, act: tpl.act };
+  if (where === "top") S.rules.unshift(rule); else S.rules.push(rule);
+  S.focus = id;
+  closePresets(); save(); rulesPanel(); results();
+  const card = document.querySelector(`[data-rule="${id}"]`); if (card) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
+
 /* ---------- правила ---------- */
 function condHtml(r, key, label) {
   const c = r[key], d = IND[c.ind];
@@ -467,7 +496,7 @@ function rulesPanel() {
     <div class="mode"><button class="${PCT() ? "on" : ""}" data-mode="pct">Доля портфеля</button><button class="${PCT() ? "" : "on"}" data-mode="w">Веса ×1–×3</button></div>
     <p class="hint">${PCT() ? "Каждый день в резерв приходит взнос — столько же, сколько тратит DCA. Правило решает: купить на взнос, пропустить и копить, добавить часть резерва или продать часть позиции. Разница с DCA — только от правил."
       : "Правило задаёт размер покупки. Стратегия может вложить больше денег, чем DCA, поэтому прибыль в долларах сравнивать нельзя."}</p>
-    <div class="cap">Правила</div>` + S.rules.map((r, k) => `
+    <div class="caprow"><div class="cap">Правила</div><button class="btn dark sm" data-tool="add">+ Правило</button></div>` + S.rules.map((r, k) => `
     <div class="rule ${r.id === S.focus ? "focus" : ""} ${r.on ? "" : "off"}" data-rule="${r.id}">
       <div class="rhead"><div class="rnum">${k + 1}</div>
         <button class="sw" role="switch" aria-checked="${r.on}" data-f="on" aria-label="Включить правило"></button>
@@ -521,11 +550,7 @@ left.addEventListener("click", (e) => {
   const t = e.target.closest("button"), r = ruleOf(e.target);
   if (!t) { if (r && S.focus !== r.id) { S.focus = r.id; save(); rulesPanel(); results(); } return; }
   const f = t.dataset.f, k = r ? S.rules.indexOf(r) : -1;
-  if (t.dataset.tool === "add") {
-    const box = document.getElementById("presets");
-    box.innerHTML = box.innerHTML ? "" : '<div class="presets">' + PRESETS.map((x, n) => (IND[x[1].a.ind] ? `<button data-preset="${n}">${x[0]}</button>` : "")).join("") + "</div>";
-    return;
-  }
+  if (t.dataset.tool === "add") { openPresets(); return; }
   else if (t.dataset.preset !== undefined) {
     const [, tpl, where] = PRESETS[Number(t.dataset.preset)], id = Math.max(0, ...S.rules.map((x) => x.id)) + 1;
     const rule = { id, on: true, a: { ...tpl.a }, b: null, act: tpl.act };
@@ -554,6 +579,7 @@ left.addEventListener("click", (e) => {
   save(); rulesPanel(); results();
 });
 document.getElementById("knobs").addEventListener("click", (e) => {
+  if (e.target.closest("[data-tool='add']")) { openPresets(); return; }
   if (e.target.closest("[data-mode]")) { snapshot(); S.mode = "pct"; WIN = null; save(); rulesPanel(); results(); return; }
   const cell = e.target.closest(".kcell"); if (!cell || e.target.closest(".knob")) return;
   S.focus = Number(cell.dataset.kr); save(); rulesPanel(); results();
