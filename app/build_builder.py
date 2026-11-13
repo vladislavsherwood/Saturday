@@ -797,10 +797,11 @@ PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypt
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
 PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "Экзаменационные монеты")
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
+PAGES["merged"] = (PAGES["crypto"][0], "Объединённая стратегия")      # обе стратегии вместе: страх и стейблы + маркеры вершин и дна
 PAGES["markers"] = (PAGES["crypto"][0], "Стратегия с маркером вершины")      # стратегия с возвратом плюс продажа всей позиции при пяти маркерах вершины
 PAGES["impulse"] = (PAGES["crypto"][0], "Стратегия с возвратом")      # мягкая с градацией продаж и возвратом резерва на импульсе биткоина
 PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse3", "markers": "markers1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse3", "markers": "markers1", "merged": "merged1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -869,12 +870,12 @@ def main(out, page="gold"):
     if page.startswith("list:"):                 # произвольный набор активов для расчётов: list:btc,eth,sol
         PAGES[page], STORE[page] = (page[5:].split(","), "Набор активов"), "tmp"
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse', 'markers') else page.replace(':', '_').replace(',', '_').replace('/', '_')[-40:]}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse', 'markers', 'merged') else page.replace(':', '_').replace(',', '_').replace('/', '_')[-40:]}.json")
     simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
         best = {"w": best}
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else json.load(open(os.path.join(HERE, "impulse_crypto.json"), encoding="utf-8")) if page == "impulse" else json.load(open(os.path.join(HERE, "markers_crypto.json"), encoding="utf-8")) if page == "markers" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else json.load(open(os.path.join(HERE, "impulse_crypto.json"), encoding="utf-8")) if page == "impulse" else json.load(open(os.path.join(HERE, "markers_crypto.json"), encoding="utf-8")) if page == "markers" else json.load(open(os.path.join(HERE, "merged_crypto.json"), encoding="utf-8")) if page == "merged" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP)
