@@ -110,7 +110,7 @@
     const n = h.t.length, m = n - i0, c = h.c, t = h.t, acts = st.acts;
     const B = Math.min(110, m), buy = new Float64Array(B), sell = new Float64Array(B);
     const profit = new Float64Array(m), dprofit = new Float64Array(m);
-    const ts = [], vs = [], dvs = [], spend = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m);
+    const ts = [], vs = [], dvs = [], spend = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m), share = new Float32Array(m);
     let units = 0, inv = 0, rec = 0, du = 0, dinv = 0, buys = 0, sells = 0, skips = 0;
     for (let j = 0; j < m; j++) {
       const i = i0 + j, p = c[i];
@@ -125,13 +125,14 @@
       ts.push(yr); vs.push(cf); dvs.push(-unit);
       profit[j] = units * p + rec - inv;
       dprofit[j] = du * p - dinv;
+      share[j] = units > 0 ? 100 : 0;
     }
     const last = c[n - 1], value = units * last, dvalue = du * last;
     vs[m - 1] += value; dvs[m - 1] += dvalue;
     let max30 = 0, run = 0;
     for (let j = 0; j < m; j++) { run += spend[j]; if (j >= 30) run -= spend[j - 30]; if (run > max30) max30 = run; }
     const irr = xirr(ts, vs), dirr = xirr(ts, dvs);
-    return { i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv, rec, value, units, pnl: value + rec - inv, irr, buys, sells, skips, max30,
+    return { share, i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv, rec, value, units, pnl: value + rec - inv, irr, buys, sells, skips, max30,
              dca: { inv: dinv, value: dvalue, pnl: dvalue - dinv, irr: dirr }, edge: irr != null && dirr != null ? irr - dirr : null };
   }
 
@@ -141,7 +142,7 @@
   function simulateReserve(h, st, i0, unit) {
     const n = h.t.length, m = n - i0, c = h.c, t = h.t, plan = st.plan;
     const B = Math.min(110, m), buy = new Float64Array(B), sell = new Float64Array(B);
-    const profit = new Float64Array(m), dprofit = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m);
+    const profit = new Float64Array(m), dprofit = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m), share = new Float32Array(m);
     const ts = [], vs = [];
     let units = 0, cash = 0, du = 0, rec = 0, buys = 0, sells = 0, skips = 0, cashShare = 0, spent = 0;
     for (let j = 0; j < m; j++) {
@@ -158,6 +159,7 @@
       du += unit / p;
       const dep = unit * (j + 1), wealth = units * p + cash;
       cashShare += cash / wealth;
+      share[j] = wealth > 0 ? ((units * p) / wealth) * 100 : 0;
       ts.push((t[i] - t[i0]) / 365.25); vs.push(-unit);
       profit[j] = wealth - dep; dprofit[j] = du * p - dep;
     }
@@ -167,7 +169,7 @@
     let max30 = 0, run = 0;
     for (let j = 0; j < m; j++) { run += dbuy[j]; if (j >= 30) run -= dbuy[j - 30]; if (run > max30) max30 = run; }
     const irr = xirr(ts, vs), dirr = xirr(ts, dvs);
-    return { reserve: true, i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv, rec, value, units, cash, cashShare: cashShare / m, spent,
+    return { reserve: true, share, i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv, rec, value, units, cash, cashShare: cashShare / m, spent,
              pnl: value - inv, irr, buys, sells, skips, max30, dca: { inv, value: dvalue, pnl: dvalue - inv, irr: dirr },
              edge: irr != null && dirr != null ? irr - dirr : null, wealthEdge: (value / dvalue - 1) * 100 };
   }
@@ -295,7 +297,8 @@
       const d1 = fmtDate(t[i0 + b.ja]), d2 = fmtDate(t[i0 + b.jb - 1]);
       tip.innerHTML = `<b>${days > 1 ? d1 + " — " + d2 : d1}</b>Откр ${price(b.o)} · Закр ${price(b.c)}<br>Макс ${price(b.h)} · Мин ${price(b.l)}<br>
         ${b.buy > 0 ? `${TRI_UP} Куплено ${money(b.buy)}${days > 1 ? ` за ${b.bd} дн` : ` (×${Math.round(b.buy / unit)})`}` : "Покупок нет"}
-        ${b.sell > 0 ? `<br>${TRI_DN} Продано ${money(b.sell)}${days > 1 ? ` за ${b.sd} дн` : ""}` : ""}`;
+        ${b.sell > 0 ? `<br>${TRI_DN} Продано ${money(b.sell)}${days > 1 ? ` за ${b.sd} дн` : ""}` : ""}
+        ${s.reserve ? `<br>В активе ${Math.round(s.share[b.jb - 1])}% счёта` : ""}`;
       tip.style.display = "block";
       const tw = tip.offsetWidth, px = x / sc, left = px + 12 + tw > r.width ? px - tw - 12 : px + 12;
       tip.style.left = Math.max(0, left) + "px";

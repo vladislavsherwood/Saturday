@@ -289,6 +289,28 @@ function indPanel(c, g) {
     ${Math.abs(Y(lo) - Y(c.v)) > 13 ? `<text x="${pw + 6}" y="${Y(lo)}">${num(lo)}</text>` : ""}</svg></div>`;
 }
 
+/* ---------- баланс счёта под свечами: какая доля капитала в активе, остальное — резерв ---------- */
+function balPanel(g, s) {
+  const W = g.W, pw = g.pw, hgt = 96, top = 8, ph = hgt - top - 8, Y = (v) => top + (1 - v / 100) * ph;
+  let line = "", last = 0;
+  for (let q = 0; q < g.n; q++) {
+    const jb = Math.min(g.b, g.a + (q + 1) * g.k), v = s.share[jb - 1], x = (q + 0.5) * g.cw;
+    if (q === 0) line += `M0 ${Y(v).toFixed(1)}`;
+    line += `L${x.toFixed(1)} ${Y(v).toFixed(1)}`; last = v;
+  }
+  line += `L${pw} ${Y(last).toFixed(1)}`;
+  const cur = Math.round(last), yc = Y(last);
+  return `<div class="ex-cap" style="margin-top:14px"><span>Баланс счёта</span><span><i style="--k:var(--viz-buy)">в активе</i><i style="--k:var(--faint)">в резерве</i></span></div>
+    <div class="ind"><svg viewBox="0 0 ${W} ${hgt}" height="${hgt}" role="img" aria-label="Доля капитала в активе, от 0 до 100 процентов">
+    <rect x="0" y="${Y(100)}" width="${pw}" height="${ph}" fill="var(--faint)" opacity=".45"/>
+    <path d="${line}L${pw} ${Y(0)}L0 ${Y(0)}Z" fill="var(--viz-buy)" opacity=".55"/>
+    <path d="${line}" fill="none" stroke="var(--viz-buy)" stroke-width="1.5" stroke-linejoin="round"/>
+    <line x1="0" x2="${pw}" y1="${Y(50)}" y2="${Y(50)}" stroke="var(--surface)" stroke-width="1" stroke-dasharray="3 4" opacity=".8"/>
+    ${yc - Y(100) > 13 ? `<text x="${pw + 6}" y="${Y(100) + 9}">100%</text>` : ""}
+    ${Y(0) - yc > 13 ? `<text x="${pw + 6}" y="${Y(0)}">0%</text>` : ""}
+    <text x="${pw + 6}" y="${Math.max(Y(100) + 9, Math.min(Y(0), yc + 4))}" style="fill:var(--text)">${cur}%</text></svg></div>`;
+}
+
 /* ---------- результат ---------- */
 let LAST = null, BASE = null;
 // снимок перед каждой правкой: с ним сравнивается график, пока вы меняете правило
@@ -305,7 +327,7 @@ function results() {
     onPeriod: (p) => { S.period = p; WIN = null; save(); results(); },
     onDraw: (el, g, sim) => {
       WIN = { a: g.a, b: g.b };
-      el.innerHTML = focus ? [focus.a, focus.b].filter(Boolean).map((c) => indPanel(c, g)).join("") : "";
+      el.innerHTML = balPanel(g, sim) + (focus ? [focus.a, focus.b].filter(Boolean).map((c) => indPanel(c, g)).join("") : "");
     } });
   const years = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0;
   const i0 = Explorer.startIndex(h, years), s = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(h, h.strategies[0], i0, S.unit);
