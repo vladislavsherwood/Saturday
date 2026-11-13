@@ -732,6 +732,11 @@ for _sym, _t, _skip in (("SHIB-USD", "SHIB", 205), ("PEPE24478-USD", "PEPE", 20)
                         ("FLOKI-USD", "FLOKI", 205), ("FARTCOIN-USD", "FARTCOIN", 20)):
     ASSETS[_t.lower()] = {"symbol": _sym, "slug": _t.lower(), "title": _t, "ticker": _t, "bpy": 365, "skip": _skip,
                           "pair": ("BTC-USD", _t + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
+# металлы с крипто-индикаторами: только для проверки найденных крипто-стратегий на чужом рынке, в отборе не участвуют
+for _sym, _t, _name in (("GC=F", "XAU", "Золото"), ("SI=F", "XAG", "Серебро"), ("PL=F", "XPT", "Платина"), ("PA=F", "XPD", "Палладий"),
+                        ("HG=F", "CU", "Медь")):
+    ASSETS["m" + _t.lower()] = {"symbol": _sym, "slug": "m" + _t.lower(), "title": _name, "ticker": _name, "bpy": 252, "skip": 205,
+                                "novol": True, "pair": ("BTC-USD", _name + "/BTC"), "crypto": True, "rules": CRYPTO_RULES, "from": "2017-06-01"}
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
@@ -753,7 +758,7 @@ def build_raw(asset):
     else:
         data.history(cfg["symbol"])
         df = data.ohlc(cfg["symbol"])
-    df = df[df.index >= FROM]
+    df = df[df.index >= cfg.get("from", FROM)]
     idx = df.index
     epoch = idx[0].__class__("1970-01-01")
     raw = {"t": [int(x) for x in (idx - epoch).days], "bpy": cfg["bpy"], "skip": cfg["skip"], "rules": cfg["rules"],
