@@ -248,6 +248,8 @@ function setup(key, quiet) {
     IND.lo90 = { need: 60, short: "На 90-дн. минимуме", name: "Обновила 90-дневный минимум за последние 7 дней (1 — да)", min: 0, max: 1, step: 1, def: 0, v: near(-1) };
     IND.topm = { need: 200, short: "Маркеров вершины", name: "Маркеров вершины рынка выполнено, из 5", min: 0, max: 5, step: 1, def: 4, v: C.map((x, i) => (od[i] > 27.7) + (M.breadth[i] > 88.9) + (M.btctx[i] < 0.978) + (btcd90[i] < -1.35) + (M.btcaddr[i] < 1.1)) };
     IND.botm = { need: 200, short: "Маркеров дна", name: "Маркеров дна рынка выполнено, из 4", min: 0, max: 4, step: 1, def: 3, v: C.map((x, i) => (M.tvldd[i] > 59) + (ud[i] > 6.52) + (bath[i] > 57.5) + (M.mvrv[i] < 1.3)) };
+    const od90 = od.map((x, i) => (i >= 90 ? x - od[i - 90] : NaN));
+    IND.qt = { need: 90, short: "Тихая вершина", name: "Тихая вершина: биткоин в 10% от максимума и доля альткоинов выросла на 1,5+ п.п. за 90 дней (1 — да)", min: 0, max: 1, step: 1, def: 0, v: C.map((x, i) => (bath[i] < 10 && od90[i] > 1.5 ? 1 : 0)) };
     IND.breadth = { short: "Монет выше SMA200, %", name: "Ширина рынка: доля монет выше своей средней за 200 дней, %", min: 0, max: 100, step: 1, def: 89, v: M.breadth };
     IND.btctx = { short: "Транзакции BTC", name: "Транзакции в сети биткоина: месяц к году", min: 0.7, max: 1.4, step: 0.01, def: 0.98, v: M.btctx };
     IND.btcaddr = { short: "Адреса BTC", name: "Активные адреса биткоина: месяц к году", min: 0.7, max: 1.4, step: 0.01, def: 1.1, v: M.btcaddr };
@@ -564,6 +566,7 @@ const PRESETS = [
   ["Структура: продавать при выходе из восходящей структуры (пробой последней впадины)", { a: { ind: "st15", op: ">", v: 0 }, b: { ind: "sl15", op: "<", v: 1 }, act: -1 }, "top"],
   ["Структура: не покупать в нисходящей структуре", { a: { ind: "st15", op: "<", v: 0 }, b: null, act: 0 }, "top"],
   ["Структура: покупать ×2 на пробое последней вершины", { a: { ind: "sh15", op: ">", v: 1 }, b: null, act: 2 }, "end"],
+  ["Вершина: продавать 10% в день, пока горит тихая вершина", { a: { ind: "qt", op: ">", v: 0 }, b: null, act: -1 }, "end"],
   ["Вершина: продать всё на 90-дневном максимуме при пяти маркерах вершины", { a: { ind: "hi90", op: ">", v: 0 }, b: { ind: "topm", op: ">", v: 4 }, act: -1 }, "top"],
   ["Рынок: покупать ×2, когда биткоин вырос за месяц больше чем на 20%", { a: { ind: "btcr30", op: ">", v: 20 }, b: null, act: 2 }, "end"],
   ["Свечи: покупать ×2 на седьмой красной свече подряд", { a: { ind: "red", op: ">", v: 6 }, b: null, act: 2 }, "end"],
@@ -797,11 +800,12 @@ PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypt
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
 PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "Экзаменационные монеты")
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")
+PAGES["quiet"] = (["sol", "eth", "btc", "pepe", "doge", "hype"], "Стратегия с тихой вершиной")      # стабильная плюс продажа 10% в день на тихой вершине
 PAGES["merged"] = (PAGES["crypto"][0], "Объединённая стратегия")      # обе стратегии вместе: страх и стейблы + маркеры вершин и дна
 PAGES["markers"] = (PAGES["crypto"][0], "Стратегия с маркером вершины")      # стратегия с возвратом плюс продажа всей позиции при пяти маркерах вершины
 PAGES["impulse"] = (PAGES["crypto"][0], "Стратегия с возвратом")      # мягкая с градацией продаж и возвратом резерва на импульсе биткоина
 PAGES["simple"] = (PAGES["crypto"][0], "Простая стратегия")        # открывается с простой стратегией, прошедшей проверку на чужих монетах      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse3", "markers": "markers1", "merged": "merged1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1", "simple": "simple1", "impulse": "impulse3", "markers": "markers1", "merged": "merged1", "quiet": "quiet1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -870,12 +874,12 @@ def main(out, page="gold"):
     if page.startswith("list:"):                 # произвольный набор активов для расчётов: list:btc,eth,sol
         PAGES[page], STORE[page] = (page[5:].split(","), "Набор активов"), "tmp"
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse', 'markers', 'merged') else page.replace(':', '_').replace(',', '_').replace('/', '_')[-40:]}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page in ('found', 'simple', 'impulse', 'markers', 'merged', 'quiet') else page.replace(':', '_').replace(',', '_').replace('/', '_')[-40:]}.json")
     simple_path = os.path.join(HERE, "simple_crypto.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
         best = {"w": best}
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else json.load(open(os.path.join(HERE, "impulse_crypto.json"), encoding="utf-8")) if page == "impulse" else json.load(open(os.path.join(HERE, "markers_crypto.json"), encoding="utf-8")) if page == "markers" else json.load(open(os.path.join(HERE, "merged_crypto.json"), encoding="utf-8")) if page == "merged" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": (best["pct"] if page == "found" and best else json.load(open(simple_path, encoding="utf-8")) if page == "simple" else json.load(open(os.path.join(HERE, "impulse_crypto.json"), encoding="utf-8")) if page == "impulse" else json.load(open(os.path.join(HERE, "markers_crypto.json"), encoding="utf-8")) if page == "markers" else json.load(open(os.path.join(HERE, "merged_crypto.json"), encoding="utf-8")) if page == "merged" else json.load(open(os.path.join(HERE, "quiet_crypto.json"), encoding="utf-8")) if page == "quiet" else None), "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP)
