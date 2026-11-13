@@ -153,7 +153,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   <div class="ver">версия __STAMP__<span id="src"></span></div>
   <div class="tks" id="tks"></div>
   <div class="setup" id="setup"></div>
-  <p class="lead">Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли.</p>
+  <p class="lead">__LEAD__</p>
   <div class="bar" id="bar"></div>
 
   <div class="modal" id="modal" hidden></div>
@@ -223,7 +223,7 @@ function setup(key, quiet) {
 
   /* ---------- состояние ---------- */
   if (!S) {
-    DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, balance: 10000, focus: SETS.rules[0].id, rules: SETS.rules };
+    DEFAULT = SETS.init ? JSON.parse(JSON.stringify(SETS.init)) : { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, balance: 10000, focus: SETS.rules[0].id, rules: SETS.rules };
     S = JSON.parse(JSON.stringify(DEFAULT));
     try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
     if (!S.mode) S.mode = "pct";
@@ -722,7 +722,8 @@ ASSETS = {
 }
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
-STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
+PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")      # та же страница, но открывается с найденным максимумом
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
@@ -766,14 +767,16 @@ def build_raw(asset):
 
 def main(out, page="gold"):
     assets, title = PAGES[page]
-    best_path = os.path.join(HERE, f"best_{page}.json")
+    best_path = os.path.join(HERE, f"best_{'crypto' if page == 'found' else page}.json")
     best = json.load(open(best_path, encoding="utf-8")) if os.path.exists(best_path) else None
     if best and "rules" in best:              # старый формат: одна стратегия для режима весов
         best = {"w": best}
-    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "best": best, "init": best["pct"] if page == "found" and best else None, "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
-            .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP))
+            .replace("__PAGETITLE__", title).replace("__STAMP__", STAMP)
+            .replace("__LEAD__", "Стратегия, которую нашёл перебор 1,2 млн вариантов на всей истории. Это подгонка под прошлое: на данных, которых поиск не видел, от результата остаётся от +23% до +55%. Правила можно менять — основная страница конструктора при этом не затрагивается." if page == "found"
+                     else "Правила проверяются сверху вниз, срабатывает первое подходящее. Крутите пороги над графиком: обведённые отметки появились, пунктирные ушли."))
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"{out}: {os.path.getsize(out) // 1024} КБ")
