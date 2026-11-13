@@ -6,6 +6,10 @@
   BOT_TOKEN — токен бота Telegram. Если задан, приложение открывается только из Telegram.
   OWNER_ID  — Telegram ID владельца. Если не задан, владельцем становится первый вошедший.
   DCA_DB    — путь к файлу базы (по умолчанию app/dca.db).
+  SETUP_CODE — одноразовый код первой настройки на сервере. Пока он задан, а токена бота нет, приложение закрыто,
+               и открывается только страница /setup?code=…, где владелец сам вводит токен бота и ключ Claude.
+  DCA_SECRETS — файл, куда страница настройки сохраняет эти ключи (по умолчанию app/secrets.env, права 600).
+  PUBLIC_URL — адрес приложения в интернете; нужен, чтобы после настройки прописать кнопку приложения в боте.
   DCA_REFRESH — 0, чтобы не обновлять рыночные ряды для объединённой стратегии в фоне (по умолчанию 1).
 """
 import hashlib
@@ -19,8 +23,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import data
@@ -28,6 +32,14 @@ import engine
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get("DCA_DB", os.path.join(HERE, "dca.db"))
+SECRETS = os.environ.get("DCA_SECRETS", os.path.join(HERE, "secrets.env"))
+SETUP_CODE = os.environ.get("SETUP_CODE", "")
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+if os.path.exists(SECRETS):                       # ключи, введённые владельцем на странице настройки
+    for line in open(SECRETS):
+        k, _, v = line.strip().partition("=")
+        if k and v and not os.environ.get(k):
+            os.environ[k] = v
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 OWNER_ID = os.environ.get("OWNER_ID", "")
 
@@ -95,8 +107,10 @@ def setting(key, default=None):
 
 
 def auth(x_tg_init_data: str = Header(default="")):
-    """Проверка подписи Telegram. Без BOT_TOKEN — режим разработки, вход открыт."""
+    """Проверка подписи Telegram. Без BOT_TOKEN и без SETUP_CODE — режим разработки, вход открыт."""
     if not BOT_TOKEN:
+        if SETUP_CODE:
+            raise HTTPException(503, "Приложение ещё не настроено: откройте страницу настройки")
         return 0
     pairs = dict(parse_qsl(x_tg_init_data, keep_blank_values=True))
     given = pairs.pop("hash", "")
@@ -120,6 +134,81 @@ def auth(x_tg_init_data: str = Header(default="")):
 
 def today():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "configured": bool(BOT_TOKEN), "scan": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+
+
+SETUP_PAGE = """<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройка DCA</title><style>body{font:16px/1.45 system-ui,sans-serif;max-width:520px;margin:0 auto;padding:28px 18px;background:#F3F3EF;color:#0D0E10}
+h1{font-size:26px;margin:0 0 6px}p{color:#5b616b;margin:6px 0 14px}label{display:block;font-weight:650;margin:18px 0 6px}
+input{width:100%;box-sizing:border-box;font:inherit;padding:13px 14px;border-radius:14px;border:1px solid #d9dad6;background:#fff}
+button{margin-top:22px;width:100%;font:inherit;font-weight:700;padding:15px;border:0;border-radius:16px;background:#0D0E10;color:#fff}
+.msg{padding:13px 14px;border-radius:14px;background:#fff;margin:14px 0}.bad{color:#b3261e}.ok{color:#0a7d42}small{color:#5b616b}</style>
+<h1>Настройка приложения</h1>__BODY__</html>"""
+SETUP_FORM = """<p>Ключи вводятся один раз и хранятся только на этом сервере.</p>__MSG__
+<form method="post"><input type="hidden" name="code" value="__CODE__">
+<label for="bot">Токен бота Telegram</label><input id="bot" name="bot" autocomplete="off" required placeholder="123456789:AA…">
+<small>Создайте бота у @BotFather командой /newbot и вставьте токен, который он пришлёт.</small>
+<label for="key">Ключ Claude для чтения скриншотов — необязательно</label><input id="key" name="key" autocomplete="off" placeholder="sk-ant-…">
+<small>Без него сделки вводятся вручную. Ключ берётся в console.anthropic.com.</small>
+<button>Сохранить</button></form>"""
+
+
+def setup_page(body):
+    return HTMLResponse(SETUP_PAGE.replace("__BODY__", body), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/setup")
+def setup_form(code: str = ""):
+    if BOT_TOKEN:
+        return setup_page('<div class="msg ok">Приложение уже настроено. Откройте его из своего бота в Telegram.</div>')
+    if not SETUP_CODE or not hmac.compare_digest(code, SETUP_CODE):
+        return setup_page('<div class="msg bad">Неверный код настройки.</div>')
+    return setup_page(SETUP_FORM.replace("__MSG__", "").replace("__CODE__", code))
+
+
+@app.post("/setup")
+async def setup_save(request: Request):
+    """Первая настройка: владелец сам вводит токен бота и ключ Claude. Токен проверяется у Telegram, боту ставится кнопка приложения."""
+    global BOT_TOKEN
+    form = dict(parse_qsl((await request.body()).decode(), keep_blank_values=True))
+    code, bot, key = form.get("code", ""), form.get("bot", "").strip(), form.get("key", "").strip()
+    if BOT_TOKEN:
+        return setup_page('<div class="msg ok">Приложение уже настроено.</div>')
+    if not SETUP_CODE or not hmac.compare_digest(code, SETUP_CODE):
+        return setup_page('<div class="msg bad">Неверный код настройки.</div>')
+    back = lambda text: setup_page(SETUP_FORM.replace("__MSG__", f'<div class="msg bad">{text}</div>').replace("__CODE__", code))  # noqa: E731
+    import re
+    import urllib.request
+    if not re.fullmatch(r"\d{5,}:[\w-]{30,}", bot):
+        return back("Это не похоже на токен бота. Он выглядит как 123456789:AA… и приходит от @BotFather.")
+
+    def tg(method, payload=None):
+        req = urllib.request.Request(f"https://api.telegram.org/bot{bot}/{method}", data=json.dumps(payload or {}).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.load(r)
+    try:
+        me = tg("getMe")["result"]
+    except Exception:  # noqa: BLE001
+        return back("Telegram не принял этот токен. Проверьте, что он скопирован целиком.")
+    button = ""
+    if PUBLIC_URL:
+        try:
+            tg("setChatMenuButton", {"menu_button": {"type": "web_app", "text": "DCA", "web_app": {"url": PUBLIC_URL + "/"}}})
+            button = " Кнопка «DCA» в меню бота уже настроена."
+        except Exception:  # noqa: BLE001
+            button = f" Кнопку приложения поставить не удалось — задайте её у @BotFather: /setmenubutton, адрес {PUBLIC_URL}/"
+    os.makedirs(os.path.dirname(SECRETS) or ".", exist_ok=True)
+    with open(os.open(SECRETS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        f.write(f"BOT_TOKEN={bot}\n" + (f"ANTHROPIC_API_KEY={key}\n" if key else ""))
+    BOT_TOKEN = bot
+    if key:
+        os.environ["ANTHROPIC_API_KEY"] = key
+    return setup_page(f'<div class="msg ok">Готово. Бот @{me.get("username", "")} подключён.{button}</div>'
+                      '<p>Откройте бота в Telegram и нажмите кнопку «DCA». Владельцем станет тот, кто войдёт первым, — войдите сразу.</p>')
 
 
 @app.get("/")

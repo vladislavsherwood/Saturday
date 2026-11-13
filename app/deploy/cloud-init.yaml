@@ -1,0 +1,56 @@
+#cloud-config
+# Первая загрузка сервера: ставит приложение из открытого репозитория, запускает его службой и выдаёт HTTPS-адрес.
+# __BRANCH__ и __SETUP_CODE__ подставляет deploy/provision.py. Ключей здесь нет: их владелец вводит сам на странице /setup.
+package_update: true
+packages: [python3-venv, git, caddy, ufw]
+write_files:
+  - path: /etc/systemd/system/dca.service
+    content: |
+      [Unit]
+      Description=DCA mini app
+      After=network-online.target
+      [Service]
+      User=dca
+      WorkingDirectory=/opt/dca/app
+      EnvironmentFile=/etc/dca.env
+      ExecStart=/opt/dca/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
+      Restart=always
+      RestartSec=3
+      [Install]
+      WantedBy=multi-user.target
+  - path: /usr/local/bin/dca-update
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Подтягивает новую версию из репозитория и перезапускает приложение, только если что-то изменилось.
+      cd /opt/dca || exit 0
+      old=$(git rev-parse HEAD)
+      runuser -u dca -- git pull -q --ff-only || exit 0
+      [ "$old" = "$(git rev-parse HEAD)" ] && exit 0
+      runuser -u dca -- /opt/dca/venv/bin/pip install -q -r app/requirements.txt
+      systemctl restart dca
+  - path: /etc/systemd/system/dca-update.service
+    content: |
+      [Unit]
+      Description=Update DCA mini app
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/dca-update
+  - path: /etc/systemd/system/dca-update.timer
+    content: |
+      [Unit]
+      Description=Check for a new DCA version every 5 minutes
+      [Timer]
+      OnBootSec=3min
+      OnUnitActiveSec=5min
+      [Install]
+      WantedBy=timers.target
+runcmd:
+  - useradd --system --create-home --home-dir /var/lib/dca --shell /usr/sbin/nologin dca
+  - git clone -q -b __BRANCH__ https://github.com/vladislavsherwood/Saturday /opt/dca
+  - chown -R dca:dca /opt/dca
+  - runuser -u dca -- python3 -m venv /opt/dca/venv
+  - runuser -u dca -- /opt/dca/venv/bin/pip install -q -r /opt/dca/app/requirements.txt
+  - IP=$(curl -s http://169.254.169.254/hetzner/v1/metadata/public-ipv4); HOST=$(echo "$IP" | tr . -).sslip.io; printf 'DCA_DB=/var/lib/dca/dca.db\nDCA_CACHE=/var/lib/dca/cache\nDCA_SECRETS=/var/lib/dca/secrets.env\nDCA_REFRESH=0\nSETUP_CODE=__SETUP_CODE__\nPUBLIC_URL=https://%s\n' "$HOST" > /etc/dca.env; chmod 640 /etc/dca.env; chgrp dca /etc/dca.env; printf '%s {\n\treverse_proxy 127.0.0.1:8000\n\tencode gzip\n}\n' "$HOST" > /etc/caddy/Caddyfile
+  - ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
+  - systemctl daemon-reload && systemctl enable --now dca dca-update.timer && systemctl restart caddy
