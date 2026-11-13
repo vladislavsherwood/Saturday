@@ -163,7 +163,7 @@ const SETS = __DATA__;
 let RAW, KEY, C, IND, SKIP, H, N, DEFAULT, S;
 
 /* ---------- индикаторы (считаются по закрытию дня) ---------- */
-function sma(a, n) { const o = new Array(a.length).fill(NaN); let s = 0, c = 0; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null || isNaN(v)) { continue; } s += v; c++; if (c > n) { s -= a[i - n]; c = n; } if (c >= Math.min(n, 20)) o[i] = s / c; } return o; }
+function sma(a, n) { const o = new Array(a.length).fill(NaN), w = []; let s = 0; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null || isNaN(v)) continue; w.push(v); s += v; if (w.length > n) s -= w.shift(); if (w.length >= Math.min(n, 20)) o[i] = s / w.length; } return o; }
 function ratio(a, n) { const m = sma(a, n); return a.map((v, i) => v / m[i]); }
 function rsi(a, n) { const o = new Array(a.length).fill(NaN); let up = 0, dn = 0; for (let i = 1; i < a.length; i++) { const d = a[i] - a[i - 1]; up = (up * (n - 1) + Math.max(d, 0)) / n; dn = (dn * (n - 1) + Math.max(-d, 0)) / n; if (i >= n) o[i] = dn === 0 ? 100 : 100 - 100 / (1 + up / dn); } return o; }
 function drawdown(a, n) { return a.map((v, i) => { let m = -Infinity; for (let j = Math.max(0, i - n + 1); j <= i; j++) if (a[j] > m) m = a[j]; return i < 5 ? NaN : (1 - v / m) * 100; }); }
@@ -186,10 +186,12 @@ function setup(key, quiet) {
     rsi: { short: "RSI", name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
     ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
     ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
+    ret1: { short: "За день, %", name: "Изменение за день, %", min: -10, max: 10, step: 0.5, def: 0, v: change(C, 1) },
     bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
   };
   if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
   if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
+  if (RAW.v) IND.vol = { short: "Объём / средний", name: "Объём к среднему за 20 дней", min: 0.2, max: 6, step: 0.1, def: 2, v: ratio(RAW.v.map((x) => (x > 0 ? x : NaN)), 20) };
   if (RAW.fng) IND.fng = { short: "Страх и жадность", name: "Индекс страха и жадности", min: 5, max: 95, step: 1, def: 25, v: fill(RAW.fng) };
   if (RAW.usdt) IND.usdt = { short: "USDT.D / SMA200", name: "USDT.D к средней за 200 дней", min: 0.6, max: 1.6, step: 0.01, def: 1.2, v: RAW.usdt_r ? fill(RAW.usdt_r) : ratio(fill(RAW.usdt), 200) };
   if (RAW.dom) {
@@ -200,7 +202,7 @@ function setup(key, quiet) {
   }
   if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
-  for (const key of ["sma200", "sma50", "dd", "ath", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
+  for (const key of ["sma200", "sma50", "dd", "ath", "ret1", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
     const d = IND[key]; if (!d) continue;
     const vals = d.v.filter((x) => x != null && !isNaN(x)).sort((x, y) => x - y); if (vals.length < 50) continue;
     const q = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
@@ -478,6 +480,9 @@ const PRESETS = [
   ["Покупать ×3 на просадке больше…", { a: { ind: "dd", op: ">", v: 15 }, act: 3 }, "end"],
   ["Покупать ×2, когда RSI ниже…", { a: { ind: "rsi", op: "<", v: 35 }, act: 2 }, "end"],
   ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
+  ["Объём: покупать ×2 при всплеске объёма на падении", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: "<", v: 0 }, act: 2 }, "end"],
+  ["Объём: не покупать при всплеске объёма на росте", { a: { ind: "vol", op: ">", v: 2 }, b: { ind: "ret1", op: ">", v: 0 }, act: 0 }, "top"],
+  ["Объём: продавать при всплеске объёма на росте", { a: { ind: "vol", op: ">", v: 2.5 }, b: { ind: "ret1", op: ">", v: 3 }, act: -1 }, "top"],
   ["ATH: продавать на историческом максимуме", { a: { ind: "ath", op: "<", v: 1 }, act: -1 }, "top"],
   ["ATH: не покупать на историческом максимуме", { a: { ind: "ath", op: "<", v: 1 }, act: 0 }, "top"],
   ["Продавать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 80 }, act: -1 }, "top"],
@@ -501,7 +506,7 @@ document.getElementById("modal").addEventListener("click", (e) => {
   if (!b) { if (e.target.id === "modal" || e.target.closest("[data-close]")) closePresets(); return; }
   snapshot();
   const [, tpl, where] = PRESETS[Number(b.dataset.preset)], id = Math.max(0, ...S.rules.map((x) => x.id)) + 1;
-  const rule = { id, on: true, a: { ...tpl.a }, b: null, act: tpl.act };
+  const rule = { id, on: true, a: { ...tpl.a }, b: tpl.b ? { ...tpl.b } : null, act: tpl.act };
   if (where === "top") S.rules.unshift(rule); else S.rules.push(rule);
   S.focus = id;
   closePresets(); save(); rulesPanel(); results();
@@ -639,7 +644,7 @@ CRYPTO_RULES = [
 ]
 ASSETS = {
     "gold": {
-        "symbol": "GC=F", "slug": "gcf", "title": "Золото", "ticker": "Золото", "bpy": 252, "skip": 260,
+        "symbol": "GC=F", "slug": "gcf", "title": "Золото", "ticker": "Золото", "bpy": 252, "skip": 260, "novol": True,
         "pair": ("SI=F", "Золото/серебро"), "macro": True,
         "rules": [
             {"id": 4, "on": True, "a": {"ind": "rsi", "op": ">", "v": 75}, "b": None, "act": 0},
@@ -665,12 +670,14 @@ ASSETS = {
             "pair": ("BTC-USD", "TON/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     "useless": {"symbol": "USELESS36828-USD", "slug": "useless", "title": "Useless Coin", "ticker": "USELESS", "bpy": 365, "skip": 20,
                 "pair": ("BTC-USD", "USELESS/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    "hype": {"symbol": "HYPE32196-USD", "slug": "hype", "title": "Hyperliquid", "ticker": "HYPE", "bpy": 365, "skip": 20,
+             "pair": ("BTC-USD", "HYPE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
     "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
-PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "pump"], "Конструктор стратегии SOL")}
+PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
 STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
@@ -691,6 +698,8 @@ def build_raw(asset):
            "title": cfg["title"], "ticker": cfg["ticker"], "slug": cfg["slug"], "ath0": cfg.get("ath0")}
     for k in ("o", "h", "l", "c"):
         raw[k] = r6(df[k].values)
+    if not cfg.get("novol") and (df["v"] > 0).mean() > 0.95:      # объёмы есть не у всех инструментов
+        raw["v"] = [float(f"{x:.4g}") for x in df["v"].values]
     if cfg.get("macro"):
         raw["vix"] = r6(data.history("^VIX")[0].reindex(idx, method="ffill").values)
         raw["dxy"] = r6(data.history("DX-Y.NYB")[0].reindex(idx, method="ffill").values)

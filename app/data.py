@@ -54,12 +54,13 @@ def history(symbol):
         res = _get(url)["chart"]["result"][0]
         q = res["indicators"]["quote"][0]
         meta = res["meta"]
-        return {"t": res["timestamp"], "c": q["close"], "o": q.get("open"), "h": q.get("high"), "l": q.get("low"),
+        return {"t": res["timestamp"], "c": q["close"], "o": q.get("open"), "h": q.get("high"), "l": q.get("low"), "v": q.get("volume"),
                 "price": meta.get("regularMarketPrice"), "currency": meta.get("currency", "USD")}
     safe = "".join(ch if ch.isalnum() else "_" for ch in symbol)
-    d = _cached(f"ohlc_{safe}.json", 3600, load)
+    d = _cached(f"ohlcv_{safe}.json", 3600, load)
     idx = pd.to_datetime(d["t"], unit="s").normalize()
     df = pd.DataFrame({k: pd.Series(d.get(k) or d["c"], index=idx, dtype=float) for k in ("o", "h", "l", "c")})
+    df["v"] = pd.Series(d.get("v") or [0] * len(idx), index=idx, dtype=float).fillna(0)      # объём торгов за день
     df = df[df["c"] > 0]
     df = df[~df.index.duplicated(keep="last")]
     today = pd.Timestamp(datetime.now(timezone.utc).date())
@@ -186,12 +187,12 @@ def cmc_ohlc(cid):
             u = _get(f"{base}/cryptocurrency/historical?id={cid}&convertId=2781&timeStart={t0}&timeEnd={t1}&interval=1d", timeout=60)
             for q in (u.get("data") or {}).get("quotes") or []:
                 x = q["quote"]
-                rows[q["timeOpen"][:10]] = [x["open"], x["high"], x["low"], x["close"]]
+                rows[q["timeOpen"][:10]] = [x["open"], x["high"], x["low"], x["close"], x.get("volume") or 0]
             time.sleep(0.25)
         days = sorted(rows)
         return {"t": days, "v": [rows[k] for k in days]}
-    d = _cached(f"cmc_{cid}.json", 6 * 3600, load)
-    df = pd.DataFrame(d["v"], index=pd.to_datetime(d["t"]), columns=["o", "h", "l", "c"]).astype(float)
+    d = _cached(f"cmcv_{cid}.json", 6 * 3600, load)
+    df = pd.DataFrame(d["v"], index=pd.to_datetime(d["t"]), columns=["o", "h", "l", "c", "v"]).astype(float)
     df = df[df["c"] > 0]
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     return df[df.index < today]
