@@ -279,6 +279,14 @@ def main(out):
             piv_all.append((ticker, grp, str(df.index[i].date()), s, float(c[i])))
         F = F.join(M, how="left")
         F["top"], F["bot"], F["rel"], F["kind"], F["grp"], F["coin"] = top, bot, rel, kind, grp, ticker
+        cs = df["c"]
+        F["_c"] = cs
+        for n in (30, 90, 180):
+            F[f"_f{n}"] = (cs.shift(-n) / cs - 1) * 100              # что стало с ценой дальше — только для оценки, в признаки не входит
+        F["_fmax90"] = (cs[::-1].rolling(90, min_periods=30).max()[::-1].shift(-1) / cs - 1) * 100
+        F["_fmin90"] = (cs[::-1].rolling(90, min_periods=30).min()[::-1].shift(-1) / cs - 1) * 100
+        F["_hi90"] = ((cs >= cs.rolling(90, min_periods=60).max()).rolling(7).max() > 0)
+        F["_lo90"] = ((cs <= cs.rolling(90, min_periods=60).min()).rolling(7).max() > 0)
         # последние дни после последнего подтверждённого разворота не размечаются: там ещё неизвестно, вершина это или нет
         last = pv[-1][0] if pv else 0
         F = F.iloc[60:last + 31] if pv else F.iloc[0:0]
@@ -286,7 +294,7 @@ def main(out):
         print(f"{ticker:9} {grp:10} дней {len(df):5}, разворотов {len(pv):2} (вершин {sum(1 for _, s in pv if s > 0)}, впадин {sum(1 for _, s in pv if s < 0)})", flush=True)
     A = pd.concat(rows)
     A = A[A.index >= "2015-06-01"]
-    feats = [k for k in A.columns if k not in ("top", "bot", "rel", "kind", "grp", "coin")]
+    feats = [k for k in A.columns if k not in ("top", "bot", "rel", "kind", "grp", "coin") and not k.startswith("_")]
     print(f"\nмонет {A.coin.nunique()}, дней {len(A)}, зона вершины {A.top.mean() * 100:.1f}% дней, зона дна {A.bot.mean() * 100:.1f}% дней; разворотов всего {len(piv_all)}")
     cells = {"знакомые до 2022": (A.grp == "знакомые") & (A.index < "2022-01-01"), "знакомые после": (A.grp == "знакомые") & (A.index >= "2022-01-01"),
              "случайные до 2022": (A.grp == "случайные") & (A.index < "2022-01-01"), "случайные после": (A.grp == "случайные") & (A.index >= "2022-01-01")}
