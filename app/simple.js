@@ -10,11 +10,12 @@
    Проверки: поиск на первой половине истории → вторая половина; поиск на шести активах → три остальных;
    и готовая стратегия на странице с монетами, которых поиск не видел вообще.
 
-   Запуск: node app/simple.js <страница.html> <секунд> <куда сохранить .json> [страница проверочных монет.html] */
+   Запуск: node app/simple.js <страница.html> <секунд> <куда сохранить .json> <страница монет отбора.html> [страница экзаменационных монет.html]
+   Поиск идёт на активах первой страницы, из найденных кандидатов выбирается лучший на монетах отбора, итог проверяется на экзаменационных. */
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const inPage = ({ seed, mode, ms, unit, evalOnly }) => {
+const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxConds = 2 }) => {
   let st = seed >>> 0;
   const rnd = () => { st = (st + 0x6D2B79F5) >>> 0; let t = st; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -73,6 +74,11 @@ const inPage = ({ seed, mode, ms, unit, evalOnly }) => {
     const score = worst + 0.02 * (sum / A.length) - PEN * nc;
     return detail ? { score, worst, mean: sum / A.length, wavg: sv / sw, per } : score;
   }
+  if (evalMany) {          // оценка списка готовых стратегий на активах этой страницы
+    const A = prep('full'), out = evalMany.map((S) => { const r = evalS(A, S, true); return { worst: r.worst, mean: r.mean, pos: r.per.filter((p) => Math.min(p[1], p[2]) > 0).length, n: r.per.length }; });
+    setup(cur, true);
+    return out;
+  }
   if (evalOnly) {
     const out = { full: evalS(prep('full'), evalOnly, true), h1: evalS(prep('h1'), evalOnly, true), h2: evalS(prep('h2'), evalOnly, true) };
     setup(cur, true);
@@ -94,17 +100,17 @@ const inPage = ({ seed, mode, ms, unit, evalOnly }) => {
   }
   const ACTS = [-0.25, -0.1, -0.05, -0.02, 0, 1, 1.25, 1.5, 2], BASES = [0, 1];
   const newCond = () => { const ind = pick(KEYS); return { ind, op: rnd() < 0.5 ? '<' : '>', v: pick(Q[ind]) }; };
-  const newRule = () => ({ conds: Array.from({ length: rnd() < 0.65 ? 1 : 2 }, newCond), act: pick(ACTS) });
+  const newRule = () => ({ conds: Array.from({ length: maxConds > 1 && rnd() > 0.65 ? 2 : 1 }, newCond), act: pick(ACTS) });
   const clone = (S) => ({ base: S.base, rules: S.rules.map((r) => ({ act: r.act, conds: r.conds.map((c) => ({ ...c })) })) });
   function mutate(S0) {
     const S = clone(S0), u = rnd(), r = S.rules.length ? pick(S.rules) : null;
-    if (!r || (u < 0.12 && S.rules.length < 3)) S.rules.splice(Math.floor(rnd() * (S.rules.length + 1)), 0, newRule());
+    if (!r || (u < 0.12 && S.rules.length < maxRules)) S.rules.splice(Math.floor(rnd() * (S.rules.length + 1)), 0, newRule());
     else if (u < 0.22 && S.rules.length > 1) S.rules.splice(S.rules.indexOf(r), 1);
     else if (u < 0.5) { const c = pick(r.conds), q = Q[c.ind]; let j = q.indexOf(c.v); if (j < 0) j = Math.floor(rnd() * q.length); c.v = q[Math.max(0, Math.min(q.length - 1, j + (rnd() < 0.5 ? -1 : 1)))]; }
     else if (u < 0.62) r.act = pick(ACTS);
     else if (u < 0.7) { const c = pick(r.conds); c.op = c.op === '<' ? '>' : '<'; }
     else if (u < 0.8) r.conds[Math.floor(rnd() * r.conds.length)] = newCond();
-    else if (u < 0.86 && r.conds.length < 2) r.conds.push(newCond());
+    else if (u < 0.86 && r.conds.length < maxConds) r.conds.push(newCond());
     else if (u < 0.92 && r.conds.length > 1) r.conds.splice(Math.floor(rnd() * r.conds.length), 1);
     else if (u < 0.97 && S.rules.length > 1) { const i = S.rules.indexOf(r), j = Math.floor(rnd() * S.rules.length); [S.rules[i], S.rules[j]] = [S.rules[j], S.rules[i]]; }
     else S.base = pick(BASES);
@@ -114,6 +120,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly }) => {
   const trainSet = mode === 'assets' ? [0, 1, 2, 3, 5, 7] : null;          // шесть активов для поиска, три — на проверку
   const A = prep(mode === 'time' ? 'h1' : 'full', trainSet);
   let curS = { base: 1, rules: [newRule()] }, curV = evalS(A, curS), best = clone(curS), bestV = curV, evals = 1, stall = 0, T = 3;
+  const pool = new Map();      // кандидаты: разные стратегии, у которых все активы поиска в плюсе
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     for (let it = 0; it < 200; it++) {
@@ -121,11 +128,13 @@ const inPage = ({ seed, mode, ms, unit, evalOnly }) => {
       evals++;
       if (v >= curV || rnd() < Math.exp((v - curV) / T)) { curS = cand; curV = v; }
       if (v > bestV + 1e-9) { best = clone(cand); bestV = v; stall = 0; } else stall++;
+      if (v > 3 && pool.size < 4000) { const key = JSON.stringify(cand); if (!pool.has(key)) pool.set(key, v); }
       if (stall > 3000) { curS = rnd() < 0.5 ? clone(best) : { base: pick(BASES), rules: [newRule()] }; curV = evalS(A, curS); T = 2; stall = 0; }
     }
     T = Math.max(0.1, T * 0.985);
   }
-  const out = { seed, mode, evals, best, train: evalS(A, best, true) };
+  const top = [...pool.entries()].sort((x, y) => y[1] - x[1]).slice(0, 400).map(([k, v]) => ({ S: JSON.parse(k), train: v }));
+  const out = { seed, mode, evals, best, train: evalS(A, best, true), pool: top, maxRules, maxConds };
   if (mode === 'time') out.test = evalS(prep('h2'), best, true);
   if (mode === 'assets') out.test = evalS(prep('full', [4, 6, 8]), best, true);
   setup(cur, true);
@@ -143,20 +152,32 @@ async function open(browser, file, tag) {
 }
 
 (async () => {
-  const [file, secs, outPath, validFile] = process.argv.slice(2);
+  const [file, secs, outPath, validFile, examFile] = process.argv.slice(2);
   const browser = await chromium.launch();
-  const jobs = [[5, 'full'], [17, 'full'], [23, 'time'], [41, 'assets']].map(async ([seed, mode]) =>
-    (await open(browser, file, 's' + seed)).evaluate(inPage, { seed, mode, ms: Number(secs) * 1000, unit: 10 }));
-  const res = await Promise.all(jobs);
-  const full = res.filter((r) => r.mode === 'full').sort((a, b) => b.train.score - a.train.score)[0];
-  const check = { own: await (await open(browser, file, 'own')).evaluate(inPage, { seed: 1, unit: 10, evalOnly: full.best }) };
-  if (validFile) check.unseen = await (await open(browser, validFile, 'val')).evaluate(inPage, { seed: 1, unit: 10, evalOnly: full.best });
-  fs.writeFileSync(outPath, JSON.stringify({ res, best: full.best, check }, null, 1));
+  // четыре поиска разной сложности на наших активах
+  const cfg = [[5, 1, 2], [17, 2, 1], [23, 2, 2], [41, 3, 2]];
+  const res = await Promise.all(cfg.map(async ([seed, maxRules, maxConds]) =>
+    (await open(browser, file, 's' + seed)).evaluate(inPage, { seed, mode: 'full', ms: Number(secs) * 1000, unit: 10, maxRules, maxConds })));
   const show = (S) => S.rules.map((r) => r.conds.map((c) => `${c.ind} ${c.op} ${c.v}`).join(' и ') + ' → ' + r.act).join(' | ') + ' | иначе ' + S.base;
-  for (const r of res) console.log(`${r.mode} зерно ${r.seed}: вариантов ${r.evals}, худший актив ${r.train.worst.toFixed(1)}%, средний ${r.train.mean.toFixed(1)}%` + (r.test ? ` → проверка: худший ${r.test.worst.toFixed(1)}%, средний ${r.test.mean.toFixed(1)}%` : '') + '\n    ' + show(r.best));
-  const line = (t, x) => console.log(`  ${t}: худший ${x.worst.toFixed(1)}%, средний ${x.mean.toFixed(1)}%, средневзв. ${x.wavg.toFixed(1)}% | ` + x.per.map((p) => `${p[0]} ${p[1]}/${p[2]}`).join(', '));
-  console.log('лучшая на всей истории, по активам (итог к DCA: сделка на след. день / ещё на день позже):');
-  line('вся история', check.own.full); line('первая половина', check.own.h1); line('вторая половина', check.own.h2);
-  if (check.unseen) { line('НОВЫЕ монеты, вся история', check.unseen.full); line('новые, первая половина', check.unseen.h1); line('новые, вторая половина', check.unseen.h2); }
+  for (const r of res) console.log(`поиск: до ${r.maxRules} правил по ${r.maxConds} условия — вариантов ${r.evals}, кандидатов ${r.pool.length}, лучший: худший актив ${r.train.worst.toFixed(1)}%, средний ${r.train.mean.toFixed(1)}%\n    ${show(r.best)}`);
+  // отбор: все кандидаты оцениваются на монетах, которых поиск не видел
+  const cands = res.flatMap((r) => r.pool.map((c) => ({ ...c, maxRules: r.maxRules, maxConds: r.maxConds })));
+  const sel = await (await open(browser, validFile, 'val')).evaluate(inPage, { seed: 1, unit: 10, evalMany: cands.map((c) => c.S) });
+  cands.forEach((c, i) => Object.assign(c, { sel: sel[i], nc: c.S.rules.reduce((x, r) => x + r.conds.length, 0) }));
+  const allPos = cands.filter((c) => c.sel.pos === c.sel.n);
+  console.log(`кандидатов всего ${cands.length}; на монетах отбора в плюсе все ${sel[0].n}: ${allPos.length}; 7 из 8: ${cands.filter((c) => c.sel.pos === c.sel.n - 1).length}`);
+  // выбираем по худшей монете отбора; при близких значениях — ту, что проще
+  cands.sort((x, y) => (y.sel.pos - x.sel.pos) || ((y.sel.worst - 0.5 * y.nc) - (x.sel.worst - 0.5 * x.nc)));
+  const best = cands[0].S;
+  const check = { own: await (await open(browser, file, 'own')).evaluate(inPage, { seed: 1, unit: 10, evalOnly: best }),
+                  select: await (await open(browser, validFile, 'val2')).evaluate(inPage, { seed: 1, unit: 10, evalOnly: best }) };
+  if (examFile) check.exam = await (await open(browser, examFile, 'exam')).evaluate(inPage, { seed: 1, unit: 10, evalOnly: best });
+  // для сравнения: как сдают экзамен «лучшие по нашим активам» без отбора
+  const naive = examFile ? await (await open(browser, examFile, 'exam2')).evaluate(inPage, { seed: 1, unit: 10, evalMany: res.map((r) => r.best) }) : null;
+  fs.writeFileSync(outPath, JSON.stringify({ best, check, top: cands.slice(0, 15), naive, searches: res.map((r) => ({ best: r.best, train: r.train, maxRules: r.maxRules, maxConds: r.maxConds })) }, null, 1));
+  console.log('ВЫБРАНА: ' + show(best) + `  (условий ${cands[0].nc})`);
+  const line = (t, x) => console.log(`  ${t}: в плюсе ${x.per.filter((p) => Math.min(p[1], p[2]) > 0).length} из ${x.per.length}, худший ${x.worst.toFixed(1)}%, средний ${x.mean.toFixed(1)}% | ` + x.per.map((p) => `${p[0]} ${p[1]}/${p[2]}`).join(', '));
+  for (const [name, c] of [['наши активы', check.own], ['монеты отбора', check.select], ['ЭКЗАМЕН', check.exam]]) if (c) { line(name + ', вся история', c.full); line(name + ', первая половина', c.h1); line(name + ', вторая половина', c.h2); }
+  if (naive) console.log('для сравнения, лучшие по нашим активам без отбора — на экзамене: ' + naive.map((x) => `в плюсе ${x.pos}/${x.n}, худший ${x.worst.toFixed(0)}%, средний ${x.mean.toFixed(0)}%`).join(' ; '));
   await browser.close();
 })();

@@ -722,14 +722,17 @@ ASSETS = {
 }
 # монеты для проверки: в поиске стратегий не участвуют
 for _sym, _t in (("ADA-USD", "ADA"), ("LTC-USD", "LTC"), ("LINK-USD", "LINK"), ("AVAX-USD", "AVAX"), ("TRX-USD", "TRX"),
-                 ("XLM-USD", "XLM"), ("DOT-USD", "DOT"), ("BCH-USD", "BCH")):
+                 ("XLM-USD", "XLM"), ("DOT-USD", "DOT"), ("BCH-USD", "BCH"),
+                 ("ETC-USD", "ETC"), ("XMR-USD", "XMR"), ("ATOM-USD", "ATOM"), ("ALGO-USD", "ALGO"), ("VET-USD", "VET"),
+                 ("FIL-USD", "FIL"), ("NEAR-USD", "NEAR"), ("AAVE-USD", "AAVE")):
     ASSETS[_t.lower()] = {"symbol": _sym, "slug": _t.lower(), "title": _t, "ticker": _t, "bpy": 365, "skip": 205,
                           "pair": ("BTC-USD", _t + "/BTC"), "crypto": True, "rules": CRYPTO_RULES}
 # страница: (активы, заголовок вкладки)
 PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "hype", "pump"], "Конструктор стратегии SOL")}
 PAGES["valid"] = (["ada", "ltc", "link", "avax", "trx", "xlm", "dot", "bch"], "Проверочные монеты")
+PAGES["exam"] = (["etc", "xmr", "atom", "algo", "vet", "fil", "near", "aave"], "Экзаменационные монеты")
 PAGES["found"] = (PAGES["crypto"][0], "Найденная стратегия")      # та же страница, но открывается с найденным максимумом
-STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1"}      # ключ, под которым правила хранятся в браузере
+STORE = {"gold": "gcf", "crypto": "sol", "found": "found1", "valid": "valid1", "exam": "exam1"}      # ключ, под которым правила хранятся в браузере
 
 
 STAMP = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%d.%m %H:%M UTC")
