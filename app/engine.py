@@ -138,6 +138,7 @@ def series(symbol, kind):
         "as_of": idx[-1].strftime("%Y-%m-%d"),
         "t": [int(x) for x in (idx[keep] - pd.Timestamp("1970-01-01")).days],   # дни от 1970-01-01
         "c": [float(f"{x:.6g}") for x in close[keep].values],
+        **{k: [float(f"{x:.6g}") for x in data.ohlc(symbol)[k].reindex(idx)[keep].values] for k in ("o", "h", "l")},
         "strategies": [
             {"code": k, "name": STRATEGIES[k][0], "about": STRATEGIES[k][1],
              "acts": "".join(CODES[int(a) + 3] for a in acts[k][keep]), "today": int(acts[k][-1]), **meta.get(k, {})}

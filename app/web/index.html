@@ -84,6 +84,7 @@
   .sheet { width: 100%; background: var(--surface); border-radius: 26px 26px 0 0; padding: 10px 18px calc(24px + env(safe-area-inset-bottom));
            max-height: 93vh; overflow: auto; transform: translateY(24px); transition: transform 0.26s cubic-bezier(.2,.8,.2,1); }
   .veil.open .sheet { transform: none; }
+  .sheet.full { height: 100%; max-height: none; border-radius: 0; padding-top: calc(16px + env(safe-area-inset-top)); }
   .grab { width: 38px; height: 4px; border-radius: 2px; background: var(--faint); margin: 0 auto 16px; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .title { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
@@ -222,8 +223,19 @@ async function toggle(symbol) {
   } catch (e) { toast(e.message); }
 }
 
-function openSheet(html) { $("sheet").innerHTML = '<div class="grab"></div>' + html; $("veil").classList.add("open"); }
-function closeSheet() { $("veil").classList.remove("open"); document.activeElement && document.activeElement.blur(); }
+let backTo = null;
+function tgBack() { if (backTo) backTo(); }
+function setBack(fn) {
+  backTo = fn;
+  try { if (tg && tg.BackButton) { fn ? tg.BackButton.show() : tg.BackButton.hide(); } } catch (e) {}
+}
+try { tg && tg.BackButton && tg.BackButton.onClick(tgBack); } catch (e) {}
+function openSheet(html, full) {
+  $("sheet").className = "sheet" + (full ? " full" : "");
+  $("sheet").innerHTML = (full ? "" : '<div class="grab"></div>') + html; $("veil").classList.add("open");
+  if (!full) setBack(null);
+}
+function closeSheet() { $("veil").classList.remove("open"); setBack(null); document.activeElement && document.activeElement.blur(); }
 $("veil").addEventListener("click", (e) => { if (e.target.id === "veil") closeSheet(); });
 
 function scale(i) {
@@ -269,7 +281,8 @@ async function strategies(symbol) {
 async function openStrategy(symbol, code) {
   const i = state.items.find((x) => x.symbol === symbol);
   const h = await history(symbol);
-  openSheet('<div id="detail"></div>');
+  openSheet('<div id="detail"></div>', true);
+  setBack(() => openTicker(symbol));
   $("sheet").scrollTop = 0;
   Explorer.detail($("detail"), h, code, { period: view.period, active: i.strategy, unit: i.unit,
     onPeriod: (p) => { view.period = p; openStrategy(symbol, code); },

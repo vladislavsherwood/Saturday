@@ -35,7 +35,16 @@
   .ex-cap i.ln::before { height: 3px; border-radius: 2px; width: 14px; }
   .ex-cap i.dash::before { height: 0; width: 14px; background: none; border-top: 3px dashed var(--k); border-radius: 0; }
   .ex-plot { position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
-  .ex-plot svg { display: block; width: 100%; overflow: visible; }
+  .ex-candles { cursor: crosshair; }
+  .ex-cap i.mk::before { display: none; }
+  .ex-cap i.mk svg { margin-right: 1px; }
+  .ex-tip svg { vertical-align: -1px; margin-right: 3px; }
+  .ex-zoom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .ex-zoom button { width: 40px; height: 36px; border-radius: 11px; background: var(--bg); font-weight: 800; font-size: 19px; line-height: 1; }
+  .ex-zoom button.wide { width: auto; padding: 0 14px; font-size: 14px; font-weight: 700; }
+  .ex-zoom button:disabled { opacity: .35; }
+  .ex-zoom span { margin-left: auto; color: var(--mute); font-size: 12.5px; font-weight: 650; }
+  .ex-plot > svg, .ex-plot > [data-svg] > svg { display: block; width: 100%; overflow: visible; }
   .ex-plot text { font: 600 11px ui-rounded, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--mute); font-variant-numeric: tabular-nums; }
   .ex-tip { position: absolute; top: 0; pointer-events: none; background: var(--text); color: var(--surface); border-radius: 12px; padding: 9px 11px; font-size: 12.5px; font-weight: 650;
             line-height: 1.5; white-space: nowrap; display: none; z-index: 3; font-variant-numeric: tabular-nums; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
@@ -100,15 +109,15 @@
     const n = h.t.length, m = n - i0, c = h.c, t = h.t, acts = st.acts;
     const B = Math.min(110, m), buy = new Float64Array(B), sell = new Float64Array(B);
     const profit = new Float64Array(m), dprofit = new Float64Array(m);
-    const ts = [], vs = [], dvs = [], spend = new Float64Array(m);
+    const ts = [], vs = [], dvs = [], spend = new Float64Array(m), dbuy = new Float32Array(m), dsell = new Float32Array(m);
     let units = 0, inv = 0, rec = 0, du = 0, dinv = 0, buys = 0, sells = 0, skips = 0;
     for (let j = 0; j < m; j++) {
       const i = i0 + j, p = c[i];
       const a = i > 0 ? CODES.indexOf(acts[i - 1]) - 3 : 1;
       const b = Math.min(B - 1, Math.floor((j * B) / m));
       let cf = 0;
-      if (a > 0) { const amt = a * unit; units += amt / p; inv += amt; cf = -amt; buy[b] += amt; spend[j] = amt; buys++; }
-      else if (a < 0) { const amt = Math.min(-a * unit, units * p); if (amt > 0) { units -= amt / p; rec += amt; cf = amt; sell[b] += amt; sells++; } else skips++; }
+      if (a > 0) { const amt = a * unit; units += amt / p; inv += amt; cf = -amt; buy[b] += amt; spend[j] = amt; dbuy[j] = amt; buys++; }
+      else if (a < 0) { const amt = Math.min(-a * unit, units * p); if (amt > 0) { units -= amt / p; rec += amt; cf = amt; sell[b] += amt; dsell[j] = amt; sells++; } else skips++; }
       else skips++;
       du += unit / p; dinv += unit;
       const yr = (t[i] - t[i0]) / 365.25;
@@ -121,7 +130,7 @@
     let max30 = 0, run = 0;
     for (let j = 0; j < m; j++) { run += spend[j]; if (j >= 30) run -= spend[j - 30]; if (run > max30) max30 = run; }
     const irr = xirr(ts, vs), dirr = xirr(ts, dvs);
-    return { i0, m, B, buy, sell, profit, dprofit, inv, rec, value, units, pnl: value + rec - inv, irr, buys, sells, skips, max30,
+    return { i0, m, B, buy, sell, dbuy, dsell, profit, dprofit, inv, rec, value, units, pnl: value + rec - inv, irr, buys, sells, skips, max30,
              dca: { inv: dinv, value: dvalue, pnl: dvalue - dinv, irr: dirr }, edge: irr != null && dirr != null ? irr - dirr : null };
   }
 
@@ -150,95 +159,182 @@
     el.querySelectorAll("[data-code]").forEach((r) => r.addEventListener("click", () => o.onOpen && o.onOpen(r.dataset.code)));
   }
 
-  /* ---------- график ---------- */
-  function chart(box, h, s) {
-    const W = Math.max(280, box.clientWidth || 340), R = 46, pw = W - R;
-    const P = { top: 4, h: 128 }, A = { top: P.top + P.h + 34, h: 56 }, F = { top: A.top + A.h + 38, h: 112 };
-    const H = F.top + F.h + 20;
-    const m = s.m, i0 = s.i0, c = h.c, t = h.t;
-    const X = (j) => (m > 1 ? (j / (m - 1)) * pw : pw / 2);
-    const step = Math.max(1, Math.floor(m / 420));
-    // цена, логарифмическая шкала
-    let pmin = Infinity, pmax = -Infinity;
-    for (let j = 0; j < m; j++) { const p = c[i0 + j]; if (p < pmin) pmin = p; if (p > pmax) pmax = p; }
-    const lmin = Math.log(pmin), lmax = Math.log(pmax) === lmin ? lmin + 1 : Math.log(pmax);
-    const YP = (p) => P.top + P.h - ((Math.log(p) - lmin) / (lmax - lmin)) * P.h;
-    let dP = "";
-    for (let j = 0; j < m; j += step) dP += (j ? "L" : "M") + X(j).toFixed(1) + " " + YP(c[i0 + j]).toFixed(1);
-    dP += "L" + X(m - 1).toFixed(1) + " " + YP(c[i0 + m - 1]).toFixed(1);
-    // покупки и продажи
-    let bmax = 0, anySell = false;
-    for (let b = 0; b < s.B; b++) { bmax = Math.max(bmax, s.buy[b], s.sell[b]); if (s.sell[b] > 0) anySell = true; }
-    const base = anySell ? A.top + A.h / 2 : A.top + A.h, span = anySell ? A.h / 2 - 1 : A.h;
-    const bw = Math.max(1, pw / s.B - (pw / s.B > 4 ? 2 : 0.6));
-    let bars = "";
-    for (let b = 0; b < s.B; b++) {
-      const x = (b / s.B) * pw + (pw / s.B - bw) / 2, r = Math.min(2, bw / 2);
-      if (s.buy[b] > 0) { const hh = Math.max(1.5, (s.buy[b] / bmax) * span); bars += `<rect x="${x.toFixed(1)}" y="${(base - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${r}" fill="var(--viz-buy)"/>`; }
-      if (s.sell[b] > 0) { const hh = Math.max(1.5, (s.sell[b] / bmax) * span); bars += `<rect x="${x.toFixed(1)}" y="${(base + 1).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${r}" fill="var(--viz-sell)"/>`; }
+  /* ---------- свечи с отметками сделок ---------- */
+  const TRI_UP = '<svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 0L11 10H0z" fill="var(--viz-buy)"/></svg>';
+  const TRI_DN = '<svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 10L11 0H0z" fill="var(--viz-sell)"/></svg>';
+
+  function candles(box, h, s, unit) {
+    const m = s.m, i0 = s.i0, t = h.t, C = h.c, O = h.o || h.c, Hi = h.h || h.c, Lo = h.l || h.c;
+    const anySell = s.rec > 0;
+    const win = { a: 0, b: m };
+    box.innerHTML = `<div class="ex-cap"><span>Цена и сделки</span><span><i class="mk">${TRI_UP}покупка</i>${anySell ? `<i class="mk">${TRI_DN}продажа</i>` : ""}</span></div>
+      <div class="ex-plot ex-candles"><div class="ex-tip"></div><div data-svg></div></div>
+      <div class="ex-zoom"><button data-z="out" aria-label="Отдалить">−</button><button data-z="in" aria-label="Приблизить">+</button>
+        <button data-z="all" class="wide">Весь период</button><span data-range></span></div>`;
+    const plot = box.querySelector(".ex-plot"), holder = box.querySelector("[data-svg]"), tip = box.querySelector(".ex-tip");
+    let G = null;
+
+    function draw() {
+      const W = Math.max(280, box.clientWidth || 340), R = 52, pw = W - R, H = 340, top = 6, axis = 20, pad = 34;
+      const len = win.b - win.a, k = Math.max(1, Math.ceil(len / Math.floor(pw / 4.4))), n = Math.ceil(len / k), cw = pw / n;
+      const bk = [];
+      let lo = Infinity, hi = -Infinity;
+      for (let q = 0; q < n; q++) {
+        const ja = win.a + q * k, jb = Math.min(win.b, ja + k);
+        let hh = -Infinity, ll = Infinity, buy = 0, sell = 0, bd = 0, sd = 0;
+        for (let j = ja; j < jb; j++) {
+          const i = i0 + j;
+          if (Hi[i] > hh) hh = Hi[i]; if (Lo[i] < ll) ll = Lo[i];
+          if (s.dbuy[j] > 0) { buy += s.dbuy[j]; bd++; } if (s.dsell[j] > 0) { sell += s.dsell[j]; sd++; }
+        }
+        bk.push({ ja, jb, o: O[i0 + ja], c: C[i0 + jb - 1], h: hh, l: ll, buy, sell, bd, sd });
+        if (hh > hi) hi = hh; if (ll < lo) lo = ll;
+      }
+      const lmin = Math.log(lo), lmax = Math.log(hi) > lmin ? Math.log(hi) : lmin + 0.01;
+      const ph = H - top - axis - 2 * pad;
+      const Y = (p) => top + pad + (1 - (Math.log(p) - lmin) / (lmax - lmin)) * ph;
+      const bw = Math.max(1, Math.min(cw * 0.68, 14));
+      let ticks = "", body = "", marks = "";
+      // сетка по годам или месяцам
+      const byMonth = len <= 500;
+      const labels = [];
+      for (let j = win.a + 1; j < win.b; j++) {
+        const d1 = dateOf(t[i0 + j]), d0 = dateOf(t[i0 + j - 1]);
+        const changed = byMonth ? d1.getUTCMonth() !== d0.getUTCMonth() : d1.getUTCFullYear() !== d0.getUTCFullYear();
+        if (changed) labels.push([j, byMonth ? d1.toLocaleDateString("ru-RU", { month: "short", timeZone: "UTC" }).replace(".", "") + (d1.getUTCMonth() === 0 ? " " + d1.getUTCFullYear() : "") : d1.getUTCFullYear()]);
+      }
+      const every = Math.ceil(labels.length / Math.max(2, Math.floor(pw / 62))) || 1;
+      labels.forEach(([j, txt], q) => {
+        const x = ((j - win.a) / len) * pw;
+        if (q % every) return;
+        ticks += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${top}" y2="${H - axis}" stroke="var(--line)"/>`;
+        if (x < pw - 30) ticks += `<text x="${(x + 4).toFixed(1)}" y="${H - 5}">${txt}</text>`;
+      });
+      bk.forEach((b, q) => {
+        const x = (q + 0.5) * cw, up = b.c >= b.o, col = up ? "var(--text)" : "var(--mute)";
+        const y1 = Y(Math.max(b.o, b.c)), y2 = Y(Math.min(b.o, b.c)), bh = Math.max(1, y2 - y1);
+        body += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(b.h).toFixed(1)}" y2="${Y(b.l).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+        body += `<rect x="${(x - bw / 2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${bw > 4 ? 1 : 0}" fill="${up && bw >= 4 ? "var(--surface)" : col}" stroke="${col}" stroke-width="1"/>`;
+        // число значков = средний размер сделки за свечу: один — ×1, три — ×3
+        const days = b.jb - b.ja, r = Math.max(2.2, Math.min(4.6, cw * 0.44)), stepY = r * 1.6 + 1.5;
+        const level = (sum) => Math.max(1, Math.min(3, Math.round(sum / (unit * days))));
+        if (b.buy > 0) for (let q2 = 0; q2 < level(b.buy); q2++) {
+          const y = Y(b.l) + 4 + q2 * stepY;
+          marks += `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${r.toFixed(1)} ${(r * 1.6).toFixed(1)}h${(-2 * r).toFixed(1)}z" fill="var(--viz-buy)"/>`;
+        }
+        if (b.sell > 0) for (let q2 = 0; q2 < level(b.sell); q2++) {
+          const y = Y(b.h) - 4 - q2 * stepY;
+          marks += `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${r.toFixed(1)} ${(-r * 1.6).toFixed(1)}h${(-2 * r).toFixed(1)}z" fill="var(--viz-sell)"/>`;
+        }
+      });
+      const last = bk[bk.length - 1];
+      holder.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Свечной график цены с отметками покупок и продаж">
+        ${ticks}${body}${marks}
+        <text x="${pw + 6}" y="${Y(hi) + 4}">${price(hi)}</text><text x="${pw + 6}" y="${Y(lo) + 4}">${price(lo)}</text>
+        ${Math.abs(Y(last.c) - Y(hi)) > 14 && Math.abs(Y(last.c) - Y(lo)) > 14 ? `<text x="${pw + 6}" y="${Y(last.c) + 4}" style="fill:var(--text)">${price(last.c)}</text>` : ""}
+        <line class="cross" y1="${top}" y2="${H - axis}" stroke="var(--mute)" stroke-width="1" style="display:none"/></svg>`;
+      box.querySelector("[data-range]").textContent = (k > 1 ? "1 свеча = " + k + " дн" : "1 свеча = 1 день");
+      box.querySelector('[data-z="out"]').disabled = len >= m;
+      box.querySelector('[data-z="all"]').disabled = len >= m;
+      box.querySelector('[data-z="in"]').disabled = len <= 30;
+      G = { W, pw, cw, bk, n, k };
     }
-    // прибыль
+
+    function show(clientX) {
+      const r = plot.getBoundingClientRect(), sc = G.W / r.width;
+      const q = Math.max(0, Math.min(G.n - 1, Math.floor(((clientX - r.left) * sc) / G.cw)));
+      const b = G.bk[q], x = (q + 0.5) * G.cw, days = b.jb - b.ja;
+      const cross = holder.querySelector(".cross");
+      cross.style.display = ""; cross.setAttribute("x1", x); cross.setAttribute("x2", x);
+      const d1 = fmtDate(t[i0 + b.ja]), d2 = fmtDate(t[i0 + b.jb - 1]);
+      tip.innerHTML = `<b>${days > 1 ? d1 + " — " + d2 : d1}</b>Откр ${price(b.o)} · Закр ${price(b.c)}<br>Макс ${price(b.h)} · Мин ${price(b.l)}<br>
+        ${b.buy > 0 ? `${TRI_UP} Куплено ${money(b.buy)}${days > 1 ? ` за ${b.bd} дн` : ` (×${Math.round(b.buy / unit)})`}` : "Покупок нет"}
+        ${b.sell > 0 ? `<br>${TRI_DN} Продано ${money(b.sell)}${days > 1 ? ` за ${b.sd} дн` : ""}` : ""}`;
+      tip.style.display = "block";
+      const tw = tip.offsetWidth, px = x / sc, left = px + 12 + tw > r.width ? px - tw - 12 : px + 12;
+      tip.style.left = Math.max(0, left) + "px";
+    }
+    const hide = () => { tip.style.display = "none"; const c = holder.querySelector(".cross"); if (c) c.style.display = "none"; };
+
+    function zoom(f, center) {
+      const len = win.b - win.a, nl = Math.max(30, Math.min(m, Math.round(len * f)));
+      const c = center == null ? (win.b >= m ? m : (win.a + win.b) / 2) : center;
+      let a = Math.round(win.b >= m && center == null ? m - nl : c - nl / 2);
+      a = Math.max(0, Math.min(m - nl, a));
+      win.a = a; win.b = a + nl; hide(); draw();
+    }
+    box.querySelector('[data-z="in"]').addEventListener("click", () => zoom(0.5));
+    box.querySelector('[data-z="out"]').addEventListener("click", () => zoom(2));
+    box.querySelector('[data-z="all"]').addEventListener("click", () => { win.a = 0; win.b = m; hide(); draw(); });
+
+    let drag = null;
+    plot.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, a: win.a, moved: false }; try { plot.setPointerCapture(e.pointerId); } catch (err) {} show(e.clientX); });
+    plot.addEventListener("pointermove", (e) => {
+      if (drag && win.b - win.a < m) {
+        const r = plot.getBoundingClientRect(), dx = e.clientX - drag.x;
+        if (Math.abs(dx) > 6) drag.moved = true;
+        if (drag.moved) {
+          const len = win.b - win.a, shift = Math.round((-dx / (r.width * (G.pw / G.W))) * len);
+          const a = Math.max(0, Math.min(m - len, drag.a + shift));
+          if (a !== win.a) { win.a = a; win.b = a + len; draw(); }
+          hide(); return;
+        }
+      }
+      if (e.pointerType === "mouse" || drag) show(e.clientX);
+    });
+    const end = (e) => { if (drag && e.pointerType !== "mouse" && drag.moved) hide(); drag = null; };
+    plot.addEventListener("pointerup", end); plot.addEventListener("pointercancel", end);
+    plot.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+    plot.addEventListener("wheel", (e) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); zoom(e.deltaY > 0 ? 1.5 : 0.67); }, { passive: false });
+    draw();
+    return { redraw: draw };
+  }
+
+  /* ---------- прибыль против DCA ---------- */
+  function profitChart(box, h, s) {
+    const W = Math.max(280, box.clientWidth || 340), R = 52, pw = W - R, top = 6, ph = 120, H = top + ph + 22;
+    const m = s.m, i0 = s.i0, t = h.t;
+    const X = (j) => (m > 1 ? (j / (m - 1)) * pw : pw / 2), step = Math.max(1, Math.floor(m / 420));
     let fmin = 0, fmax = 0;
     for (let j = 0; j < m; j++) { fmin = Math.min(fmin, s.profit[j], s.dprofit[j]); fmax = Math.max(fmax, s.profit[j], s.dprofit[j]); }
     if (fmax === fmin) fmax = fmin + 1;
-    const YF = (v) => F.top + F.h - ((v - fmin) / (fmax - fmin)) * F.h;
-    const line = (arr) => { let d = ""; for (let j = 0; j < m; j += step) d += (j ? "L" : "M") + X(j).toFixed(1) + " " + YF(arr[j]).toFixed(1); return d + "L" + X(m - 1).toFixed(1) + " " + YF(arr[m - 1]).toFixed(1); };
-    // годы по оси
+    const Y = (v) => top + ph - ((v - fmin) / (fmax - fmin)) * ph;
+    const line = (arr) => { let d = ""; for (let j = 0; j < m; j += step) d += (j ? "L" : "M") + X(j).toFixed(1) + " " + Y(arr[j]).toFixed(1); return d + "L" + X(m - 1).toFixed(1) + " " + Y(arr[m - 1]).toFixed(1); };
     let ticks = "";
     const marks = [];
     for (let j = 1; j < m; j++) { const y = dateOf(t[i0 + j]).getUTCFullYear(); if (y !== dateOf(t[i0 + j - 1]).getUTCFullYear()) marks.push([j, y]); }
     const every = Math.ceil(marks.length / 6) || 1;
-    marks.forEach(([j, y], k) => {
-      const x = X(j).toFixed(1);
-      ticks += `<line x1="${x}" x2="${x}" y1="${P.top}" y2="${F.top + F.h}" stroke="var(--line)"/>`;
-      if (k % every === 0 && X(j) < pw - 22) ticks += `<text x="${(X(j) + 4).toFixed(1)}" y="${H - 5}">${y}</text>`;
+    marks.forEach(([j, y], q) => {
+      if (q % every) return;
+      ticks += `<line x1="${X(j).toFixed(1)}" x2="${X(j).toFixed(1)}" y1="${top}" y2="${top + ph}" stroke="var(--line)"/>`;
+      if (X(j) < pw - 22) ticks += `<text x="${(X(j) + 4).toFixed(1)}" y="${H - 5}">${y}</text>`;
     });
-    const lab = (y, txt) => `<text x="${pw + 6}" y="${y}">${txt}</text>`;
-    const shortMoney = (v) => money(v).replace(" тыс", "k").replace(" млн", "M");
-    const sameDca = s.profit.every((v, j) => Math.abs(v - s.dprofit[j]) < 1e-6);
-    box.innerHTML = `<div class="ex-cap" style="margin-top:14px"><span>Цена</span></div>
-      <div class="ex-plot"><div class="ex-tip"></div>
-      <svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Цена, покупки и продажи, прибыль">
-        ${ticks}
-        <path d="${dP}" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linejoin="round"/>
-        ${lab(P.top + 10, price(pmax))}${lab(P.top + P.h, price(pmin))}
-        <foreignObject x="0" y="${A.top - 30}" width="${W}" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="ex-cap" style="margin:0"><span>Покупки${anySell ? " и продажи" : ""}</span>
-          <span><i style="--k:var(--viz-buy)">покупки</i>${anySell ? '<i style="--k:var(--viz-sell)">продажи</i>' : ""}</span></div></foreignObject>
-        ${anySell ? `<line x1="0" x2="${pw}" y1="${base + 0.5}" y2="${base + 0.5}" stroke="var(--line)"/>` : ""}
-        ${bars}
-        ${lab(A.top + 10, shortMoney(bmax))}
-        <foreignObject x="0" y="${F.top - 30}" width="${W}" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="ex-cap" style="margin:0"><span>Прибыль</span>
-          <span><i class="ln" style="--k:var(--viz-strat)">стратегия</i>${sameDca ? "" : '<i class="dash" style="--k:var(--viz-ref)">DCA</i>'}</span></div></foreignObject>
-        <line x1="0" x2="${pw}" y1="${YF(0).toFixed(1)}" y2="${YF(0).toFixed(1)}" stroke="var(--faint)"/>
-        ${sameDca ? "" : `<path d="${line(s.dprofit)}" fill="none" stroke="var(--viz-ref)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`}
+    const sm = (v) => money(v).replace(" тыс", "k").replace(" млн", "M");
+    const same = s.profit.every((v, j) => Math.abs(v - s.dprofit[j]) < 1e-6);
+    box.innerHTML = `<div class="ex-cap"><span>Прибыль</span><span><i class="ln" style="--k:var(--viz-strat)">стратегия</i>${same ? "" : '<i class="dash" style="--k:var(--viz-ref)">DCA</i>'}</span></div>
+      <div class="ex-plot"><div class="ex-tip"></div><svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Прибыль стратегии и обычного DCA">
+        ${ticks}<line x1="0" x2="${pw}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="var(--faint)"/>
+        ${same ? "" : `<path d="${line(s.dprofit)}" fill="none" stroke="var(--viz-ref)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`}
         <path d="${line(s.profit)}" fill="none" stroke="var(--viz-strat)" stroke-width="2" stroke-linejoin="round"/>
-        <circle cx="${X(m - 1).toFixed(1)}" cy="${YF(s.profit[m - 1]).toFixed(1)}" r="4" fill="var(--viz-strat)" stroke="var(--surface)" stroke-width="2"/>
-        ${lab(F.top + 10, shortMoney(fmax))}${fmin < 0 ? lab(F.top + F.h, shortMoney(fmin)) : lab(YF(0) + 4, "$0")}
-        <g class="cross" style="display:none"><line y1="${P.top}" y2="${F.top + F.h}" stroke="var(--mute)" stroke-width="1"/>
-          <circle class="cp" r="4" fill="var(--text)" stroke="var(--surface)" stroke-width="2"/>
-          <circle class="cf" r="4" fill="var(--viz-strat)" stroke="var(--surface)" stroke-width="2"/></g>
-      </svg></div>`;
+        <circle cx="${X(m - 1).toFixed(1)}" cy="${Y(s.profit[m - 1]).toFixed(1)}" r="4" fill="var(--viz-strat)" stroke="var(--surface)" stroke-width="2"/>
+        <text x="${pw + 6}" y="${top + 10}">${sm(fmax)}</text>${fmin < 0 ? `<text x="${pw + 6}" y="${top + ph}">${sm(fmin)}</text>` : `<text x="${pw + 6}" y="${Y(0) + 4}">$0</text>`}
+        <g class="cross" style="display:none"><line y1="${top}" y2="${top + ph}" stroke="var(--mute)" stroke-width="1"/>
+          <circle r="4" fill="var(--viz-strat)" stroke="var(--surface)" stroke-width="2"/></g></svg></div>`;
     const plot = box.querySelector(".ex-plot"), tip = box.querySelector(".ex-tip"), cross = box.querySelector(".cross");
-    function move(ev) {
-      const r = plot.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
-      const scale = W / r.width, j = Math.max(0, Math.min(m - 1, Math.round(((px * scale) / pw) * (m - 1))));
-      const b = Math.min(s.B - 1, Math.floor((j * s.B) / m)), x = X(j);
+    function move(e) {
+      const r = plot.getBoundingClientRect(), sc = W / r.width;
+      const j = Math.max(0, Math.min(m - 1, Math.round((((e.clientX - r.left) * sc) / pw) * (m - 1)))), x = X(j);
       cross.style.display = "";
       cross.querySelector("line").setAttribute("x1", x); cross.querySelector("line").setAttribute("x2", x);
-      cross.querySelector(".cp").setAttribute("cx", x); cross.querySelector(".cp").setAttribute("cy", YP(c[i0 + j]));
-      cross.querySelector(".cf").setAttribute("cx", x); cross.querySelector(".cf").setAttribute("cy", YF(s.profit[j]));
-      const days = Math.round(m / s.B);
-      tip.innerHTML = `<b>${fmtDate(t[i0 + j])}</b>Цена ${price(c[i0 + j])}<br>
-        <i style="background:var(--viz-buy)"></i>Куплено за ${days} дн: ${money(s.buy[b])}<br>
-        ${anySell ? `<i style="background:var(--viz-sell)"></i>Продано за ${days} дн: ${money(s.sell[b])}<br>` : ""}
-        <i style="background:var(--viz-strat)"></i>Прибыль ${money(s.profit[j], true)}${sameDca ? "" : `<br><i style="background:var(--viz-ref)"></i>DCA ${money(s.dprofit[j], true)}`}`;
+      cross.querySelector("circle").setAttribute("cx", x); cross.querySelector("circle").setAttribute("cy", Y(s.profit[j]));
+      tip.innerHTML = `<b>${fmtDate(t[i0 + j])}</b><i style="background:var(--viz-strat)"></i>Стратегия ${money(s.profit[j], true)}${same ? "" : `<br><i style="background:var(--viz-ref)"></i>DCA ${money(s.dprofit[j], true)}`}`;
       tip.style.display = "block";
-      const tw = tip.offsetWidth, left = x / scale + 12 + tw > r.width ? x / scale - tw - 12 : x / scale + 12;
+      const tw = tip.offsetWidth, px = x / sc, left = px + 12 + tw > r.width ? px - tw - 12 : px + 12;
       tip.style.left = Math.max(0, left) + "px";
     }
     const hide = () => { tip.style.display = "none"; cross.style.display = "none"; };
     plot.addEventListener("pointermove", move); plot.addEventListener("pointerdown", move);
-    plot.addEventListener("pointerleave", hide); plot.addEventListener("touchmove", move, { passive: true }); plot.addEventListener("touchend", hide);
+    plot.addEventListener("pointerleave", hide); plot.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") hide(); });
   }
 
   function byYear(h, st, i0, unit) {
@@ -278,14 +374,16 @@
       ${seg(period, h)}
       <div class="ex-hero"><b>${pct(s.irr, true)}</b><span>в год</span>
         ${isDca ? "" : `<span class="ex-delta ${cls}" style="font-size:15px">${d == null ? "" : pct(d, true).replace("%", " п.п.") + " к DCA"}</span>`}</div>
-      <div data-chart></div>
+      <div data-candles></div>
+      <div data-profit></div>
       <div class="ex-grid">${cells.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <details class="ex-years"><summary>По годам</summary><div class="scroll"><table><thead><tr><th>Год</th><th>Куплено</th>${anySell ? "<th>Продано</th>" : ""}<th>Прибыль</th>${isDca ? "" : "<th>DCA</th>"}</tr></thead>
         <tbody>${yrs.map((r) => `<tr><td>${r.y}</td><td>${money(r.buy)}</td>${anySell ? `<td>${money(r.sell)}</td>` : ""}<td>${money(r.pnl, true)}</td>${isDca ? "" : `<td>${money(r.dpnl, true)}</td>`}</tr>`).join("")}</tbody></table></div></details>
-      <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ×1 = ${money(unit)}. Прибыль на конец каждого года — накопленная с начала периода. Без комиссий и налогов.</div>
+      <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ×1 = ${money(unit)}. Значки под свечой — покупки, над свечой — продажи: один значок — ×1, три — ×3. Прибыль по годам — накопленная с начала периода. Без комиссий и налогов.</div>
       ${o.onSelect ? `<button class="ex-use" data-use ${st.code === o.active ? "disabled" : ""}>${st.code === o.active ? "Выбрана" : "Выбрать"}</button>` : ""}
     </div>`;
-    chart(el.querySelector("[data-chart]"), h, s);
+    candles(el.querySelector("[data-candles]"), h, s, unit);
+    profitChart(el.querySelector("[data-profit]"), h, s);
     el.querySelectorAll("[data-period]").forEach((b) => b.addEventListener("click", () => o.onPeriod && o.onPeriod(b.dataset.period)));
     const back = el.querySelector("[data-back]"); if (back) back.addEventListener("click", o.onBack);
     const use = el.querySelector("[data-use]"); if (use) use.addEventListener("click", () => o.onSelect(st.code));

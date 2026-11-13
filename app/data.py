@@ -52,19 +52,36 @@ def history(symbol):
         url = ("https://query1.finance.yahoo.com/v8/finance/chart/" + urllib.parse.quote(symbol)
                + "?period1=1230768000&period2=9999999999&interval=1d")
         res = _get(url)["chart"]["result"][0]
-        closes = res["indicators"]["quote"][0]["close"]
+        q = res["indicators"]["quote"][0]
         meta = res["meta"]
-        return {"t": res["timestamp"], "c": closes, "price": meta.get("regularMarketPrice"),
-                "currency": meta.get("currency", "USD")}
+        return {"t": res["timestamp"], "c": q["close"], "o": q.get("open"), "h": q.get("high"), "l": q.get("low"),
+                "price": meta.get("regularMarketPrice"), "currency": meta.get("currency", "USD")}
     safe = "".join(ch if ch.isalnum() else "_" for ch in symbol)
-    d = _cached(f"hist_{safe}.json", 3600, load)
-    s = pd.Series(d["c"], index=pd.to_datetime(d["t"], unit="s").normalize(), dtype=float).dropna()
-    s = s[s > 0]
-    s = s[~s.index.duplicated(keep="last")]
+    d = _cached(f"ohlc_{safe}.json", 3600, load)
+    idx = pd.to_datetime(d["t"], unit="s").normalize()
+    df = pd.DataFrame({k: pd.Series(d.get(k) or d["c"], index=idx, dtype=float) for k in ("o", "h", "l", "c")})
+    df = df[df["c"] > 0]
+    df = df[~df.index.duplicated(keep="last")]
     today = pd.Timestamp(datetime.now(timezone.utc).date())
-    s = s[s.index < today]                                   # сегодняшний день ещё не закрыт
+    df = df[df.index < today]                                # сегодняшний день ещё не закрыт
+    for k in ("o", "h", "l"):                                # дыры в свечах закрываем ценой закрытия
+        df[k] = df[k].where(df[k] > 0, df["c"])
+    df["h"] = df[["o", "h", "l", "c"]].max(axis=1)
+    df["l"] = df[["o", "h", "l", "c"]].min(axis=1)
+    _ohlc[symbol] = df
+    s = df["c"]
     price = d["price"] or (float(s.iloc[-1]) if len(s) else None)
     return s, price, d["currency"]
+
+
+_ohlc = {}
+
+
+def ohlc(symbol):
+    """Свечи по дням: open, high, low, close (после вызова history)."""
+    if symbol not in _ohlc:
+        history(symbol)
+    return _ohlc[symbol]
 
 
 def search(query):
