@@ -70,6 +70,10 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .act { padding: 7px 11px; border-radius: 999px; background: var(--bg); font-weight: 750; font-size: 14px; }
   .act.on { background: var(--text); color: var(--surface); }
   .act.sell.on { background: #d95926; color: #fff; }
+  .mode { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border-radius: 14px; padding: 4px; }
+  .mode button { padding: 10px 6px; border-radius: 11px; font-weight: 750; color: var(--mute); }
+  .mode button.on { background: var(--text); color: var(--bg); }
+  .hint { color: var(--mute); font-size: 13.5px; font-weight: 600; margin: 0 2px 6px; line-height: 1.4; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; }
   .btn { padding: 11px 16px; border-radius: 14px; background: var(--surface); font-weight: 750; }
   .btn.dark { background: var(--text); color: var(--bg); }
@@ -161,14 +165,29 @@ Object.values(IND).forEach((d) => (d.v = d.v.slice(SKIP)));
 const N = H.t.length;
 
 /* ---------- состояние ---------- */
-const DEFAULT = { base: 1, period: "all", unit: 10, focus: RAW.rules[0].id, rules: RAW.rules };
+const DEFAULT = { mode: "pct", base: 1, pbase: 1, period: "all", unit: 10, focus: RAW.rules[0].id, rules: RAW.rules };
 let S = JSON.parse(JSON.stringify(DEFAULT));
 try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
+if (!S.mode) S.mode = "pct";
 let WIN = null;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 
-const ACTS = [[0, "пропуск"], [1, "×1"], [2, "×2"], [3, "×3"], [-1, "продать ×1"], [-2, "продать ×2"], [-3, "продать ×3"]];
-const actName = (a) => (a > 0 ? "купить ×" + a : a < 0 ? "продать ×" + -a : "пропуск");
+const W_ACTS = [[0, "пропуск"], [1, "×1"], [2, "×2"], [3, "×3"], [-1, "продать ×1"], [-2, "продать ×2"], [-3, "продать ×3"]];
+// доля портфеля: 1 — купить на дневной взнос, 1 + f — ещё и долю f резерва, отрицательное — продать долю позиции
+const P_ACTS = [[0, "пропуск"], [1, "взнос"], [1.1, "+10% резерва"], [1.25, "+25%"], [1.5, "+50%"], [2, "весь резерв"],
+  [-0.02, "продать 2%"], [-0.05, "продать 5%"], [-0.1, "продать 10%"], [-0.25, "продать 25%"]];
+const W2P = { 0: 0, 1: 1, 2: 1.25, 3: 1.5, "-1": -0.02, "-2": -0.05, "-3": -0.1 };
+const PCT = () => S.mode === "pct";
+const ACTS = () => (PCT() ? P_ACTS : W_ACTS);
+const actOf = (r) => (PCT() ? (r.pact ?? W2P[r.act]) : r.act);
+const baseAct = () => (PCT() ? (S.pbase ?? 1) : S.base);
+function actName(a) {
+  if (!PCT()) return a > 0 ? "купить ×" + a : a < 0 ? "продать ×" + -a : "пропуск";
+  if (a === 0) return "пропуск";
+  if (a < 0) return "продать " + Math.round(-a * 100) + "% позиции";
+  if (a === 1) return "купить на взнос";
+  return a >= 2 ? "взнос и весь резерв" : "взнос и " + Math.round((a - 1) * 100) + "% резерва";
+}
 const hit = (c, i) => { const v = IND[c.ind].v[i]; return !(v == null || isNaN(v)) && (c.op === "<" ? v < c.v : v > c.v); };
 const fmtV = (c) => String(+c.v.toFixed(3)).replace(".", ",");
 
@@ -176,8 +195,8 @@ function decide() {
   const acts = new Array(N), who = new Int16Array(N);
   const rules = S.rules.filter((r) => r.on && IND[r.a.ind] && (!r.b || IND[r.b.ind]));
   for (let i = 0; i < N; i++) {
-    let a = S.base, w = 0;
-    for (const r of rules) if (hit(r.a, i) && (!r.b || hit(r.b, i))) { a = r.act; w = r.id; break; }
+    let a = baseAct(), w = 0;
+    for (const r of rules) if (hit(r.a, i) && (!r.b || hit(r.b, i))) { a = actOf(r); w = r.id; break; }
     acts[i] = a; who[i] = w;
   }
   return { acts, who };
@@ -220,7 +239,8 @@ let LAST = null;
 function results() {
   const { acts, who } = decide();
   const codes = Explorer.CODES;
-  const h = { ...H, strategies: [{ code: "mine", name: "Моя стратегия", about: summary(), acts: acts.map((a) => codes[a + 3]).join("") }] };
+  const mine = PCT() ? { plan: acts } : { acts: acts.map((a) => codes[a + 3]).join("") };
+  const h = { ...H, strategies: [{ code: "mine", name: "Моя стратегия", about: summary(), ...mine }] };
   const focus = S.rules.find((r) => r.id === S.focus && r.on);
   Explorer.detail(document.getElementById("result"), h, "mine", { period: S.period, unit: S.unit, win: WIN,
     onPeriod: (p) => { S.period = p; WIN = null; save(); results(); },
@@ -229,18 +249,21 @@ function results() {
       el.innerHTML = focus ? [focus.a, focus.b].filter(Boolean).map((c) => indPanel(c, g)).join("") : "";
     } });
   const years = { "1y": 1, "3y": 3, "5y": 5, all: 0 }[S.period] || 0;
-  const i0 = Explorer.startIndex(h, years), s = Explorer.simulate(h, h.strategies[0], i0, S.unit);
+  const i0 = Explorer.startIndex(h, years), s = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(h, h.strategies[0], i0, S.unit);
   LAST = s;
   const d = s.edge, cls = d == null || Math.abs(d) < 0.05 ? "" : d > 0 ? "up" : "down";
   // распределение дней по действиям и сколько дней решает каждое правило
   const mix = {}, per = {};
   for (let i = Math.max(i0 - 1, 0); i < N - 1; i++) { mix[acts[i]] = (mix[acts[i]] || 0) + 1; per[who[i]] = (per[who[i]] || 0) + 1; }
   const total = Object.values(mix).reduce((x, y) => x + y, 0) || 1;
-  const COL = { 3: "#0e7a53", 2: "#1baf7a", 1: "#8fd9bd", 0: "var(--faint)", "-1": "#f0a27f", "-2": "#eb6834", "-3": "#b8431a" };
-  const order = [3, 2, 1, 0, -1, -2, -3].filter((a) => mix[a]);
+  const tier = (a) => (PCT() ? (a >= 1.5 ? 3 : a > 1 ? 2 : a === 1 ? 1 : a === 0 ? 0 : a <= -0.1 ? -3 : a <= -0.05 ? -2 : -1) : a);
+  const COLS = { 3: "#0e7a53", 2: "#1baf7a", 1: "#8fd9bd", 0: "var(--faint)", "-1": "#f0a27f", "-2": "#eb6834", "-3": "#b8431a" };
+  const COL = new Proxy({}, { get: (_, a) => COLS[tier(Number(a))] });
+  const order = Object.keys(mix).map(Number).sort((x, y) => y - x);
   document.getElementById("bar").innerHTML = `<b>${Explorer.pct(s.irr, true)}</b><span>в год</span>
     <span class="${cls}">${d == null ? "" : Explorer.pct(d, true).replace("%", " п.п.") + " к DCA"}</span>
-    <span>прибыль ${Explorer.money(s.pnl, true)} · DCA ${Explorer.money(s.dca.pnl, true)}</span>
+    ${s.reserve ? `<span class="${cls}">итог ${Explorer.pct(s.wealthEdge, true)} к DCA</span>` : ""}
+    <span>прибыль ${Explorer.money(s.pnl, true)} · DCA ${Explorer.money(s.dca.pnl, true)}${s.reserve ? " · в резерве " + Explorer.money(s.cash) : " · вложено " + Explorer.money(s.inv) + " против " + Explorer.money(s.dca.inv)}</span>
     <div style="flex-basis:100%"><div class="mix">${order.map((a) => `<i style="width:${(mix[a] / total) * 100}%;background:${COL[a]}"></i>`).join("")}</div>
     <div class="mixl">${order.map((a) => `<span><i style="background:${COL[a]}"></i>${actName(a)} — ${Math.round((mix[a] / total) * 100)}% дней</span>`).join("")}</div></div>`;
   document.querySelectorAll("[data-count]").forEach((el) => {
@@ -249,14 +272,14 @@ function results() {
   });
 }
 function summary() {
-  return S.rules.filter((r) => r.on).length + " правил, иначе " + actName(S.base);
+  return S.rules.filter((r) => r.on).length + " правил, иначе " + actName(baseAct()) + (PCT() ? ". Денег вносится столько же, сколько у DCA" : "");
 }
 function asText() {
   const lines = S.rules.filter((r) => r.on).map((r, k) =>
-    `${k + 1}. если ${IND[r.a.ind].name} ${r.a.op} ${fmtV(r.a)}${r.b ? ` и ${IND[r.b.ind].name} ${r.b.op} ${fmtV(r.b)}` : ""} → ${actName(r.act)}`);
+    `${k + 1}. если ${IND[r.a.ind].name} ${r.a.op} ${fmtV(r.a)}${r.b ? ` и ${IND[r.b.ind].name} ${r.b.op} ${fmtV(r.b)}` : ""} → ${actName(actOf(r))}`);
   const s = LAST;
-  return `Стратегия для __TITLE__ (период: ${S.period}, ×1 = $${S.unit})\n${lines.join("\n")}\nиначе → ${actName(S.base)}\n` +
-    (s ? `Результат: ${Explorer.pct(s.irr, true)} в год, ${s.edge == null ? "" : Explorer.pct(s.edge, true).replace("%", " п.п.")} к DCA, прибыль ${Explorer.money(s.pnl, true)} против ${Explorer.money(s.dca.pnl, true)}` : "");
+  return `Стратегия для __TITLE__ (режим: ${PCT() ? "доля портфеля, взнос $" + S.unit + " в день" : "веса, ×1 = $" + S.unit}; период: ${S.period})\n${lines.join("\n")}\nиначе → ${actName(baseAct())}\n` +
+    (s ? `Результат: ${s.reserve ? "итог " + Explorer.pct(s.wealthEdge, true) + " к DCA, " : ""}${Explorer.pct(s.irr, true)} в год, ${s.edge == null ? "" : Explorer.pct(s.edge, true).replace("%", " п.п.")} к DCA, прибыль ${Explorer.money(s.pnl, true)} против ${Explorer.money(s.dca.pnl, true)}` : "");
 }
 
 /* ---------- крутилки ---------- */
@@ -271,7 +294,7 @@ function knobSvg(frac, color) {
 const actColor = (a) => (a > 0 ? "var(--viz-buy, #1baf7a)" : a < 0 ? "var(--viz-sell, #eb6834)" : "var(--mute)");
 function knobInner(r, key) {
   const c = r[key], d = IND[c.ind], frac = Math.max(0, Math.min(1, (c.v - d.min) / (d.max - d.min)));
-  return knobSvg(frac, actColor(r.act)) + `<b>${fmtV(c)}</b>`;
+  return knobSvg(frac, actColor(actOf(r))) + `<b>${fmtV(c)}</b>`;
 }
 function knobs() {
   const el = document.getElementById("knobs");
@@ -281,7 +304,7 @@ function knobs() {
     return `<div class="kcell ${r.id === S.focus ? "focus" : ""}" data-kr="${r.id}">
       <div class="knob" data-knob="${r.id}:${key}" role="slider" tabindex="0" aria-label="${d.name}, порог" aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${c.v}">${knobInner(r, key)}</div>
       <div class="klabel">${d.short} ${c.op === ">" ? "выше" : "ниже"}</div>
-      <div class="kact ${r.act > 0 ? "buy" : r.act < 0 ? "sell" : ""}">${key === "b" ? "и" : actName(r.act)}</div></div>`;
+      <div class="kact ${actOf(r) > 0 ? "buy" : actOf(r) < 0 ? "sell" : ""}">${key === "b" ? "и" : actName(actOf(r))}</div></div>`;
   }).join("")).join("") : '<div class="lead" style="margin:0">Добавьте правило — у него появится крутилка.</div>';
 }
 function setKnob(el, v) {
@@ -341,7 +364,11 @@ function condHtml(r, key, label) {
 }
 function rulesPanel() {
   const el = document.getElementById("left");
-  el.innerHTML = `<div class="cap">Правила</div>` + S.rules.map((r, k) => `
+  el.innerHTML = `<div class="cap">Как считать</div>
+    <div class="mode"><button class="${PCT() ? "on" : ""}" data-mode="pct">Доля портфеля</button><button class="${PCT() ? "" : "on"}" data-mode="w">Веса ×1–×3</button></div>
+    <p class="hint">${PCT() ? "Каждый день в резерв приходит взнос — столько же, сколько тратит DCA. Правило решает: купить на взнос, пропустить и копить, добавить часть резерва или продать часть позиции. Разница с DCA — только от правил."
+      : "Правило задаёт размер покупки. Стратегия может вложить больше денег, чем DCA, поэтому прибыль в долларах сравнивать нельзя."}</p>
+    <div class="cap">Правила</div>` + S.rules.map((r, k) => `
     <div class="rule ${r.id === S.focus ? "focus" : ""} ${r.on ? "" : "off"}" data-rule="${r.id}">
       <div class="rhead"><div class="rnum">${k + 1}</div>
         <button class="sw" role="switch" aria-checked="${r.on}" data-f="on" aria-label="Включить правило"></button>
@@ -351,10 +378,10 @@ function rulesPanel() {
         <button class="ib" data-f="del" aria-label="Удалить">×</button></div>
       ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}
       <button class="link" data-f="${r.b ? "delb" : "addb"}">${r.b ? "убрать второе условие" : "+ второе условие"}</button>
-      <div class="acts"><span>то</span>${ACTS.map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${r.act === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}</div>
+      <div class="acts"><span>то</span>${ACTS().map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${actOf(r) === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}</div>
     </div>`).join("") + `
     <div class="rule" data-rule="base"><div class="rhead"><div class="rnum">…</div><span class="sp" data-count="0" style="text-align:left"></span></div>
-      <div class="acts"><span>иначе</span>${ACTS.slice(0, 4).map(([a, n]) => `<button class="act ${S.base === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
+      <div class="acts"><span>иначе</span>${ACTS().filter(([a]) => a >= 0 && (!PCT() || a <= 1)).map(([a, n]) => `<button class="act ${baseAct() === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
     <div class="tools"><button class="btn dark" data-tool="add">+ Правило</button><button class="btn" data-tool="copy">Скопировать правила</button>
       <button class="btn" data-tool="reset">Сбросить</button></div><div id="presets"></div><div id="copybox"></div>`;
   knobs();
@@ -398,9 +425,10 @@ left.addEventListener("click", (e) => {
     try { navigator.clipboard.writeText(text).then(ok, () => ta.select()); } catch (err) { ta.select(); }
     return;
   }
-  else if (t.dataset.base !== undefined) S.base = Number(t.dataset.base);
+  else if (t.dataset.mode) { S.mode = t.dataset.mode; WIN = null; }
+  else if (t.dataset.base !== undefined) { if (PCT()) S.pbase = Number(t.dataset.base); else S.base = Number(t.dataset.base); }
   else if (!r) return;
-  else if (t.dataset.act !== undefined) { r.act = Number(t.dataset.act); S.focus = r.id; }
+  else if (t.dataset.act !== undefined) { if (PCT()) r.pact = Number(t.dataset.act); else r.act = Number(t.dataset.act); S.focus = r.id; }
   else if (f === "on") r.on = !r.on;
   else if (f === "op") { const key = t.closest("[data-cond]").dataset.cond; r[key].op = r[key].op === "<" ? ">" : "<"; S.focus = r.id; }
   else if (f === "up" && k > 0) { S.rules.splice(k - 1, 0, S.rules.splice(k, 1)[0]); }
