@@ -75,7 +75,7 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
     return detail ? { score, worst, mean: sum / A.length, wavg: sv / sw, per } : score;
   }
   if (evalMany) {          // оценка списка готовых стратегий на активах этой страницы
-    const A = prep(part), out = evalMany.map((S) => { const r = evalS(A, S, true); return { worst: r.worst, mean: r.mean, pos: r.per.filter((p) => Math.min(p[1], p[2]) > 0).length, n: r.per.length }; });
+    const A = prep(part), out = evalMany.map((S) => { const r = evalS(A, S, true); return { worst: r.worst, mean: r.mean, pos: r.per.filter((p) => Math.min(p[1], p[2]) > 0).length, n: r.per.length, e: r.per.map((p) => Math.min(p[1], p[2])), names: r.per.map((p) => p[0]) }; });
     setup(cur, true);
     return out;
   }
@@ -166,7 +166,8 @@ async function examOnly(args) {
   await browser.close();
 }
 
-(async () => {
+module.exports = { inPage, open };
+if (require.main === module) (async () => {
   if (process.argv[2] === '--exam') return examOnly(process.argv.slice(3));
   const [file, secs, outPath, validFile, examFile, part = 'full', preset = 'simple'] = process.argv.slice(2);      // part = h1: поиск и отбор только на первой половине истории
   const browser = await chromium.launch();
