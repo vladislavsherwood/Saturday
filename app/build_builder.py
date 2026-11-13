@@ -353,10 +353,15 @@ function knobSvg(frac, color) {
     <line x1="${nx.toFixed(1)}" y1="${ny.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/></svg>`;
 }
 const actColor = (a) => (a > 0 ? "var(--viz-buy, #1baf7a)" : a < 0 ? "var(--viz-sell, #eb6834)" : "var(--mute)");
-// крутилка «сколько продавать»: доля позиции в процентах, только в режиме долей и только у правил с продажей
+// крутилки размера сделки в режиме долей: продажа — процент позиции, покупка — процент резерва сверх дневного взноса
 const AMT = { min: 0.5, max: 50, step: 0.5, name: "Сколько продавать, % позиции" };
+const AMT_BUY = { min: 0, max: 100, step: 5, name: "Сколько добавить из резерва, %" };
 const fmtN = (v) => String(+v.toFixed(2)).replace(".", ",");
-function kget(r, key) { return key === "amt" ? { v: +(-actOf(r) * 100).toFixed(2), d: AMT } : { v: r[key].v, d: IND[r[key].ind] }; }
+function kget(r, key) {
+  if (key !== "amt") return { v: r[key].v, d: IND[r[key].ind] };
+  const a = actOf(r);
+  return a < 0 ? { v: +(-a * 100).toFixed(2), d: AMT } : { v: +((a - 1) * 100).toFixed(2), d: AMT_BUY };
+}
 function knobInner(r, key) {
   const { v, d } = kget(r, key), frac = Math.max(0, Math.min(1, (v - d.min) / (d.max - d.min)));
   return knobSvg(frac, actColor(actOf(r))) + `<b>${key === "amt" ? fmtN(v) + "%" : fmtV(r[key])}</b>`;
@@ -365,11 +370,11 @@ function knobs() {
   const el = document.getElementById("knobs");
   const on = S.rules.filter((r) => r.on);
   el.innerHTML = on.length ? on.map((r) => {
-    const act = actOf(r), keys = ["a"].concat(r.b ? ["b"] : [], PCT() && act < 0 ? ["amt"] : []);
+    const act = actOf(r), keys = ["a"].concat(r.b ? ["b"] : [], PCT() && act !== 0 ? ["amt"] : []);
     return keys.map((key) => {
       const { v, d } = kget(r, key), c = r[key];
-      const label = key === "amt" ? "Продать" : `${d.short} ${c.op === ">" ? "выше" : "ниже"}`;
-      const sub = key === "amt" ? "% позиции" : key === "b" ? "и" : actName(act);
+      const label = key === "amt" ? (act < 0 ? "Продать" : "Из резерва") : `${d.short} ${c.op === ">" ? "выше" : "ниже"}`;
+      const sub = key === "amt" ? (act < 0 ? "% позиции" : "% сверх взноса") : key === "b" ? "и" : actName(act);
       return `<div class="kcell ${r.id === S.focus ? "focus" : ""}" data-kr="${r.id}">
         <div class="knob" data-knob="${r.id}:${key}" role="slider" tabindex="0" aria-label="${d.name}" aria-valuemin="${d.min}" aria-valuemax="${d.max}" aria-valuenow="${v}">${knobInner(r, key)}</div>
         <div class="klabel">${label}</div>
@@ -386,11 +391,11 @@ function setKnob(el, v) {
   if (v === cur.v && S.focus === r.id) return;
   S.focus = r.id;
   if (key === "amt") {
-    r.pact = -v / 100;
+    r.pact = actOf(r) < 0 ? -v / 100 : +(1 + v / 100).toFixed(4);
     const twin = document.getElementById("amt-" + rid); if (twin) twin.value = v;
     left.querySelectorAll(`[data-rule="${rid}"] .act`).forEach((x) => x.classList.toggle("on", Number(x.dataset.act) === r.pact));
     // подпись «продать N%» есть и у соседних крутилок этого правила
-    document.querySelectorAll(`.kcell[data-kr="${rid}"] .kact`).forEach((x) => { if (x.textContent !== "и" && x.textContent !== "% позиции") x.textContent = actName(r.pact); });
+    document.querySelectorAll(`.kcell[data-kr="${rid}"] .kact`).forEach((x) => { if (!["и", "% позиции", "% сверх взноса"].includes(x.textContent)) x.textContent = actName(r.pact); });
   } else {
     r[key].v = v;
     for (const pre of ["n-", "s-"]) { const twin = document.getElementById(pre + rid + "-" + key); if (twin) twin.value = v; }
@@ -463,7 +468,8 @@ function rulesPanel() {
       ${condHtml(r, "a", "если")}${r.b ? condHtml(r, "b", "и") : ""}
       <button class="link" data-f="${r.b ? "delb" : "addb"}">${r.b ? "убрать второе условие" : "+ второе условие"}</button>
       <div class="acts"><span>то</span>${ACTS().map(([a, n]) => `<button class="act ${a < 0 ? "sell" : ""} ${actOf(r) === a ? "on" : ""}" data-act="${a}">${n}</button>`).join("")}
-        ${PCT() && actOf(r) < 0 ? `<label class="amt">или <input type="number" data-f="amt" id="amt-${r.id}" min="0.5" max="50" step="0.5" value="${+(-actOf(r) * 100).toFixed(2)}" aria-label="Сколько продавать, процент позиции"> % позиции</label>` : ""}</div>
+        ${PCT() && actOf(r) < 0 ? `<label class="amt">или <input type="number" data-f="amt" id="amt-${r.id}" min="0.5" max="50" step="0.5" value="${+(-actOf(r) * 100).toFixed(2)}" aria-label="Сколько продавать, процент позиции"> % позиции</label>` : ""}
+        ${PCT() && actOf(r) >= 1 ? `<label class="amt">взнос и <input type="number" data-f="amt" id="amt-${r.id}" min="0" max="100" step="5" value="${+((actOf(r) - 1) * 100).toFixed(2)}" aria-label="Сколько добавить из резерва, процент"> % резерва</label>` : ""}</div>
     </div>`).join("") + `
     <div class="rule" data-rule="base"><div class="rhead"><div class="rnum">…</div><span class="sp" data-count="0" style="text-align:left"></span></div>
       <div class="acts"><span>иначе</span>${ACTS().filter(([a]) => a >= 0 && (!PCT() || a <= 1)).map(([a, n]) => `<button class="act ${baseAct() === a ? "on" : ""}" data-base="${a}">${n}</button>`).join("")}</div></div>
@@ -479,8 +485,10 @@ left.addEventListener("input", (e) => {
   const f = e.target.dataset.f, r = ruleOf(e.target);
   if (r && f === "amt") {
     const v = Number(e.target.value);
-    if (!(v > 0)) return;
-    r.pact = -Math.min(50, Math.max(0.1, v)) / 100; S.focus = r.id;
+    if (e.target.value === "" || isNaN(v) || v < 0) return;
+    if (actOf(r) < 0) { if (!(v > 0)) return; r.pact = -Math.min(50, Math.max(0.1, v)) / 100; }
+    else r.pact = +(1 + Math.min(100, v) / 100).toFixed(4);
+    S.focus = r.id;
     left.querySelectorAll(`[data-rule="${r.id}"] .act`).forEach((x) => x.classList.toggle("on", Number(x.dataset.act) === r.pact));
     knobs(); save(); results(); return;
   }
