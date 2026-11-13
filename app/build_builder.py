@@ -169,6 +169,8 @@ function rsi(a, n) { const o = new Array(a.length).fill(NaN); let up = 0, dn = 0
 function drawdown(a, n) { return a.map((v, i) => { let m = -Infinity; for (let j = Math.max(0, i - n + 1); j <= i; j++) if (a[j] > m) m = a[j]; return i < 5 ? NaN : (1 - v / m) * 100; }); }
 function change(a, n) { return a.map((v, i) => (i >= n ? (v / a[i - n] - 1) * 100 : i >= 7 ? (v / a[0] - 1) * 100 : NaN)); }
 function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[i])) return NaN; let s = 0; for (let j = i - n + 1; j <= i; j++) s += (a[j] - m[i]) ** 2; const sd = Math.sqrt(s / n); return sd ? (v - m[i]) / sd : 0; }); }
+// расстояние до исторического максимума, %: 0 — сегодняшнее закрытие само стало новым максимумом
+function athDist(a, seed) { let m = seed || 0; return a.map((v) => { if (v > m) m = v; return (1 - v / m) * 100; }); }
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 const CTX = {};
 function setup(key, quiet) {
@@ -180,6 +182,7 @@ function setup(key, quiet) {
     sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
     sma50: { short: "Цена / SMA50", name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
     dd: { short: "Просадка, %", name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, RAW.bpy) },
+    ath: { short: "До ATH, %", name: "ATH — до исторического максимума, %", min: 0, max: 30, step: 0.5, def: 1, v: athDist(C, RAW.ath0) },
     rsi: { short: "RSI", name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
     ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
     ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
@@ -197,13 +200,13 @@ function setup(key, quiet) {
   }
   if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
-  for (const key of ["sma200", "sma50", "dd", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
+  for (const key of ["sma200", "sma50", "dd", "ath", "ret30", "ret90", "dxy", "usdt", "pair", "usdtd", "btcd", "ethd", "othd"]) {
     const d = IND[key]; if (!d) continue;
     const vals = d.v.filter((x) => x != null && !isNaN(x)).sort((x, y) => x - y); if (vals.length < 50) continue;
     const q = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
     const big = d.step >= 1 ? 5 : d.step >= 0.1 ? 1 : 0.05;
     const lo = Math.floor(q(0.003) / big) * big, hi = Math.ceil(q(0.997) / big) * big;
-    d.min = key === "dd" ? 0 : +Math.min(d.min, lo).toFixed(3); d.max = +Math.max(d.max, hi).toFixed(3);
+    d.min = key === "dd" || key === "ath" ? 0 : +Math.min(d.min, lo).toFixed(3); d.max = +Math.max(d.max, hi).toFixed(3);
     if (d.max - d.min > 250 * d.step) d.step = d.step >= 1 ? 5 : d.step >= 0.1 ? 0.5 : 0.05;
   }
   SKIP = RAW.skip;                             // разогрев индикаторов не входит в расчёт
@@ -453,6 +456,8 @@ const PRESETS = [
   ["Покупать ×3 на просадке больше…", { a: { ind: "dd", op: ">", v: 15 }, act: 3 }, "end"],
   ["Покупать ×2, когда RSI ниже…", { a: { ind: "rsi", op: "<", v: 35 }, act: 2 }, "end"],
   ["Покупать ×2, когда цена ниже средней за 200 дней", { a: { ind: "sma200", op: "<", v: 1.0 }, act: 2 }, "end"],
+  ["ATH: продавать на историческом максимуме", { a: { ind: "ath", op: "<", v: 1 }, act: -1 }, "top"],
+  ["ATH: не покупать на историческом максимуме", { a: { ind: "ath", op: "<", v: 1 }, act: 0 }, "top"],
   ["Продавать, когда RSI выше…", { a: { ind: "rsi", op: ">", v: 80 }, act: -1 }, "top"],
   ["Продавать, когда цена выше средней за 200 дней на…", { a: { ind: "sma200", op: ">", v: 1.25 }, act: -1 }, "top"],
   ["Покупать ×2, когда USDT.D выше…", { a: { ind: "usdtd", op: ">", v: 6.5 }, act: 2 }, "end"],
@@ -625,7 +630,7 @@ ASSETS = {
             "pair": ("BTC-USD", "SOL/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     "eth": {"symbol": "ETH-USD", "slug": "eth", "title": "Ethereum", "ticker": "ETH", "bpy": 365, "skip": 205,
             "pair": ("BTC-USD", "ETH/BTC"), "crypto": True, "rules": CRYPTO_RULES},
-    "btc": {"symbol": "BTC-USD", "slug": "btc", "title": "Bitcoin", "ticker": "BTC", "bpy": 365, "skip": 205,
+    "btc": {"symbol": "BTC-USD", "slug": "btc", "title": "Bitcoin", "ticker": "BTC", "bpy": 365, "skip": 205, "ath0": 1151.0,
             "crypto": True, "rules": CRYPTO_RULES},
     "doge": {"symbol": "DOGE-USD", "slug": "doge", "title": "Dogecoin", "ticker": "DOGE", "bpy": 365, "skip": 205,
              "pair": ("BTC-USD", "DOGE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
@@ -661,7 +666,7 @@ def build_raw(asset):
     idx = df.index
     epoch = idx[0].__class__("1970-01-01")
     raw = {"t": [int(x) for x in (idx - epoch).days], "bpy": cfg["bpy"], "skip": cfg["skip"], "rules": cfg["rules"],
-           "title": cfg["title"], "ticker": cfg["ticker"], "slug": cfg["slug"]}
+           "title": cfg["title"], "ticker": cfg["ticker"], "slug": cfg["slug"], "ath0": cfg.get("ath0")}
     for k in ("o", "h", "l", "c"):
         raw[k] = r6(df[k].values)
     if cfg.get("macro"):
