@@ -144,11 +144,11 @@ const SETS = __DATA__;
 let RAW, KEY, C, IND, SKIP, H, N, DEFAULT, S;
 
 /* ---------- индикаторы (считаются по закрытию дня) ---------- */
-function sma(a, n) { const o = new Array(a.length).fill(NaN); let s = 0, c = 0; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null || isNaN(v)) { continue; } s += v; c++; if (c > n) { s -= a[i - n]; c = n; } if (c === n) o[i] = s / n; } return o; }
+function sma(a, n) { const o = new Array(a.length).fill(NaN); let s = 0, c = 0; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null || isNaN(v)) { continue; } s += v; c++; if (c > n) { s -= a[i - n]; c = n; } if (c >= Math.min(n, 20)) o[i] = s / c; } return o; }
 function ratio(a, n) { const m = sma(a, n); return a.map((v, i) => v / m[i]); }
 function rsi(a, n) { const o = new Array(a.length).fill(NaN); let up = 0, dn = 0; for (let i = 1; i < a.length; i++) { const d = a[i] - a[i - 1]; up = (up * (n - 1) + Math.max(d, 0)) / n; dn = (dn * (n - 1) + Math.max(-d, 0)) / n; if (i >= n) o[i] = dn === 0 ? 100 : 100 - 100 / (1 + up / dn); } return o; }
-function drawdown(a, n) { return a.map((v, i) => { let m = -Infinity; for (let j = Math.max(0, i - n + 1); j <= i; j++) if (a[j] > m) m = a[j]; return i < 60 ? NaN : (1 - v / m) * 100; }); }
-function change(a, n) { return a.map((v, i) => (i >= n ? (v / a[i - n] - 1) * 100 : NaN)); }
+function drawdown(a, n) { return a.map((v, i) => { let m = -Infinity; for (let j = Math.max(0, i - n + 1); j <= i; j++) if (a[j] > m) m = a[j]; return i < 5 ? NaN : (1 - v / m) * 100; }); }
+function change(a, n) { return a.map((v, i) => (i >= n ? (v / a[i - n] - 1) * 100 : i >= 7 ? (v / a[0] - 1) * 100 : NaN)); }
 function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[i])) return NaN; let s = 0; for (let j = i - n + 1; j <= i; j++) s += (a[j] - m[i]) ** 2; const sd = Math.sqrt(s / n); return sd ? (v - m[i]) / sd : 0; }); }
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
 const CTX = {};
@@ -169,7 +169,7 @@ function setup(key, quiet) {
   if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
   if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
   if (RAW.fng) IND.fng = { short: "Страх и жадность", name: "Индекс страха и жадности", min: 5, max: 95, step: 1, def: 25, v: fill(RAW.fng) };
-  if (RAW.usdt) IND.usdt = { short: "USDT.D / SMA200", name: "USDT.D к средней за 200 дней", min: 0.6, max: 1.6, step: 0.01, def: 1.2, v: ratio(fill(RAW.usdt), 200) };
+  if (RAW.usdt) IND.usdt = { short: "USDT.D / SMA200", name: "USDT.D к средней за 200 дней", min: 0.6, max: 1.6, step: 0.01, def: 1.2, v: RAW.usdt_r ? fill(RAW.usdt_r) : ratio(fill(RAW.usdt), 200) };
   if (RAW.dom) {
     IND.usdtd = { short: "USDT.D, %", name: "USDT.D — доля USDT на рынке, %", min: 3, max: 8, step: 0.1, def: 6.5, v: fill(RAW.dom.usdt) };
     IND.btcd = { short: "BTC.D, %", name: "BTC.D — доля биткоина, %", min: 40, max: 65, step: 0.5, def: 58, v: fill(RAW.dom.btc) };
@@ -554,7 +554,7 @@ ASSETS = {
     "doge": {"symbol": "DOGE-USD", "slug": "doge", "title": "Dogecoin", "ticker": "DOGE", "bpy": 365, "skip": 205,
              "pair": ("BTC-USD", "DOGE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
-    "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 15,
+    "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 20,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
@@ -581,6 +581,8 @@ def build_raw(asset):
         raw["fng"] = r6(data.fear_greed().reindex(idx, method="ffill").values)
         dom = data.dominances().reindex(idx, method="ffill")
         raw["usdt"] = r6(dom["usdt"].values)
+        full = data.dominances()["usdt"]
+        raw["usdt_r"] = r6((full / full.rolling(200, min_periods=200).mean()).reindex(idx, method="ffill").values)
         raw["dom"] = {k: [None if x != x else round(float(x), 3) for x in dom[k].values] for k in ("usdt", "btc", "eth", "oth")}
     if cfg.get("pair"):
         raw["pair"] = r6(data.history(cfg["pair"][0])[0].reindex(idx, method="ffill").values)
