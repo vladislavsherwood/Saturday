@@ -39,6 +39,7 @@ const inject = (EX) => {
       // «тихая вершина»: биткоин в 10% от исторического максимума, а доля альткоинов выросла на 1,5+ п.п. за 90 дней
       const od90 = diff(IND.othd.v, 90);
       add('oth90', od90); add('qt', c.map((x, i) => (bath[i] < 10 && od90[i] > 1.5 ? 1 : 0)));
+      { let n = 0, off = 999; const q = IND.qt.v; add('qtd', q.map((x) => (n = x ? n + 1 : 0))); add('qtoff', q.map((x) => (off = x ? 0 : off + 1))); }      // сколько дней подряд горит маркер и сколько дней назад погас
       const g = (k) => IND[k].v, pr = IND.pair ? IND.pair.v : c.map(() => NaN);
       add('topn', c.map((x, i) => (g('othd')[i] > 27.7) + (g('breadth')[i] > 88.9) + (pr[i] > 1.38) + (g('btctx')[i] < 0.978) + (g('btcd90')[i] < -1.35) + (g('btcaddr')[i] < 1.1)));
       add('botn', c.map((x, i) => (g('tvldd')[i] > 59) + (g('usdtd')[i] > 6.52) + (bath[i] > 57.5) + (g('mvrv')[i] < 1.3) + (g('sma200')[i] < 0.532)));
