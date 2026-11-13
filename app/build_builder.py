@@ -82,7 +82,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .btn { padding: 11px 16px; border-radius: 14px; background: var(--surface); font-weight: 750; }
   .btn.dark { background: var(--text); color: var(--bg); }
   .copy { width: 100%; margin-top: 8px; background: var(--surface); border: 0; border-radius: 14px; padding: 12px; font: 600 13px/1.45 ui-monospace, Menlo, monospace; color: var(--text); resize: vertical; }
-  .bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; background: var(--bg); padding: 8px 0; margin-top: 10px;
+  .bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--bg); padding: 8px 0; margin-top: 10px; border-bottom: 1px solid var(--line);
          display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; font-weight: 750; font-variant-numeric: tabular-nums; }
   .bar b { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
   .bar .up { color: #0c8a4a; } .bar .down { color: #d1483f; } .bar span { color: var(--mute); }
@@ -117,8 +117,7 @@ PAGE = r"""<title>__PAGETITLE__</title>
   }
   @media (min-width: 940px) {
     .main { grid-template-columns: 400px minmax(0, 1fr); }
-    .left { order: -1; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
-    .bar { position: static; }
+    .left { order: -1; position: sticky; top: calc(var(--barh, 96px) + 8px); max-height: calc(100vh - var(--barh, 96px) - 20px); overflow: auto; padding-right: 4px; }
   }
 </style>
 <div class="wrap">
@@ -292,6 +291,7 @@ function results() {
     ${base && (came || gone) ? `<span>к прежнему варианту: появилось ${came} дн со сделкой, ушло ${gone}</span>` : ""}
     <div style="flex-basis:100%"><div class="mix">${order.map((a) => `<i style="width:${(mix[a] / total) * 100}%;background:${COL[a]}"></i>`).join("")}</div>
     <div class="mixl">${order.map((a) => `<span><i style="background:${COL[a]}"></i>${actName(a)} — ${Math.round((mix[a] / total) * 100)}% дней</span>`).join("")}</div></div>`;
+  document.documentElement.style.setProperty("--barh", document.getElementById("bar").offsetHeight + "px");
   document.querySelectorAll("[data-count]").forEach((el) => {
     const n = per[el.dataset.count] || 0;
     el.textContent = n ? `решает ${n} дн · ${Math.round((n / total) * 100)}%` : "не срабатывает";
