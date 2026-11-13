@@ -1,6 +1,6 @@
 """Собирает страницу-конструктор стратегии: правила слева, свечной график с отметками сделок справа.
 
-Запуск: python3 app/build_builder.py <куда сохранить .html> [тикер Yahoo] [подпись]
+Запуск: python3 app/build_builder.py <куда сохранить .html> [gold | sol]
 """
 import json
 import os
@@ -16,7 +16,7 @@ def r6(values):
     return [None if x != x else float(f"{x:.6g}") for x in values]
 
 
-PAGE = r"""<title>Конструктор стратегии</title>
+PAGE = r"""<title>__PAGETITLE__</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
   /* Телефон: одна колонка — итог, график, правила. Широкий экран: правила слева, график справа. */
@@ -134,28 +134,34 @@ const C = RAW.c;
 const IND = {
   sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
   sma50: { short: "Цена / SMA50", name: "Цена к средней за 50 дней", min: 0.85, max: 1.2, step: 0.01, def: 1.0, v: ratio(C, 50) },
-  dd: { short: "Просадка, %", name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, 252) },
+  dd: { short: "Просадка, %", name: "Просадка от годового максимума, %", min: 0, max: 45, step: 1, def: 15, v: drawdown(C, RAW.bpy) },
   rsi: { short: "RSI", name: "RSI за 14 дней", min: 10, max: 90, step: 1, def: 30, v: rsi(C, 14) },
-  ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, 21) },
-  ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, 63) },
+  ret30: { short: "За месяц, %", name: "Изменение за месяц, %", min: -20, max: 20, step: 1, def: -5, v: change(C, RAW.bpy === 365 ? 30 : 21) },
+  ret90: { short: "За квартал, %", name: "Изменение за квартал, %", min: -30, max: 40, step: 1, def: -10, v: change(C, RAW.bpy === 365 ? 90 : 63) },
   bbz: { short: "Отклонение, σ", name: "Отклонение от средней за 20 дней, σ", min: -3, max: 3, step: 0.1, def: -2, v: boll(C, 20) },
 };
 if (RAW.vix) IND.vix = { short: "VIX", name: "VIX — страх на рынке акций", min: 10, max: 60, step: 1, def: 30, v: fill(RAW.vix) };
 if (RAW.dxy) IND.dxy = { short: "Доллар / SMA200", name: "Доллар (DXY) к средней за 200 дней", min: 0.9, max: 1.12, step: 0.005, def: 1.0, v: ratio(fill(RAW.dxy), 200) };
+if (RAW.fng) IND.fng = { short: "Страх и жадность", name: "Индекс страха и жадности", min: 5, max: 95, step: 1, def: 25, v: fill(RAW.fng) };
+if (RAW.usdt) IND.usdt = { short: "USDT.D / SMA200", name: "USDT.D к средней за 200 дней", min: 0.6, max: 1.6, step: 0.01, def: 1.2, v: ratio(fill(RAW.usdt), 200) };
 if (RAW.pair) IND.pair = { short: RAW.pairName, name: RAW.pairName + " к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C.map((v, i) => v / fill(RAW.pair)[i]), 200) };
 
-const SKIP = 260;                                  // разогрев индикаторов не входит в расчёт
+for (const key of ["sma200", "sma50", "dd", "ret30", "ret90", "dxy", "usdt", "pair"]) {
+  const d = IND[key]; if (!d) continue;
+  const vals = d.v.filter((x) => x != null && !isNaN(x)).sort((x, y) => x - y); if (vals.length < 50) continue;
+  const q = (f) => vals[Math.min(vals.length - 1, Math.floor(f * vals.length))];
+  const big = d.step >= 1 ? 5 : 0.05;
+  const lo = Math.floor(q(0.003) / big) * big, hi = Math.ceil(q(0.997) / big) * big;
+  d.min = key === "dd" ? 0 : +Math.min(d.min, lo).toFixed(3); d.max = +Math.max(d.max, hi).toFixed(3);
+  if (d.max - d.min > 250 * d.step) d.step = d.step >= 1 ? 5 : 0.05;
+}
+const SKIP = RAW.skip;                             // разогрев индикаторов не входит в расчёт
 const H = { t: RAW.t.slice(SKIP), c: RAW.c.slice(SKIP), o: RAW.o.slice(SKIP), h: RAW.h.slice(SKIP), l: RAW.l.slice(SKIP) };
 Object.values(IND).forEach((d) => (d.v = d.v.slice(SKIP)));
 const N = H.t.length;
 
 /* ---------- состояние ---------- */
-const DEFAULT = { base: 1, period: "all", unit: 10, focus: 4, rules: [
-  { id: 4, on: true, a: { ind: "rsi", op: ">", v: 75 }, b: null, act: 0 },
-  { id: 1, on: true, a: { ind: "dd", op: ">", v: 15 }, b: null, act: 3 },
-  { id: 2, on: true, a: { ind: "sma200", op: "<", v: 1.0 }, b: null, act: 2 },
-  { id: 3, on: true, a: { ind: "sma200", op: ">", v: 1.15 }, b: null, act: 0 },
-] };
+const DEFAULT = { base: 1, period: "all", unit: 10, focus: RAW.rules[0].id, rules: RAW.rules };
 let S = JSON.parse(JSON.stringify(DEFAULT));
 try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
 let WIN = null;
@@ -414,23 +420,53 @@ rulesPanel(); results();
 """
 
 
-def main(out, symbol="GC=F", title="Золото", pair="SI=F", pair_name="Золото/серебро"):
+ASSETS = {
+    "gold": {
+        "symbol": "GC=F", "slug": "gcf", "title": "Золото", "page": "Конструктор стратегии", "bpy": 252, "skip": 260,
+        "pair": ("SI=F", "Золото/серебро"), "macro": True,
+        "rules": [
+            {"id": 4, "on": True, "a": {"ind": "rsi", "op": ">", "v": 75}, "b": None, "act": 0},
+            {"id": 1, "on": True, "a": {"ind": "dd", "op": ">", "v": 15}, "b": None, "act": 3},
+            {"id": 2, "on": True, "a": {"ind": "sma200", "op": "<", "v": 1.0}, "b": None, "act": 2},
+            {"id": 3, "on": True, "a": {"ind": "sma200", "op": ">", "v": 1.15}, "b": None, "act": 0},
+        ],
+    },
+    "sol": {
+        "symbol": "SOL-USD", "slug": "sol", "title": "Solana", "page": "Конструктор стратегии SOL", "bpy": 365, "skip": 205,
+        "pair": ("BTC-USD", "SOL/BTC"), "crypto": True,
+        "rules": [
+            {"id": 1, "on": True, "a": {"ind": "rsi", "op": ">", "v": 75}, "b": None, "act": 0},
+            {"id": 2, "on": True, "a": {"ind": "sma200", "op": ">", "v": 1.6}, "b": None, "act": 0},
+            {"id": 3, "on": True, "a": {"ind": "dd", "op": ">", "v": 50}, "b": None, "act": 3},
+            {"id": 4, "on": True, "a": {"ind": "sma200", "op": "<", "v": 1.0}, "b": None, "act": 2},
+        ],
+    },
+}
+
+
+def main(out, asset="gold"):
+    cfg = ASSETS[asset]
+    symbol, title = cfg["symbol"], cfg["title"]
     data.history(symbol)
     df = data.ohlc(symbol)
     df = df[df.index >= FROM]
     idx = df.index
-    raw = {"t": [int(x) for x in (idx - idx[0].__class__("1970-01-01")).days]}
+    epoch = idx[0].__class__("1970-01-01")
+    raw = {"t": [int(x) for x in (idx - epoch).days], "bpy": cfg["bpy"], "skip": cfg["skip"], "rules": cfg["rules"]}
     for k in ("o", "h", "l", "c"):
         raw[k] = r6(df[k].values)
-    raw["vix"] = r6(data.history("^VIX")[0].reindex(idx, method="ffill").values)
-    raw["dxy"] = r6(data.history("DX-Y.NYB")[0].reindex(idx, method="ffill").values)
-    if pair:
-        raw["pair"] = r6(data.history(pair)[0].reindex(idx, method="ffill").values)
-        raw["pairName"] = pair_name
+    if cfg.get("macro"):
+        raw["vix"] = r6(data.history("^VIX")[0].reindex(idx, method="ffill").values)
+        raw["dxy"] = r6(data.history("DX-Y.NYB")[0].reindex(idx, method="ffill").values)
+    if cfg.get("crypto"):
+        raw["fng"] = r6(data.fear_greed().reindex(idx, method="ffill").values)
+        raw["usdt"] = r6(data.usdt_dominance().reindex(idx, method="ffill").values)
+    if cfg.get("pair"):
+        raw["pair"] = r6(data.history(cfg["pair"][0])[0].reindex(idx, method="ffill").values)
+        raw["pairName"] = cfg["pair"][1]
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
-    slug = "".join(ch for ch in symbol.lower() if ch.isalnum())
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(raw, ensure_ascii=False, separators=(",", ":")))
-            .replace("__TITLE__", title).replace("__SLUG__", slug))
+            .replace("__TITLE__", title).replace("__SLUG__", cfg["slug"]).replace("__PAGETITLE__", cfg["page"]))
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"{title}: {len(idx)} дней с {idx[0].date()}, {os.path.getsize(out) // 1024} КБ")
