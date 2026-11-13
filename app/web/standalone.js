@@ -4,7 +4,7 @@
 const mem = { unit: 10, tickers: null, trades: [] };
 let col = null, sampler = null;
 const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
-const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD"];
+const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
 const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
