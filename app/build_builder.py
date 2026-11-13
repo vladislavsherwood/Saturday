@@ -86,6 +86,12 @@ PAGE = r"""<title>__PAGETITLE__</title>
          display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; font-weight: 750; font-variant-numeric: tabular-nums; }
   .bar b { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
   .bar .up { color: #0c8a4a; } .bar .down { color: #d1483f; } .bar span { color: var(--mute); }
+  .avg { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 13px; font-weight: 700; color: var(--mute); padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
+  .bar .avg b { font-size: 14px; font-weight: 800; color: var(--text); letter-spacing: 0; margin-right: 6px; }
+  .avg button { padding: 3px 9px; border-radius: 999px; background: var(--surface); font-weight: 750; font-size: 12.5px; color: var(--text); }
+  .avg button.on { box-shadow: inset 0 0 0 1.5px var(--text); }
+  .avg i { font-style: normal; color: var(--mute); }
+  .bar .avg .up { color: #0c8a4a; } .bar .avg .down { color: #d1483f; }
   .mix { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin-top: 4px; background: var(--bg); }
   .mix i { display: block; height: 100%; }
   .mixl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--mute); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -105,7 +111,8 @@ PAGE = r"""<title>__PAGETITLE__</title>
   .ind text { font: 600 11px var(--sans); fill: var(--mute); font-variant-numeric: tabular-nums; }
   .ind svg { display: block; width: 100%; overflow: visible; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bar .up { color: #3ecf8e; } :root:not([data-theme="light"]) .bar .down { color: #ff7a70; } }
-  :root[data-theme="dark"] .bar .up { color: #3ecf8e; } :root[data-theme="dark"] .bar .down { color: #ff7a70; }
+  :root[data-theme="dark"] .bar .up, :root[data-theme="dark"] .bar .avg .up { color: #3ecf8e; } :root[data-theme="dark"] .bar .down, :root[data-theme="dark"] .bar .avg .down { color: #ff7a70; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bar .avg .up { color: #3ecf8e; } :root:not([data-theme="light"]) .bar .avg .down { color: #ff7a70; } }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kact.buy { color: #3ecf8e; } :root:not([data-theme="light"]) .kact.sell { color: #f08a5b; } }
   :root[data-theme="dark"] .kact.buy { color: #3ecf8e; } :root[data-theme="dark"] .kact.sell { color: #f08a5b; }
   @media (max-width: 939px) {
@@ -144,9 +151,11 @@ function drawdown(a, n) { return a.map((v, i) => { let m = -Infinity; for (let j
 function change(a, n) { return a.map((v, i) => (i >= n ? (v / a[i - n] - 1) * 100 : NaN)); }
 function boll(a, n) { const m = sma(a, n); return a.map((v, i) => { if (isNaN(m[i])) return NaN; let s = 0; for (let j = i - n + 1; j <= i; j++) s += (a[j] - m[i]) ** 2; const sd = Math.sqrt(s / n); return sd ? (v - m[i]) / sd : 0; }); }
 function fill(a) { let last = NaN; return a.map((v) => (v == null ? last : (last = v))); }
-function setup(key) {
-  RAW = SETS.sets[key];
+const CTX = {};
+function setup(key, quiet) {
   KEY = "dca-builder-" + SETS.key + "-v2";
+  if (CTX[key]) { ({ RAW, C, IND, SKIP, H, N } = CTX[key]); if (!quiet) document.getElementById("asset").textContent = "· " + RAW.title; return; }
+  RAW = SETS.sets[key];
   C = RAW.c;
   IND = {
     sma200: { short: "Цена / SMA200", name: "Цена к средней за 200 дней", min: 0.75, max: 1.35, step: 0.01, def: 1.0, v: ratio(C, 200) },
@@ -184,7 +193,8 @@ function setup(key) {
     try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Array.isArray(saved.rules)) S = saved; } catch (e) {}
     if (!S.mode) S.mode = "pct";
   }
-  document.getElementById("asset").textContent = "· " + RAW.title;
+  CTX[key] = { RAW, C, IND, SKIP, H, N };
+  if (!quiet) document.getElementById("asset").textContent = "· " + RAW.title;
 }
 let WIN = null;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -293,6 +303,21 @@ function results() {
     ${base && (came || gone) ? `<span>к прежнему варианту: появилось ${came} дн со сделкой, ушло ${gone}</span>` : ""}
     <div style="flex-basis:100%"><div class="mix">${order.map((a) => `<i style="width:${(mix[a] / total) * 100}%;background:${COL[a]}"></i>`).join("")}</div>
     <div class="mixl">${order.map((a) => `<span><i style="background:${COL[a]}"></i>${actName(a)} — ${Math.round((mix[a] / total) * 100)}% дней</span>`).join("")}</div></div>`;
+  if (SETS.avg && SETS.avg.length > 1) {
+    const cur = SETS.order.find((k) => SETS.sets[k] === RAW);
+    const rows = SETS.avg.map((k) => {
+      setup(k, true);
+      const dd = decide(), st = PCT() ? { plan: dd.acts } : { acts: dd.acts.map((a) => codes[a + 3]).join("") };
+      const hh = { ...H, strategies: [st] }, sm = (PCT() ? Explorer.simulateReserve : Explorer.simulate)(hh, st, Explorer.startIndex(hh, years), S.unit);
+      return { k, name: RAW.ticker, v: PCT() ? sm.wealthEdge : sm.edge };
+    });
+    setup(cur, true);
+    const ok = rows.filter((r) => r.v != null && isFinite(r.v)), mean = ok.reduce((x, r) => x + r.v, 0) / (ok.length || 1);
+    const unitTxt = PCT() ? "%" : " п.п.", f = (v) => (v == null || !isFinite(v) ? "—" : Explorer.pct(v, true).replace("%", unitTxt));
+    const c = (v) => (v == null || Math.abs(v) < 0.05 ? "" : v > 0 ? "up" : "down");
+    document.getElementById("bar").insertAdjacentHTML("afterbegin", `<div class="avg"><span>В среднем по ${rows.length}:</span> <b class="${c(mean)}">${f(mean)} к DCA</b>
+      ${rows.map((r) => `<button class="${r.k === cur ? "on" : ""}" data-tk="${r.k}">${r.name} <i class="${c(r.v)}">${f(r.v)}</i></button>`).join("")}</div>`);
+  }
   document.documentElement.style.setProperty("--barh", document.getElementById("bar").offsetHeight + "px");
   document.querySelectorAll("[data-count]").forEach((el) => {
     const n = per[el.dataset.count] || 0;
@@ -477,12 +502,14 @@ function tickers() {
   const el = document.getElementById("tks");
   el.innerHTML = SETS.order.length > 1 ? SETS.order.map((k) => `<button class="tk ${SETS.sets[k] === RAW ? "on" : ""}" data-tk="${k}">${SETS.sets[k].ticker}</button>`).join("") : "";
 }
-document.getElementById("tks").addEventListener("click", (e) => {
+function pick(e) {
   const b = e.target.closest("[data-tk]"); if (!b) return;
   setup(b.dataset.tk); LAST = null; BASE = null; WIN = null;
   try { localStorage.setItem("dca-builder-ticker", b.dataset.tk); } catch (err) {}
   tickers(); rulesPanel(); results();
-});
+}
+document.getElementById("tks").addEventListener("click", pick);
+document.getElementById("bar").addEventListener("click", pick);
 let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(results, 150); });
 let first = SETS.order[0];
 try { const saved = localStorage.getItem("dca-builder-ticker"); if (saved && SETS.sets[saved]) first = saved; } catch (e) {}
@@ -512,12 +539,16 @@ ASSETS = {
             "pair": ("BTC-USD", "SOL/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     "eth": {"symbol": "ETH-USD", "slug": "eth", "title": "Ethereum", "ticker": "ETH", "bpy": 365, "skip": 205,
             "pair": ("BTC-USD", "ETH/BTC"), "crypto": True, "rules": CRYPTO_RULES},
+    "btc": {"symbol": "BTC-USD", "slug": "btc", "title": "Bitcoin", "ticker": "BTC", "bpy": 365, "skip": 205,
+            "crypto": True, "rules": CRYPTO_RULES},
+    "doge": {"symbol": "DOGE-USD", "slug": "doge", "title": "Dogecoin", "ticker": "DOGE", "bpy": 365, "skip": 205,
+             "pair": ("BTC-USD", "DOGE/BTC"), "crypto": True, "rules": CRYPTO_RULES},
     # pump.fun торгуется с июля 2025: история идёт с первых дней, пока индикатор не накопился, его правило молчит
     "pump": {"symbol": "PUMP36507-USD", "slug": "pump", "title": "pump.fun", "ticker": "PUMP", "bpy": 365, "skip": 15,
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
-PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "pump"], "Конструктор стратегии SOL")}
+PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "pump"], "Конструктор стратегии SOL")}
 STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
@@ -548,7 +579,7 @@ def build_raw(asset):
 
 def main(out, page="gold"):
     assets, title = PAGES[page]
-    sets = {"order": assets, "key": STORE[page], "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
+    sets = {"order": assets, "avg": assets if len(assets) > 1 else [], "key": STORE[page], "rules": ASSETS[assets[0]]["rules"], "sets": {a: build_raw(a) for a in assets}}
     js = open(os.path.join(HERE, "web", "explorer.js"), encoding="utf-8").read()
     html = (PAGE.replace("__EXPLORER__", js).replace("__DATA__", json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
             .replace("__PAGETITLE__", title))
