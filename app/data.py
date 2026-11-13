@@ -50,14 +50,14 @@ def history(symbol):
     Возвращает (Series закрытий, последняя цена, валюта)."""
     def load():
         url = ("https://query1.finance.yahoo.com/v8/finance/chart/" + urllib.parse.quote(symbol)
-               + "?range=3y&interval=1d")
+               + "?period1=1230768000&period2=9999999999&interval=1d")
         res = _get(url)["chart"]["result"][0]
         closes = res["indicators"]["quote"][0]["close"]
         meta = res["meta"]
         return {"t": res["timestamp"], "c": closes, "price": meta.get("regularMarketPrice"),
                 "currency": meta.get("currency", "USD")}
     safe = "".join(ch if ch.isalnum() else "_" for ch in symbol)
-    d = _cached(f"h_{safe}.json", 3600, load)
+    d = _cached(f"hist_{safe}.json", 3600, load)
     s = pd.Series(d["c"], index=pd.to_datetime(d["t"], unit="s").normalize(), dtype=float).dropna()
     s = s[s > 0]
     s = s[~s.index.duplicated(keep="last")]
@@ -89,3 +89,45 @@ def mvrv():
         last = rows[-1]
         return {"date": last["time"][:10], "value": float(last["CapMVRVCur"])}
     return _cached("mvrv.json", 6 * 3600, load)
+
+
+def fear_greed():
+    """Индекс страха и жадности по дням (с 2018 года)."""
+    def load():
+        rows = _get("https://api.alternative.me/fng/?limit=0")["data"]
+        return {"t": [int(r["timestamp"]) for r in rows], "v": [float(r["value"]) for r in rows]}
+    d = _cached("fng.json", 6 * 3600, load)
+    return pd.Series(d["v"], index=pd.to_datetime(d["t"], unit="s").normalize()).sort_index()
+
+
+def mvrv_history():
+    """MVRV биткоина по дням."""
+    def load():
+        rows, url = [], ("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc"
+                         "&metrics=CapMVRVCur&frequency=1d&page_size=10000&start_time=2011-01-01")
+        while url:
+            d = _get(url, timeout=60)
+            rows += d["data"]
+            url = d.get("next_page_url")
+        return {"t": [r["time"][:10] for r in rows], "v": [float(r["CapMVRVCur"]) for r in rows]}
+    d = _cached("mvrv_hist.json", 6 * 3600, load)
+    return pd.Series(d["v"], index=pd.to_datetime(d["t"])).sort_index()
+
+
+def usdt_dominance():
+    """USDT.D по дням, в процентах (капитализация USDT / вся капитализация рынка)."""
+    base = "https://api.coinmarketcap.com/data-api/v3"
+
+    def load():
+        total = {}
+        for a, b in (("2015-01-01", "2019-12-31"), ("2020-01-01", "2024-12-31"), ("2025-01-01", "2030-01-01")):
+            d = _get(f"{base}/global-metrics/quotes/historical?format=chart&interval=1d&timeStart={a}&timeEnd={b}", timeout=60)
+            for q in d["data"]["quotes"]:
+                total[q["timestamp"][:10]] = q["quote"][0]["totalMarketCap"]
+        u = _get(f"{base}/cryptocurrency/historical?id=825&convertId=2781&timeStart=1420070400&timeEnd=1893456000&interval=1d",
+                 timeout=60)
+        usdt = {q["timeOpen"][:10]: q["quote"]["marketCap"] for q in u["data"]["quotes"]}
+        days = sorted(k for k in total if k in usdt and total[k])
+        return {"t": days, "v": [usdt[k] / total[k] * 100 for k in days]}
+    d = _cached("usdt_d.json", 12 * 3600, load)
+    return pd.Series(d["v"], index=pd.to_datetime(d["t"])).sort_index()

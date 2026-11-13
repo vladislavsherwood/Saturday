@@ -112,7 +112,7 @@ def api_today(_=Depends(auth)):
                 "allowed": engine.allowed(t["kind"]),
                 "done": done.get(t["symbol"], 0), "invested": totals.get(t["symbol"], 0)}
         try:
-            d = engine.decide(t["symbol"], t["strategy"])
+            d = engine.decide(t["symbol"], t["kind"], t["strategy"])
             item.update(d)
             item["amount"] = round(item["unit"] * d["mult"], 2)
         except Exception as e:  # noqa: BLE001
@@ -120,10 +120,30 @@ def api_today(_=Depends(auth)):
         return item
 
     items = list(pool.map(one, tickers))
-    left = sum(i["amount"] for i in items if not i["done"])
-    return {"day": day, "unit": unit, "items": items, "total": round(sum(i["amount"] for i in items), 2),
+    left = sum(i["amount"] for i in items if not i["done"] and i["amount"] > 0)
+    return {"day": day, "unit": unit, "items": items,
+            "total": round(sum(i["amount"] for i in items if i["amount"] > 0), 2),
             "left": round(left, 2),
             "strategies": {k: {"name": v[0], "about": v[1]} for k, v in engine.STRATEGIES.items()}}
+
+
+@app.get("/api/history/{symbol}")
+def api_history(symbol: str, _=Depends(auth)):
+    """Цены и решения всех стратегий по тикеру — бэктест считается на экране."""
+    with db() as con:
+        row = con.execute("select * from tickers where symbol=?", (symbol,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Нет такого тикера")
+    try:
+        return engine.series(symbol, row["kind"])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Нет данных: {e}")
+
+
+@app.get("/explorer.js")
+def explorer_js():
+    return FileResponse(os.path.join(HERE, "web", "explorer.js"), media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/search")

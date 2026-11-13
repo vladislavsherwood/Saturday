@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>DCA</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/explorer.js"></script>
 <style>
   :root {
     --bg: #F3F3EF; --surface: #FFFFFF; --text: #0D0E10; --mute: #8B9098; --faint: #D9DAD6;
@@ -55,6 +56,7 @@
   .meter i.on { background: var(--accent); }
   .amt { font-size: 21px; font-weight: 750; text-align: right; }
   .amt.zero { color: var(--faint); }
+  .amt.sell { color: #e0662f; }
   .check { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--faint); display: grid; place-items: center;
            transition: transform 0.15s, background 0.2s, border-color 0.2s; }
   .check:active { transform: scale(0.86); }
@@ -80,7 +82,7 @@
           display: flex; align-items: flex-end; }
   .veil.open { opacity: 1; pointer-events: auto; }
   .sheet { width: 100%; background: var(--surface); border-radius: 26px 26px 0 0; padding: 10px 18px calc(24px + env(safe-area-inset-bottom));
-           max-height: 88vh; overflow: auto; transform: translateY(24px); transition: transform 0.26s cubic-bezier(.2,.8,.2,1); }
+           max-height: 93vh; overflow: auto; transform: translateY(24px); transition: transform 0.26s cubic-bezier(.2,.8,.2,1); }
   .veil.open .sheet { transform: none; }
   .grab { width: 38px; height: 4px; border-radius: 2px; background: var(--faint); margin: 0 auto 16px; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -198,6 +200,10 @@ function row(i) {
     return `<div class="item bad" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b></div><div class="amt">нет данных</div><div class="check none"></div></div>`;
   }
   const m = i.mult;
+  if (m < 0) {
+    return `<div class="item" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b>${meter(0)}</div>
+      <div class="amt num sell">−$${num(-i.amount)}</div><div class="check none"></div></div>`;
+  }
   const cls = i.done ? "done" : m > 0 ? "" : "skip";
   const btn = i.done || m > 0
     ? `<button class="check" onclick="event.stopPropagation(); toggle('${s}')" aria-label="Куплено">${CHECK}</button>`
@@ -228,25 +234,50 @@ function scale(i) {
   const v = Math.min(Math.max(i.value, lo), hi);
   for (let k = 0; k < 4; k++) if (v >= bounds[k]) pos = (k + (v - bounds[k]) / (bounds[k + 1] - bounds[k])) * 25;
   pos = Math.min(Math.max(pos, 1), 99);
-  return `<div class="scale"><div class="val"><span>${esc(i.label)}</span><em>${i.mult > 0 ? "×" + i.mult : "—"}</em></div>
+  return `<div class="scale"><div class="val"><span>${esc(i.label)}</span><em>${i.mult > 0 ? "×" + i.mult : i.mult < 0 ? "продать ×" + -i.mult : "—"}</em></div>
     <div class="track"><i></i><i></i><i></i><i></i><div class="pin" style="left:${pos}%"></div></div>
     <div class="ticks"><span>×3</span><span>×2</span><span>×1</span><span>—</span></div></div>`;
 }
 
+let hist = {}, view = { period: "all" };
+async function history(symbol) {
+  if (!hist[symbol]) hist[symbol] = await api("/api/history/" + encodeURIComponent(symbol));
+  return hist[symbol];
+}
 function openTicker(symbol) {
   const i = state.items.find((x) => x.symbol === symbol);
   const s = esc(symbol);
-  const pills = i.allowed.map((k) => `<button class="pill ${k === i.strategy ? "on" : ""}" onclick="setStrategy('${s}','${k}')">${esc(state.strategies[k].name)}</button>`).join("");
   const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
   openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price}</div></div>
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
     ${scale(i)}
-    <div class="pills">${pills}</div>
+    <div id="strats"><div class="hint">Считаю историю…</div></div>
     <div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}"
       onchange="saveUnit('${s}')"><em>×1</em></div>`);
+  strategies(symbol);
+}
+async function strategies(symbol) {
+  const i = state.items.find((x) => x.symbol === symbol);
+  let h;
+  try { h = await history(symbol); } catch (e) { const b = $("strats"); if (b) b.innerHTML = '<div class="hint">' + esc(e.message) + "</div>"; return; }
+  const box = $("strats");
+  if (!box) return;
+  Explorer.list(box, h, { period: view.period, active: i.strategy, unit: i.unit,
+    onPeriod: (p) => { view.period = p; strategies(symbol); },
+    onOpen: (code) => openStrategy(symbol, code) });
+}
+async function openStrategy(symbol, code) {
+  const i = state.items.find((x) => x.symbol === symbol);
+  const h = await history(symbol);
+  openSheet('<div id="detail"></div>');
+  $("sheet").scrollTop = 0;
+  Explorer.detail($("detail"), h, code, { period: view.period, active: i.strategy, unit: i.unit,
+    onPeriod: (p) => { view.period = p; openStrategy(symbol, code); },
+    onBack: () => openTicker(symbol),
+    onSelect: (c) => setStrategy(symbol, c) });
 }
 async function setStrategy(symbol, strategy) {
-  haptic();
+  haptic("ok");
   try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify({ strategy }) }); await load(); openTicker(symbol); }
   catch (e) { toast(e.message); }
 }
