@@ -1,0 +1,173 @@
+<title>Тихая вершина против DCA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Раскладка: одна колонка отчёта — выбор монеты, четыре цифры, график цены со сделками, график счёта, таблица по годам. */
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --fg: #14181f; --muted: #5d6675; --line: #dfe3ea; --grid: #e9ecf1;
+  --buy: #199e70; --sell: #d95926; --quiet: #7a52d1; --strat: #2a78d6; --dca: #7b8494; --inv: #b3bac6; --price: #3b4352; --chip: #eceff4;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1216; --card: #181c22; --fg: #eef1f5; --muted: #98a2b3; --line: #2a303a; --grid: #222831;
+  --buy: #1baf7a; --sell: #eb6834; --quiet: #a184ea; --strat: #3987e5; --dca: #8d97a8; --inv: #566070; --price: #c5ccd8; --chip: #232830; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1216; --card: #181c22; --fg: #eef1f5; --muted: #98a2b3; --line: #2a303a; --grid: #222831;
+  --buy: #1baf7a; --sell: #eb6834; --quiet: #a184ea; --strat: #3987e5; --dca: #8d97a8; --inv: #566070; --price: #c5ccd8; --chip: #232830; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.45; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 22px; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 68ch; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs button, .per button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.tabs button[aria-pressed="true"], .per button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tabs button:focus-visible, .per button:focus-visible { outline: 2px solid var(--strat); outline-offset: 2px; }
+.per { margin-left: auto; } .per button { padding: 5px 11px; font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .per { margin-left: 0; } }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.tile small { display: block; color: var(--muted); font-size: 12px; }
+.tile b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; margin-top: 2px; overflow-wrap: anywhere; }
+.tile span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+.panel h2 { font-size: 15px; margin: 0 0 2px; } .panel p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: middle; }
+.legend .up { border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--buy); }
+.legend .dn { border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 10px solid var(--sell); }
+.legend .qt { width: 9px; height: 9px; background: var(--quiet); transform: rotate(45deg); }
+.legend .ln { width: 18px; height: 0; border-top: 3px solid var(--strat); } .legend .ln.d { border-color: var(--dca); } .legend .ln.i { border-top: 2px dashed var(--inv); } .legend .ln.p { border-top: 2px solid var(--price); }
+.plot { position: relative; width: 100%; } canvas { display: block; width: 100%; touch-action: pan-y; }
+.tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.4; white-space: nowrap; font-variant-numeric: tabular-nums; z-index: 2; }
+.tbl { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; } th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; } tfoot td { font-weight: 600; border-bottom: 0; }
+.pos { color: var(--buy); } .neg { color: var(--sell); }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; font-size: 13px; }
+@media (max-width: 640px) { .facts { grid-template-columns: 1fr 1fr; } }
+.facts div { min-width: 0; } .facts small { color: var(--muted); display: block; } .facts b { font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 13px; max-width: 72ch; margin: 0; }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Тихая вершина против обычного DCA</h1>
+    <p class="sub">Что было бы, если каждый день вносить $10 в монету: просто покупать (DCA) или торговать по стратегии с тихой вершиной. Без комиссий, сделка на следующий день после сигнала.</p>
+  </header>
+  <div class="row">
+    <div class="row tabs" id="tabs" role="group" aria-label="Монета"></div>
+    <div class="row per" id="per" role="group" aria-label="Период на графиках"></div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <section class="panel">
+    <h2>Цена и сделки</h2>
+    <p id="pnote">Обычные взносы по $10 не отмечены. Наведите на график, чтобы увидеть день.</p>
+    <div class="legend"><span><i class="ln p"></i>цена (шкала в разах)</span><span><i class="up"></i>докупка из резерва</span><span><i class="dn"></i>продажа на страхе</span><span><i class="qt"></i>продажа на тихой вершине</span></div>
+    <div class="plot" id="p1"><canvas id="c1" height="340"></canvas><div class="tip" id="t1" hidden></div></div>
+  </section>
+  <section class="panel">
+    <h2>Счёт: стратегия и DCA</h2>
+    <p>Стоимость всего счёта (монеты и резерв) по дням. Шкала в разах: равные расстояния означают рост в одинаковое число раз.</p>
+    <div class="legend"><span><i class="ln"></i>стратегия</span><span><i class="ln d"></i>обычный DCA</span><span><i class="ln i"></i>внесено</span></div>
+    <div class="plot" id="p2"><canvas id="c2" height="260"></canvas><div class="tip" id="t2" hidden></div></div>
+  </section>
+  <section class="panel">
+    <h2>Сделки в цифрах</h2>
+    <div class="facts" id="facts"></div>
+  </section>
+  <section class="panel">
+    <h2>По годам</h2>
+    <p>Прибыль — насколько счёт на конец года больше всех внесённых к этому моменту денег.</p>
+    <div class="tbl"><table id="years"></table></div>
+  </section>
+  <p class="note">Расчёт считает, что любую сумму можно купить и продать по цене закрытия дня. На практике комиссии, налоги и нехватка объёма на рынке уменьшат результат, особенно на больших суммах. Данные по <span id="asof"></span>.</p>
+</div>
+<script>
+const DATA = /*DATA*/null;
+const $ = (id) => document.getElementById(id), css = (k) => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const money = (x) => { const a = Math.abs(x), s = x < 0 ? "−" : ""; return s + "$" + (a >= 1e6 ? (a / 1e6).toFixed(2).replace(".", ",") + " млн" : a >= 1e4 ? Math.round(a / 1e3) + " тыс." : Math.round(a).toLocaleString("ru-RU")); };
+const full = (x) => (x < 0 ? "−" : "") + "$" + Math.round(Math.abs(x)).toLocaleString("ru-RU");
+const price = (x) => "$" + (x >= 1000 ? Math.round(x).toLocaleString("ru-RU") : x >= 1 ? x.toFixed(2) : x.toPrecision(3));
+const date = (t) => new Date(t * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const pct = (x) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(Math.abs(x) >= 100 ? 0 : 1).replace(".", ",") + "%";
+const KIND = ["обычный взнос", "докупка из резерва", "продажа на страхе", "продажа на тихой вершине", "взнос ушёл в резерв"];
+let cur = 0, period = "all";
+try { const s = JSON.parse(localStorage.getItem("quiet-report") || "{}"); if (DATA[s.cur]) cur = s.cur; if (s.period) period = s.period; } catch (e) {}
+const save = () => { try { localStorage.setItem("quiet-report", JSON.stringify({ cur, period })); } catch (e) {} };
+const PER = [["all", "Всё время"], ["3y", "3 года"], ["1y", "Год"]];
+
+function range(d) { const n = d.c.length, k = period === "1y" ? 365 : period === "3y" ? 1095 : n; return [Math.max(0, n - k), n]; }
+function setup(cv) { const r = devicePixelRatio || 1, w = cv.parentElement.clientWidth, h = +cv.getAttribute("height"); cv.width = w * r; cv.height = h * r; cv.style.height = h + "px"; const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); return { g, w, h }; }
+function ticksLog(lo, hi) { const out = []; for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v >= lo && v <= hi) out.push(v); } while (out.length > 7) for (let i = out.length - 2; i > 0; i -= 2) out.splice(i, 1); return out; }
+function axes(g, w, h, pad, a, b, d, lo, hi, fmt) {
+  const X = (i) => pad.l + ((i - a) / Math.max(1, b - 1 - a)) * (w - pad.l - pad.r), Y = (v) => pad.t + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - pad.t - pad.b);
+  g.clearRect(0, 0, w, h); g.font = "11px " + css("--font"); g.textBaseline = "middle"; g.lineWidth = 1;
+  for (const v of ticksLog(lo, hi)) { const y = Math.round(Y(v)) + 0.5; g.strokeStyle = css("--grid"); g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke(); g.fillStyle = css("--muted"); g.textAlign = "right"; g.fillText(fmt(v), pad.l - 6, y); }
+  // подписи лет (или месяцев на коротком периоде)
+  g.textAlign = "center"; g.textBaseline = "top"; let lastX = -99;
+  for (let i = a; i < b; i++) { const dt = new Date((d.t0 + i) * 864e5), first = dt.getUTCDate() === 1 && (b - a > 800 ? dt.getUTCMonth() === 0 : b - a > 400 ? dt.getUTCMonth() % 3 === 0 : true);
+    if (first) { const x = X(i); if (x - lastX > 44) { g.fillStyle = css("--muted"); g.fillText(b - a > 800 ? dt.getUTCFullYear() : dt.toLocaleDateString("ru-RU", { month: "short", year: "2-digit", timeZone: "UTC" }), x, h - pad.b + 6); lastX = x; } } }
+  return { X, Y };
+}
+function line(g, X, Y, arr, a, b, color, width, dash) { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.lineJoin = "round"; g.beginPath(); const step = Math.max(1, Math.floor((b - a) / 1600)); let on = false; for (let i = a; i < b; i += step) { const v = arr[i]; if (!(v > 0)) continue; const x = X(i), y = Y(v); if (on) g.lineTo(x, y); else { g.moveTo(x, y); on = true; } } const v = arr[b - 1]; if (v > 0) g.lineTo(X(b - 1), Y(v)); g.stroke(); g.setLineDash([]); }
+let S1 = null, S2 = null;
+function drawPrice(hi) {
+  const d = DATA[cur], [a, b] = range(d), { g, w, h } = setup($("c1")), pad = { l: 66, r: 14, t: 38, b: 26 };
+  let lo = Infinity, mx = 0; for (let i = a; i < b; i++) { if (d.c[i] < lo) lo = d.c[i]; if (d.c[i] > mx) mx = d.c[i]; } lo *= 0.9; mx *= 1.15;
+  const { X, Y } = axes(g, w, h, pad, a, b, d, lo, mx, price);
+  line(g, X, Y, d.c, a, b, css("--price"), 1.5);
+  const bg = css("--card"), cols = [null, css("--buy"), css("--sell"), css("--quiet")], dense = (b - a) > 1500;
+  // отметки: при длинном периоде соседние дни одного вида сливаются в одну отметку, чтобы график не превращался в сплошную полосу
+  let prevX = [-9, -9, -9, -9];
+  for (let i = a; i < b; i++) { const k = d.kind[i]; if (k < 1 || k > 3) continue; const x = X(i), y = Y(d.c[i]); if (dense && x - prevX[k] < 4) continue; prevX[k] = x;
+    g.fillStyle = cols[k]; g.strokeStyle = bg; g.lineWidth = 1.5; g.beginPath(); const s = 5;
+    if (k === 1) { g.moveTo(x, y + 6); g.lineTo(x - s, y + 6 + 9); g.lineTo(x + s, y + 6 + 9); }
+    else if (k === 2) { g.moveTo(x, y - 6); g.lineTo(x - s, y - 6 - 9); g.lineTo(x + s, y - 6 - 9); }
+    else { g.moveTo(x, y - 22); g.lineTo(x - s, y - 22 - s); g.lineTo(x, y - 22 - 2 * s); g.lineTo(x + s, y - 22 - s); }
+    g.closePath(); g.stroke(); g.fill(); }
+  if (hi != null) { const x = X(hi); g.strokeStyle = css("--muted"); g.lineWidth = 1; g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, h - pad.b); g.stroke(); g.fillStyle = css("--price"); g.strokeStyle = bg; g.lineWidth = 2; g.beginPath(); g.arc(x, Y(d.c[hi]), 4, 0, 7); g.fill(); g.stroke(); }
+  S1 = { X, a, b, pad, w };
+}
+function drawEquity(hi) {
+  const d = DATA[cur], [a, b] = range(d), { g, w, h } = setup($("c2")), pad = { l: 66, r: 14, t: 12, b: 26 }, inv = d.c.map((x, i) => 10 * (i + 1));
+  let lo = Infinity, mx = 0; for (let i = a; i < b; i++) for (const v of [d.eq[i], d.dq[i], inv[i]]) { if (v > 0 && v < lo) lo = v; if (v > mx) mx = v; } lo = Math.max(5, lo * 0.9); mx *= 1.15;
+  const { X, Y } = axes(g, w, h, pad, a, b, d, lo, mx, (v) => "$" + (v >= 1e6 ? v / 1e6 + " млн" : v >= 1e3 ? v / 1e3 + " тыс." : v));
+  line(g, X, Y, inv, a, b, css("--inv"), 1.5, [5, 4]); line(g, X, Y, d.dq, a, b, css("--dca"), 2); line(g, X, Y, d.eq, a, b, css("--strat"), 2);
+  if (hi != null) { const x = X(hi); g.strokeStyle = css("--muted"); g.lineWidth = 1; g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, h - pad.b); g.stroke(); for (const [arr, col] of [[d.dq, "--dca"], [d.eq, "--strat"]]) { g.fillStyle = css(col); g.strokeStyle = css("--card"); g.lineWidth = 2; g.beginPath(); g.arc(x, Y(Math.max(lo, arr[hi])), 4, 0, 7); g.fill(); g.stroke(); } }
+  S2 = { X, a, b, pad, w };
+}
+function hover(plot, tip, S, e, html, redraw) {
+  const r = plot.getBoundingClientRect(), x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left, st = S();
+  let i = Math.round(st.a + ((x - st.pad.l) / (st.w - st.pad.l - st.pad.r)) * (st.b - 1 - st.a)); i = Math.max(st.a, Math.min(st.b - 1, i));
+  redraw(i); tip.innerHTML = html(i); tip.hidden = false; const tw = tip.offsetWidth, px = st.X(i); tip.style.left = Math.max(0, Math.min(st.w - tw, px + (px > st.w / 2 ? -tw - 12 : 12))) + "px"; tip.style.top = "8px";
+}
+function bind(plot, tip, S, html, redraw) { const mv = (e) => hover(plot, tip, S, e, html, redraw), out = () => { tip.hidden = true; redraw(null); };
+  plot.addEventListener("mousemove", mv); plot.addEventListener("mouseleave", out); plot.addEventListener("touchstart", mv, { passive: true }); plot.addEventListener("touchmove", mv, { passive: true }); plot.addEventListener("touchend", out); }
+bind($("p1"), $("t1"), () => S1, (i) => { const d = DATA[cur], k = d.kind[i]; return `<b>${date(d.t0 + i)}</b><br>цена ${price(d.c[i])}<br>${KIND[k]}${k === 4 ? "" : ": " + full(d.amt[i])}`; }, drawPrice);
+bind($("p2"), $("t2"), () => S2, (i) => { const d = DATA[cur], inv = 10 * (i + 1); return `<b>${date(d.t0 + i)}</b><br>стратегия ${full(d.eq[i])}<br>DCA ${full(d.dq[i])}<br>внесено ${full(inv)}`; }, drawEquity);
+
+function render() {
+  const d = DATA[cur], n = d.c.length, inv = 10 * n, eq = d.eq[n - 1], dq = d.dq[n - 1];
+  $("tabs").innerHTML = DATA.map((x, i) => `<button type="button" id="tab-${i}" aria-pressed="${i === cur}" data-i="${i}">${x.ticker}</button>`).join("");
+  $("per").innerHTML = PER.map(([k, t]) => `<button type="button" id="per-${k}" aria-pressed="${k === period}" data-p="${k}">${t}</button>`).join("");
+  $("tiles").innerHTML = [["Внесено", full(inv), `${n.toLocaleString("ru-RU")} дней с ${date(d.t0)}`], ["Обычный DCA", full(dq), `прибыль ${full(dq - inv)} · ${pct((dq / inv - 1) * 100)}`],
+    ["Стратегия", full(eq), `прибыль ${full(eq - inv)} · ${pct((eq / inv - 1) * 100)}`], ["Стратегия к DCA", "×" + (eq / dq).toFixed(eq / dq >= 10 ? 0 : 1).replace(".", ","), `разница ${full(eq - dq)}`]]
+    .map(([a, b, c]) => `<div class="tile"><small>${a}</small><b>${b}</b><span>${c}</span></div>`).join("");
+  const cnt = [0, 0, 0, 0, 0], sum = [0, 0, 0, 0, 0]; d.kind.forEach((k, i) => { cnt[k]++; sum[k] += d.amt[i]; });
+  const eps = []; let prev = -99; d.kind.forEach((k, i) => { if (k === 3) { if (i - prev > 30) eps.push(new Date((d.t0 + i) * 864e5).toLocaleDateString("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" })); prev = i; } });
+  let cash = 0; d.kind.forEach((k, i) => { cash += 10; if (k === 2 || k === 3) cash += d.amt[i]; else if (k < 2) cash -= d.amt[i]; });
+  $("facts").innerHTML = [["Дней с обычным взносом", cnt[0].toLocaleString("ru-RU")], ["Докупок из резерва", `${cnt[1].toLocaleString("ru-RU")} на ${money(sum[1])}`], ["Продаж на страхе", `${cnt[2].toLocaleString("ru-RU")} на ${money(sum[2])}`],
+    ["Продаж на тихой вершине", `${cnt[3].toLocaleString("ru-RU")} на ${money(sum[3])}`], ["Сейчас в резерве", `${money(cash)} (${Math.round(100 * cash / eq)}% счёта)`], ["Сейчас в монете", money(eq - cash)]]
+    .map(([a, b]) => `<div><small>${a}</small><b>${b}</b></div>`).join("") + `<div style="grid-column: 1 / -1"><small>Когда срабатывала тихая вершина</small><b>${eps.join(", ") || "ни разу"}</b></div>`;
+  const Y = {}; d.kind.forEach((k, i) => { const y = new Date((d.t0 + i) * 864e5).getUTCFullYear(), r = (Y[y] = Y[y] || { buy: 0, sell: 0, q: 0, last: i }); if (k < 2) r.buy += d.amt[i]; else if (k < 4) { r.sell += d.amt[i]; if (k === 3) r.q += d.amt[i]; } r.last = i; });
+  const c2 = (v) => `<td class="${v >= 0 ? "pos" : "neg"}">${full(v)}</td>`;
+  $("years").innerHTML = "<thead><tr><th>Год</th><th>Куплено</th><th>Продано</th><th>из них на тихой вершине</th><th>Прибыль стратегии</th><th>Прибыль DCA</th></tr></thead><tbody>" +
+    Object.entries(Y).map(([y, r]) => `<tr><td>${y}</td><td>${full(r.buy)}</td><td>${full(r.sell)}</td><td>${full(r.q)}</td>${c2(d.eq[r.last] - 10 * (r.last + 1))}${c2(d.dq[r.last] - 10 * (r.last + 1))}</tr>`).join("") + "</tbody>";
+  $("asof").textContent = d.last.split("-").reverse().join(".");
+  drawPrice(null); drawEquity(null);
+}
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { cur = +b.dataset.i; save(); render(); } });
+$("per").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { period = b.dataset.p; save(); render(); } });
+addEventListener("resize", () => { drawPrice(null); drawEquity(null); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+render();
+</script>
