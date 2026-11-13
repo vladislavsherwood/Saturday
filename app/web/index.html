@@ -239,6 +239,8 @@ function closeSheet() { $("veil").classList.remove("open"); setBack(null); docum
 $("veil").addEventListener("click", (e) => { if (e.target.id === "veil") closeSheet(); });
 
 function scale(i) {
+  if (i.action) return `<div class="scale"><div class="val"><span>${esc(i.action)}</span><em>${esc(i.label || "")}</em></div>
+    <div class="val"><span>в резерве $${num(i.reserve || 0)}</span><em>в позиции $${num(i.holding || 0)}</em></div></div>`;
   if (!i.edges || i.value == null) return "";
   const e = i.edges, lo = e[0] - (e[1] - e[0]), hi = e[2] + (e[2] - e[1]);
   const bounds = [lo, e[0], e[1], e[2], hi];

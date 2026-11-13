@@ -6,12 +6,14 @@
   BOT_TOKEN — токен бота Telegram. Если задан, приложение открывается только из Telegram.
   OWNER_ID  — Telegram ID владельца. Если не задан, владельцем становится первый вошедший.
   DCA_DB    — путь к файлу базы (по умолчанию app/dca.db).
+  DCA_REFRESH — 0, чтобы не обновлять рыночные ряды для объединённой стратегии в фоне (по умолчанию 1).
 """
 import hashlib
 import hmac
 import json
 import os
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -50,9 +52,31 @@ def init_db():
         create index if not exists purchases_day on purchases(day);
         """)
         con.execute("insert or ignore into settings values('unit', '10')")
+        if "since" not in [r[1] for r in con.execute("pragma table_info(tickers)")]:      # с какого дня ведётся резерв объединённой стратегии
+            con.execute("alter table tickers add column since text")
+            con.execute("update tickers set since=?", (datetime.now(timezone.utc).strftime("%Y-%m-%d"),))
+            # прежние стратегии по умолчанию у криптовалют заменяются объединённой; выбранные вручную не трогаются
+            con.execute("update tickers set strategy='merged' where (kind='btc' and strategy='mvrv') or (kind='alt' and strategy='coin_btc')")
 
 
 init_db()
+
+
+def refresh_market():
+    """Раз в сутки обновляет рыночные ряды для маркеров вершин и дна: без них объединённая стратегия считает по вчерашним данным."""
+    import market_extra
+    while True:
+        try:
+            if not os.path.exists(engine.EXTRA) or time.time() - os.path.getmtime(engine.EXTRA) > 20 * 3600:
+                market_extra.main(engine.EXTRA)
+                engine._cache.clear()
+        except Exception as e:  # noqa: BLE001
+            print("обновление рыночных рядов:", e)
+        time.sleep(3600)
+
+
+if os.environ.get("DCA_REFRESH", "1") == "1":
+    threading.Thread(target=refresh_market, daemon=True).start()
 
 
 def setting(key, default=None):
@@ -115,6 +139,10 @@ def api_today(_=Depends(auth)):
             d = engine.decide(t["symbol"], t["kind"], t["strategy"])
             item.update(d)
             item["amount"] = round(item["unit"] * d["mult"], 2)
+            if d.get("reserve_mode"):                       # объединённая стратегия: сумма зависит от накопленного резерва и позиции
+                item.update(engine.position(t["symbol"], t["kind"], t["since"] or day, item["unit"]))
+                if d["mult"] < 0 and abs(item["amount"]) < 0.005:      # продавать пока нечего: взнос просто идёт в резерв
+                    item.update({"mult": 0, "amount": 0, "action": item["action"] + " — позиции ещё нет, взнос идёт в резерв"})
         except Exception as e:  # noqa: BLE001
             item.update({"mult": None, "amount": 0, "error": f"нет данных: {e}"})
         return item
@@ -172,8 +200,8 @@ def add_ticker(t: NewTicker, _=Depends(auth)):
     kind = engine.kind_of(symbol, t.kind)
     with db() as con:
         pos = con.execute("select coalesce(max(pos), 0) + 1 from tickers").fetchone()[0]
-        con.execute("insert or ignore into tickers values(?,?,?,?,?,?)",
-                    (symbol, t.name or symbol, kind, engine.default_strategy(kind), None, pos))
+        con.execute("insert or ignore into tickers(symbol, name, kind, strategy, unit, pos, since) values(?,?,?,?,?,?,?)",
+                    (symbol, t.name or symbol, kind, engine.default_strategy(kind), None, pos, today()))
     return {"ok": True}
 
 

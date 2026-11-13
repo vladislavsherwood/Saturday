@@ -220,7 +220,7 @@
   function list(el, h, o) {
     style();
     const period = fitPeriod(h, o.period || "all"), i0 = startIndex(h, yearsOf(period));
-    const rows = h.strategies.map((st) => ({ st, s: simulate(h, st, i0, o.unit || 10) }));
+    const rows = h.strategies.map((st) => ({ st, s: st.plan ? simulateReserve(h, st, i0, o.unit || 10) : simulate(h, st, i0, o.unit || 10) }));
     const head = rows.filter((r) => r.st.code === "dca");
     const rest = rows.filter((r) => r.st.code !== "dca").sort((a, b) => (b.s.irr ?? -1e9) - (a.s.irr ?? -1e9));
     el.innerHTML = '<div class="ex">' + seg(period, h) + head.concat(rest).map(({ st, s }) => {
