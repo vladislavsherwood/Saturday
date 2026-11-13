@@ -7,12 +7,12 @@ const { lab, c, med, stable, sh, report } = require('./lab.js');
 const HERE = __dirname;
 const L = [{ tag: 'ТЕКУЩАЯ (с возвратом, слабая продажа 16%)', kind: 'ref', S: JSON.parse(fs.readFileSync(HERE + '/found/gentle-impulse.json', 'utf8')) }, { tag: 'DCA', kind: 'ref', S: { base: 1, rules: [] } }];
 const pc = (a) => (a < 0 ? `продать ${+(-a * 100).toFixed(1)}%` : `взнос + ${Math.round((a - 1) * 100)}% резерва`);
-for (const tn of ['topn', 'topm']) for (const useHi of [1, 0]) for (const [k1, k2] of [[2, 4], [2, 5], [3, 4], [3, 5], [3, 6], [4, 5], [4, 6], [5, 6]]) for (const f1 of [-0.02, -0.05, -0.1]) for (const f2 of [-0.1, -0.25, -0.5]) {
+for (const tn of ['topn', 'topm']) for (const useHi of [1, 0]) for (const [k1, k2] of [[2, 4], [3, 5], [3, 6], [4, 5], [4, 6]]) for (const f1 of [-0.03, -0.1]) for (const f2 of [-0.15, -0.4]) {
   if (tn === 'topm' && k2 > 5) continue;
   const hi = useHi ? [c('hi90', '>', 0.5)] : [c('sma200', '>', 1)];
   const sells = [{ act: f2, conds: [...hi, c(tn, '>', k2 - 0.5)] }, { act: f1, conds: [...hi, c(tn, '>', k1 - 0.5)] }];
   const BUYS = [[null, 'без покупки на дне']];
-  for (const bn of ['botn', 'botm']) for (const kb of [3, 4]) for (const a of [1.25, 2]) { if (bn === 'botm' && kb > 4) continue; BUYS.push([{ act: a, conds: [c('lo90', '>', 0.5), c(bn, '>', kb - 0.5)] }, `на минимуме и ${bn === 'botn' ? 'маркеров' : 'рыночных маркеров'} дна ≥ ${kb} → ${pc(a)}`], [{ act: a, conds: [c(bn, '>', kb - 0.5)] }, `${bn === 'botn' ? 'маркеров' : 'рыночных маркеров'} дна ≥ ${kb} → ${pc(a)}`]); }
+  for (const bn of ['botn', 'botm']) for (const kb of [3, 4]) for (const a of [2]) { if (bn === 'botm' && kb > 4) continue; BUYS.push([{ act: a, conds: [c('lo90', '>', 0.5), c(bn, '>', kb - 0.5)] }, `на минимуме и ${bn === 'botn' ? 'маркеров' : 'рыночных маркеров'} дна ≥ ${kb} → ${pc(a)}`], [{ act: a, conds: [c(bn, '>', kb - 0.5)] }, `${bn === 'botn' ? 'маркеров' : 'рыночных маркеров'} дна ≥ ${kb} → ${pc(a)}`]); }
   const RETS = [[null, 'без возврата'], [{ act: 2, conds: [c('hi90', '>', 0.5), c(tn, '<', 1.5)] }, 'на максимуме и маркеров вершины ≤ 1 → вернуть весь резерв'], [{ act: 1.25, conds: [c('hi90', '>', 0.5), c(tn, '<', 1.5)] }, 'на максимуме и маркеров вершины ≤ 1 → вернуть 25%'],
     [{ act: 2, conds: [c(tn, '<', 0.5)] }, 'маркеров вершины 0 → вернуть весь резерв'], [{ act: 2, conds: [c('btcr30', '>', 20)] }, 'биткоин +20% за 30 дней → вернуть весь резерв']];
   for (const [b, bt] of BUYS) for (const [r, rt] of RETS) {
