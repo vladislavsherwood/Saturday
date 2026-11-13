@@ -163,10 +163,12 @@
   const TRI_UP = '<svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 0L11 10H0z" fill="var(--viz-buy)"/></svg>';
   const TRI_DN = '<svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 10L11 0H0z" fill="var(--viz-sell)"/></svg>';
 
-  function candles(box, h, s, unit) {
+  function candles(box, h, s, unit, opts) {
+    opts = opts || {};
     const m = s.m, i0 = s.i0, t = h.t, C = h.c, O = h.o || h.c, Hi = h.h || h.c, Lo = h.l || h.c;
     const anySell = s.rec > 0;
-    const win = { a: 0, b: m };
+    const w0 = opts.win;
+    const win = w0 && w0.b <= m && w0.a >= 0 && w0.b - w0.a >= 30 ? { a: w0.a, b: w0.b } : { a: 0, b: m };
     box.innerHTML = `<div class="ex-cap"><span>Цена и сделки</span><span><i class="mk">${TRI_UP}покупка</i>${anySell ? `<i class="mk">${TRI_DN}продажа</i>` : ""}</span></div>
       <div class="ex-plot ex-candles"><div class="ex-tip"></div><div data-svg></div></div>
       <div class="ex-zoom"><button data-z="out" aria-label="Отдалить">−</button><button data-z="in" aria-label="Приблизить">+</button>
@@ -238,6 +240,7 @@
       box.querySelector('[data-z="all"]').disabled = len >= m;
       box.querySelector('[data-z="in"]').disabled = len <= 30;
       G = { W, pw, cw, bk, n, k };
+      if (opts.onDraw) opts.onDraw({ a: win.a, b: win.b, k, n, cw, pw, W, R, i0 });
     }
 
     function show(clientX) {
@@ -375,6 +378,7 @@
       <div class="ex-hero"><b>${pct(s.irr, true)}</b><span>в год</span>
         ${isDca ? "" : `<span class="ex-delta ${cls}" style="font-size:15px">${d == null ? "" : pct(d, true).replace("%", " п.п.") + " к DCA"}</span>`}</div>
       <div data-candles></div>
+      <div data-extra></div>
       <div data-profit></div>
       <div class="ex-grid">${cells.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <details class="ex-years"><summary>По годам</summary><div class="scroll"><table><thead><tr><th>Год</th><th>Куплено</th>${anySell ? "<th>Продано</th>" : ""}<th>Прибыль</th>${isDca ? "" : "<th>DCA</th>"}</tr></thead>
@@ -382,12 +386,13 @@
       <div class="ex-note">${fmtDate(h.t[i0])} — ${fmtDate(h.t[h.t.length - 1])}. ×1 = ${money(unit)}. Значки под свечой — покупки, над свечой — продажи: один значок — ×1, три — ×3. Прибыль по годам — накопленная с начала периода. Без комиссий и налогов.</div>
       ${o.onSelect ? `<button class="ex-use" data-use ${st.code === o.active ? "disabled" : ""}>${st.code === o.active ? "Выбрана" : "Выбрать"}</button>` : ""}
     </div>`;
-    candles(el.querySelector("[data-candles]"), h, s, unit);
+    candles(el.querySelector("[data-candles]"), h, s, unit, { win: o.win,
+      onDraw: o.onDraw ? (g) => o.onDraw(el.querySelector("[data-extra]"), g, s) : null });
     profitChart(el.querySelector("[data-profit]"), h, s);
     el.querySelectorAll("[data-period]").forEach((b) => b.addEventListener("click", () => o.onPeriod && o.onPeriod(b.dataset.period)));
     const back = el.querySelector("[data-back]"); if (back) back.addEventListener("click", o.onBack);
     const use = el.querySelector("[data-use]"); if (use) use.addEventListener("click", () => o.onSelect(st.code));
   }
 
-  window.Explorer = { simulate, startIndex, list, detail, money, pct };
+  window.Explorer = { simulate, startIndex, list, detail, money, pct, price, fmtDate, CODES };
 })();
