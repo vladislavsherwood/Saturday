@@ -617,7 +617,7 @@ ASSETS = {
              "pair": ("BTC-USD", "PUMP/BTC"), "crypto": True, "rules": CRYPTO_RULES},
 }
 # страница: (активы, заголовок вкладки)
-PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "pump", "useless"], "Конструктор стратегии SOL")}
+PAGES = {"gold": (["gold"], "Конструктор стратегии"), "crypto": (["sol", "eth", "btc", "doge", "xrp", "bnb", "ton", "pump"], "Конструктор стратегии SOL")}
 STORE = {"gold": "gcf", "crypto": "sol"}      # ключ, под которым правила хранятся в браузере
 
 
