@@ -55,12 +55,16 @@ const inPage = ({ seed, mode, ms, unit, evalOnly, evalMany, maxRules = 3, maxCon
     const P = new Float64Array(X.c.length).fill(NaN), Q = new Float64Array(X.c.length).fill(NaN), I = (k) => (k === 'pnl' ? P : k === 'cashp' ? Q : X.ind[k]);
     const rs = S.rules.filter((r) => r.conds.every((cd) => I(cd.ind)));
     const arrs = rs.map((r) => r.conds.map((cd) => [I(cd.ind), cd.op === '<', cd.v])), acts = rs.map((r) => r.act);
+    // mods — множитель обычного взноса в дни, когда не сработало ни одно правило: взнос × mult (недоложенное остаётся в резерве, сверх — берётся из резерва)
+    const ms = (S.mods || []).filter((r) => r.conds.every((cd) => I(cd.ind)));
+    const marrs = ms.map((r) => r.conds.map((cd) => [I(cd.ind), cd.op === '<', cd.v])), mults = ms.map((r) => r.mult);
     let cash = 0, units = 0, sells = 0, buys = 0, cost = 0;
     for (let i = X.a; i < X.b; i++) {
-      const p = X.c[i], j = i - 1 - lag, a = j >= 0 ? decideAt(arrs, acts, S.base, j) : 1, before = cash;
+      const p = X.c[i], j = i - 1 - lag, r0 = j >= 0 ? decideAt(arrs, acts, NaN, j) : 1, before = cash;
+      const free = Number.isNaN(r0), a = free ? S.base : r0, m = free && marrs.length ? decideAt(marrs, mults, 1, j) : 1;
       cash += unit;
       if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cost *= 1 + a; cash += amt * (1 - FEE); sells++; } }
-      else if (a > 0) { const amt = Math.min(cash, unit + (a - 1) * before); units += (amt * (1 - FEE)) / p; cost += amt; cash -= amt; buys++; }
+      else if (a > 0) { const amt = Math.min(cash, m !== 1 ? unit * m : unit + (a - 1) * before); units += (amt * (1 - FEE)) / p; cost += amt; cash -= amt; buys++; }
       if (cost > 0) P[i] = ((units * p) / cost - 1) * 100;
       Q[i] = (cash / (cash + units * p)) * 100;
     }
