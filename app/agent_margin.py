@@ -157,7 +157,8 @@ NOSHORT = np.zeros(C.shape)
 
 
 def portfolio(ACT, GRP, lev=(1, 1, 1, 1, 1), SHORT=None, sh_size=0.0, sh_rate=0.10 / 365, sh_coin=-1, stress=True):
-    lev = np.array(lev, float); SH = NOSHORT if SHORT is None else SHORT.astype(float)
+    assert GRP.max() < 8
+    lev = np.array(list(lev) + [1.0] * (8 - len(lev)), float); SH = NOSHORT if SHORT is None else SHORT.astype(float)   # группы без плеча — ×1
     R = [sim(C, LO, HI, ACT, GRP, SH, int(s), lev, 1.0, sh_size, sh_rate, sh_coin) for s in starts]
     x = np.array([q[1] for q in R]) * 100
     o = {"liq": int(sum(q[0] > 0 for q in R)), "med": float(np.median(x)), "p10": float(np.percentile(x, 10)), "lvl": float(min(q[2] for q in R)),
