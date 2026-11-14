@@ -61,3 +61,12 @@ function robust(r, b, filt = (x) => x.meme) { const o = {}; for (const [k, gs] o
   o[k] = { mlog: s / n, u, d, hu, hd }; } return o; }
 const rs = (o) => `сред.лог мемов старые ${o.old.mlog >= 0 ? '+' : ''}${o.old.mlog.toFixed(3)} (лучше/хуже ${o.old.u}/${o.old.d}, половин ${o.old.hu}/${o.old.hd}) | 100н ${o.n100.mlog >= 0 ? '+' : ''}${o.n100.mlog.toFixed(3)} (${o.n100.u}/${o.n100.d}, пол. ${o.n100.hu}/${o.n100.hd})`;
 module.exports.robust = robust; module.exports.rs = rs;
+// кандидат: P (мемы: паника только взносом, пока ddm90 < X) + CM (слабый мем, rel180 < −15: все продажи ×k вместо ×1,25). Копии P помечены grp 0 (взнос) для стенда маржи.
+const isC = (r) => r.act < 0 && r.conds.some((x) => x.ind === 'rel180');
+function cand(X = 35, k = 2, S = S0) {
+  let o = X ? pre(S, isPanic, [K.c('meme', '>', 0.5), K.c('ddm90', '<', X)], 1) : S;
+  o = { ...o, rules: o.rules.map((r) => (r.act === 1 && r.conds.some((q) => q.ind === 'ddm90') ? { ...r, grp: 0 } : r)) };
+  if (k && k !== 1.25) o = pre(o, isC, [K.c('meme', '>', 0.5)], (r) => Math.max(-1, +(r.act * k / 1.25).toFixed(6)));
+  return o;
+}
+module.exports.cand = cand; module.exports.isC = isC;
