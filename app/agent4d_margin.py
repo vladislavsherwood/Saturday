@@ -238,3 +238,23 @@ def sim4(C, LO, HI, ACT, GRP, SHW, LEVM, REP, s0, LEV, stress, sh_rate, rate):
         else:
             fin += r[k] - debt[k]
     return nl, fin / inv - 1, worst, shpnl / inv, paid / inv
+
+
+BIG = {"BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD"}
+
+
+def cls(sym):
+    return "big" if sym in BIG else ("meme" if sym in MEMES else "mid")
+
+
+def both(B, A, G, lev=W25L, **kw):
+    """Оценка при исполнении в срок и на день позже: худшая медиана и худшие 10%, ликвидации/стресс по обоим."""
+    o0 = B.port(A, G, lev, **kw); o1 = B.port(A, G, lev, lag=1, **kw)
+    return {"med": min(o0["med"], o1["med"]), "p10": min(o0["p10"], o1["p10"]), "m0": o0["med"], "m1": o1["med"],
+            "lvl": min(o0["lvl"], o1["lvl"]), "safe": safe(o0) and safe(o1), "sh": o0["shpnl"], "int": o0["int"],
+            "liq": (o0["liq"], o0.get("l20"), o0.get("l30"), o1["liq"], o1.get("l20"), o1.get("l30"))}
+
+
+def fb(o):
+    return (f"худш. из сдвигов {o['med']:+.0f}% (в срок {o['m0']:+.0f}, +1 день {o['m1']:+.0f}) | худшие 10% {o['p10']:+.0f}% | запас {min(o['lvl'], 99):.2f}"
+            f" | {'OK' if o['safe'] else 'ЛИКВ ' + str(o['liq'])}" + (f" | шорт {o['sh']:+.1f}%" if o["sh"] else ""))

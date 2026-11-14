@@ -78,4 +78,6 @@ function row(tag, r, b) { const n = r.n100 && b.n100 ? ` | 100н лучше/ху
 const addRule = (S, rule, pos = 'end') => { const R = [...S.rules]; if (pos === 'end') R.push(rule); else R.splice(pos, 0, rule); return { ...S, rules: R }; };
 // добавить условие ко всем правилам, где f(r, i) истинно
 const addCond = (S, f, conds) => ({ ...S, rules: S.rules.map((r, i) => (f(r, i) ? { ...r, conds: [...r.conds, ...conds] } : r)) });
-module.exports = { ...A2, A2, W25, groups, ev, show, bw, withRules, addRule, addCond, COINX, rollMax, rollMin, c, addInd, guard, flagOf, runup, row, scale, scaleC };
+// кандидат круга 4: W25 + «бета к BTC за 180 дней > 1,2 и монета ниже своей средней 200 → каждая продажа ×1,5»
+const C4 = scaleC(W25, [c('beta180', '>', 1.2), c('sma200', '<', 1)], 1, 1.5, (r) => r.act < 0);
+module.exports = { C4, ...A2, A2, W25, groups, ev, show, bw, withRules, addRule, addCond, COINX, rollMax, rollMin, c, addInd, guard, flagOf, runup, row, scale, scaleC };
