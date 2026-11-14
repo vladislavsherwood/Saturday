@@ -325,3 +325,32 @@ def r2_sells(d, s5=0.15, s6=0.5, hot3=1.81, hot1=86.0, sh=0.2):
 
 def r2_plan(d):
     return r1_plan(d, r2_sells)
+
+
+def own_thr(d, q, marks, until=None):
+    """Пороги маркеров по собственной истории металла до 1999 (или до индекса until)."""
+    m = d["m"] if until is None else until
+    out = {}
+    for f, dr in marks:
+        v = d["F"][f].values[:m]
+        v = v[np.isfinite(v)]
+        out[(f, dr)] = float(np.quantile(v, q if dr == "hi" else 1 - q)) if len(v) > 24 else np.nan
+    return out
+
+
+def count(d, thr, marks):
+    n = np.zeros(len(d["c"]), np.int64)
+    for f, dr in marks:
+        x = d["F"][f].values
+        t = thr[(f, dr)]
+        h = (x > t) if dr == "hi" else (x < t)
+        n += np.nan_to_num(h, nan=0).astype(np.int64)
+    return n
+
+
+def plan_generic(d, tn, bn, g=0.5, k_on=4, k_hold=3, s5=0.15, s6=0.5, k5=5, k6=6, hot3=1.81, hot1=86.0, sh=0.2):
+    """R2 с заданными счётчиками маркеров и порогами перегрева."""
+    p = np.select([tn >= k6, tn >= k5], [-s6, -s5], default=1.0)
+    hot = (np.nan_to_num(d["F"][P3].values) > hot3) & (np.nan_to_num(d["F"][Y1].values) > hot1)
+    p = np.where(hot, np.minimum(p, -sh), p)
+    return np.where(episode(bn, k_on, k_hold), 1 + g, p)
