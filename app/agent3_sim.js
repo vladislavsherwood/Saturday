@@ -52,6 +52,15 @@ function addInd(G, key, fn) { for (const g in G) for (const X of G[g]) if (!X.in
 function guard(S, flag, mode = 'dca', which = (r) => r.act > 1) {
   return { ...S, rules: S.rules.flatMap((r) => (!which(r) ? [r] : mode === 'dca' ? [{ ...r, act: 1, conds: [...r.conds, c(flag, '>', 0.5)] }, r] : [{ ...r, conds: [...r.conds, c(flag, '<', 0.5)] }])) };
 }
+// размеры по признаку: в дни flag > 0.5 доля покупки резерва (act − 1) умножается на kb (не больше всего резерва), доля продажи — на ks
+function scale(S, flag, kb = 1, ks = 1, which = () => true) {
+  return { ...S, rules: S.rules.flatMap((r) => {
+    if (!which(r)) return [r];
+    if (r.act > 1 && kb !== 1) return [{ ...r, act: 1 + Math.min(1, (r.act - 1) * kb), conds: [...r.conds, c(flag, '>', 0.5)] }, r];
+    if (r.act < 0 && ks !== 1) return [{ ...r, act: Math.max(-1, r.act * ks), conds: [...r.conds, c(flag, '>', 0.5)] }, r];
+    return [r];
+  }) };
+}
 const flagOf = (n, f) => { const a = new Float64Array(n); for (let i = 0; i < n; i++) a[i] = f(i) ? 1 : 0; return a; };
 // ряд роста: c / минимум за w дней до этого дня; максимум такого роста за W дней (был ли памп в ×N)
 function runup(X, w, W) { const mn = rollMin(X.c, w), r = new Float64Array(X.n); for (let i = 0; i < X.n; i++) r[i] = X.c[i] / mn[i]; return rollMax(r, W); }
@@ -60,4 +69,4 @@ function row(tag, r, b) { const n = r.n100 && b.n100 ? ` | 100н лучше/ху
 const addRule = (S, rule, pos = 'end') => { const R = [...S.rules]; if (pos === 'end') R.push(rule); else R.splice(pos, 0, rule); return { ...S, rules: R }; };
 // добавить условие ко всем правилам, где f(r, i) истинно
 const addCond = (S, f, conds) => ({ ...S, rules: S.rules.map((r, i) => (f(r, i) ? { ...r, conds: [...r.conds, ...conds] } : r)) });
-module.exports = { ...A2, A2, W25, groups, ev, show, bw, withRules, addRule, addCond, COINX, rollMax, rollMin, c, addInd, guard, flagOf, runup, row };
+module.exports = { ...A2, A2, W25, groups, ev, show, bw, withRules, addRule, addCond, COINX, rollMax, rollMin, c, addInd, guard, flagOf, runup, row, scale };
