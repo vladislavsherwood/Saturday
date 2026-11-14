@@ -23,6 +23,19 @@ def qv(hot2=0.5, v=0.2, N=24):
     return f
 
 
+def clean(o):
+    """NaN → null, numpy-числа → обычные (для JSON)."""
+    if isinstance(o, dict):
+        return {k: clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [clean(v) for v in o]
+    if hasattr(o, "item"):
+        o = o.item()
+    if isinstance(o, float) and not np.isfinite(o):
+        return None
+    return o
+
+
 def rnd(R, k, parts=("h2", "after", "full")):
     return {p: (None if not np.isfinite(R[k].get(p, np.nan)) else round(float(R[k][p]), 1)) for p in parts}
 
@@ -119,7 +132,7 @@ def main():
            "proximity": {"1982-98": T.agg(Q), "1999-2026": T.agg(Q, which="prox_after"), "exam_1999-2026": T.agg(Q, T.EXAM, "prox_after")},
            "signals_now": now,
            "journal": "research/metals_agent3_journal.md"}
-    json.dump(out, open(os.path.join(HERE, "found", "metals-agent3-best.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
+    json.dump(clean(out), open(os.path.join(HERE, "found", "metals-agent3-best.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
     mg = {k: v for k, v in m6.items() if k not in ("results_vs_dca", "checks", "strategy")}
     mg.update({"strategy": "found/metals-agent3-best.json (Q2, агент 3)",
                "recommended": "заём 0,5× при ставке ФРС < 3%; шорт — необязательно (на 1982–98 польза не видна: −0,1; после 1999 +7% к медиане)",
@@ -129,7 +142,7 @@ def main():
                           "loan_0_75x_liquidations": 31},
                "results_vs_dca_loan": {A.NAME[k]: {p: round(MR[k][p], 1) for p in ("h2", "after", "from82") if p in MR[k]} for k in keys},
                "results_vs_dca_loan_short": {A.NAME[k]: {p: round(MS[k][p], 1) for p in ("h2", "after", "from82") if p in MS[k]} for k in keys}})
-    json.dump(mg, open(os.path.join(HERE, "found", "metals-agent3-best-margin.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
+    json.dump(clean(mg), open(os.path.join(HERE, "found", "metals-agent3-best-margin.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
     pm = {"note": "Агент 3: Q2 по каждому металлу против R3 и R6 (итог к DCA, %: 1982–98 / 1999–2026 / вся история), вклад частей Q2, метрики близости. "
                   "Индивидуальные версии не подбирались (прошлые агенты: переобучение); здесь — разбор общей Q2 по металлам.",
           "metals": {k: {"name": T.NAME[k], "exam": k in T.EXAM, "R3": rnd(R3, k), "R6": rnd(R6, k), "Q2": rnd(Q, k),
@@ -137,7 +150,7 @@ def main():
                          "prox_h2": {x: y for x, y in Q[k].get("prox_h2", {}).items() if x != "missed"},
                          "prox_after": {x: y for x, y in Q[k]["prox_after"].items() if x != "missed"},
                          "missed_tops": [str(D[k]["t"][i])[:7] for i in Q[k]["prox_full"]["missed"]]} for k in keys}}
-    json.dump(pm, open(os.path.join(HERE, "found", "metals-agent3-per-metal.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
+    json.dump(clean(pm), open(os.path.join(HERE, "found", "metals-agent3-per-metal.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=lambda o: o.item() if hasattr(o, "item") else float(o))
     print("\nсохранено: found/metals-agent3-best.json, found/metals-agent3-best-margin.json, found/metals-agent3-per-metal.json")
 
 

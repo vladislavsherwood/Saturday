@@ -533,9 +533,9 @@
     }
    },
    "prox_h2": {
-    "above": NaN,
-    "zone": NaN,
-    "sell_top": NaN,
+    "above": null,
+    "zone": null,
+    "sell_top": null,
     "bots": 1,
     "b1": 0,
     "b2": 0,
