@@ -33,7 +33,7 @@ CFG = [("без плеча", dict(lev=False), 0.0), ("ОСТОРОЖНАЯ: R16 
 PS = {k: Port(v) for k, v in SETS.items()}
 print("мемы в портфелях:", {k: [s for s, _ in v if s in MEMES] for k, v in SETS.items()}, flush=True)
 RES = {}; t = time.time()
-for vn, S0 in (("основа F + C1.25 + C6", S_base), ("P35 + CM2", S_new)):
+for vn, S0 in (("основа F + C1.25 + C6", S_base), (os.environ.get("SM_TAG", "P35 + CM2"), S_new)):
     for tag, kw, sh in CFG:
         S, L = scheme(S0, **kw); row = {}
         for nm, P in PS.items():

@@ -48,8 +48,12 @@ if __name__ == "__main__":
             CFG.append((f"A4 ×{lp} + без плеча при волатильности BTC > {x}%", lp, c("b_volc", ">", x)))
         for y in (1.0, 1.2):
             CFG.append((f"A4 ×{lp} + без плеча при BTC > {y} × 50-нед. средней", lp, c("b_w50", ">", y)))
+        for y in (0.7, 0.8, 0.9):
+            CFG.append((f"A4 ×{lp} + без плеча при BTC < {y} × 50-нед. средней", lp, c("b_w50", "<", y)))
+        for y in (0.7, 0.8):
+            CFG.append((f"A4 ×{lp} + без плеча при BTC < {y} × 20-нед. средней", lp, c("b_w20", "<", y)))
     if quick:
-        CFG = CFG[:3]
+        CFG = [x for x in CFG if "<" in x[0]] + [(f"A4 ×1,45 + без плеча при BTC < {y} × 50-нед. средней", 1.45, c("b_w50", "<", y)) for y in (0.7, 0.8, 0.9)]
     RES = {}
     for tag, lp, g in CFG:
         t = time.time(); S, L = guarded(lp, g); row = {}
