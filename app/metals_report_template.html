@@ -1,0 +1,173 @@
+<title>Металлы против DCA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Раскладка: одна колонка — сводная таблица по металлам, выбор металла, четыре цифры, цена со сделками, счёт против DCA, сигнал сейчас, годы. */
+:root {
+  --bg: #f5f5f2; --card: #ffffff; --fg: #17191c; --muted: #5f6570; --line: #e0e1dc; --grid: #ebebe6;
+  --buy: #199e70; --sell: #d97a26; --sell2: #c4402b; --strat: #2a78d6; --dca: #7b8494; --inv: #b5b9c0; --price: #3d434c; --gold: #b0892f;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111214; --card: #1a1c1f; --fg: #eeeff1; --muted: #9aa0aa; --line: #2c2f34; --grid: #24272b;
+  --buy: #1baf7a; --sell: #eb9244; --sell2: #ef6a52; --strat: #3d8be8; --dca: #8f97a6; --inv: #59606b; --price: #c7ccd4; --gold: #d2aa52; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111214; --card: #1a1c1f; --fg: #eeeff1; --muted: #9aa0aa; --line: #2c2f34; --grid: #24272b;
+  --buy: #1baf7a; --sell: #eb9244; --sell2: #ef6a52; --strat: #3d8be8; --dca: #8f97a6; --inv: #59606b; --price: #c7ccd4; --gold: #d2aa52; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.45; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 22px; margin: 0; text-wrap: balance; } .sub { color: var(--muted); margin: 4px 0 0; max-width: 70ch; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+.panel h2 { font-size: 15px; margin: 0 0 2px; } .panel p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs button, .per button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 7px 13px; border-radius: 999px; cursor: pointer; }
+.tabs button[aria-pressed="true"], .per button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tabs button:focus-visible, .per button:focus-visible, tr[data-i]:focus-visible { outline: 2px solid var(--strat); outline-offset: 2px; }
+.per { margin-left: auto; } .per button { padding: 5px 11px; font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .per { margin-left: 0; } }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.tile small { display: block; color: var(--muted); font-size: 12px; } .tile b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; margin-top: 2px; overflow-wrap: anywhere; }
+.tile span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: middle; }
+.legend .up { border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--buy); }
+.legend .dn { border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--sell); }
+.legend .dn2 { border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 12px solid var(--sell2); }
+.legend .ln { width: 18px; height: 0; border-top: 3px solid var(--strat); } .legend .ln.d { border-color: var(--dca); } .legend .ln.i { border-top: 2px dashed var(--inv); } .legend .ln.p { border-top: 2px solid var(--price); }
+.plot { position: relative; width: 100%; } canvas { display: block; width: 100%; touch-action: pan-y; }
+.tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.4; white-space: nowrap; font-variant-numeric: tabular-nums; z-index: 2; }
+.tbl { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; } th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; } tr[data-i] { cursor: pointer; } tr[data-i]:hover td { background: var(--grid); } tr.on td { font-weight: 600; }
+.pos { color: var(--buy); } .neg { color: var(--sell2); }
+.chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+.now { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } @media (max-width: 640px) { .now { grid-template-columns: 1fr; } }
+.now div { min-width: 0; } .now small { color: var(--muted); display: block; font-size: 12px; } .now b { font-variant-numeric: tabular-nums; }
+.dots { display: flex; gap: 4px; margin: 6px 0; } .dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--grid); border: 1px solid var(--line); }
+.dots.t i.on { background: var(--sell); border-color: var(--sell); } .dots.b i.on { background: var(--buy); border-color: var(--buy); }
+.note { color: var(--muted); font-size: 13px; max-width: 74ch; margin: 0; } ul.rules { margin: 6px 0 0; padding-left: 18px; font-size: 14px; } ul.rules li { margin: 2px 0; }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Стратегия металлов против обычного DCA</h1>
+    <p class="sub">Каждый месяц $300 (около $10 в день) в металл: просто покупать или следовать стратегии. Сделка — по средней цене следующего месяца, комиссия 0,1%.</p>
+    <ul class="rules"><li>4 и больше маркеров дна из 7 → взнос и весь резерв</li><li>6 и больше маркеров вершины из 7 → продать 30%</li><li>5 маркеров вершины → продать 10%</li><li>иначе — обычный взнос</li></ul>
+  </header>
+  <section class="panel">
+    <h2>Итог к DCA по всем металлам</h2>
+    <p>Пороги маркеров посчитаны только по 1965–1998 годам. Палладий и олово в подборе не участвовали. Нажмите на строку, чтобы открыть металл.</p>
+    <div class="tbl"><table id="sum"></table></div>
+  </section>
+  <div class="row"><div class="row tabs" id="tabs" role="group" aria-label="Металл"></div><div class="row per" id="per" role="group" aria-label="Период"></div></div>
+  <div class="tiles" id="tiles"></div>
+  <section class="panel">
+    <h2>Цена и сделки</h2>
+    <p>Обычные ежемесячные взносы не отмечены. Наведите на график, чтобы увидеть месяц.</p>
+    <div class="legend"><span><i class="ln p"></i>цена, шкала в разах</span><span><i class="up"></i>взнос и весь резерв</span><span><i class="dn"></i>продажа 10%</span><span><i class="dn2"></i>продажа 30%</span></div>
+    <div class="plot" id="p1"><canvas id="c1" height="330"></canvas><div class="tip" id="t1" hidden></div></div>
+  </section>
+  <section class="panel">
+    <h2>Счёт: стратегия и DCA</h2>
+    <p>Стоимость всего счёта — металл и резерв. Шкала в разах.</p>
+    <div class="legend"><span><i class="ln"></i>стратегия</span><span><i class="ln d"></i>обычный DCA</span><span><i class="ln i"></i>внесено</span></div>
+    <div class="plot" id="p2"><canvas id="c2" height="250"></canvas><div class="tip" id="t2" hidden></div></div>
+  </section>
+  <section class="panel">
+    <h2>Сигнал сейчас</h2>
+    <div class="now" id="now"></div>
+  </section>
+  <section class="panel">
+    <h2>По годам</h2>
+    <div class="tbl"><table id="years"></table></div>
+  </section>
+  <p class="note">Цены — средние за месяц (Всемирный банк; палладий — Yahoo). Ставки и доллар — ФРС и BIS, инфляция и безработица — ОЭСР. Расчёт считает, что любую сумму можно купить и продать по средней цене месяца. Данные по <span id="asof"></span>.</p>
+</div>
+<script>
+const DATA = /*DATA*/null;
+const $ = (id) => document.getElementById(id), css = (k) => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const full = (x) => (x < 0 ? "−" : "") + "$" + Math.round(Math.abs(x)).toLocaleString("ru-RU");
+const short = (v) => "$" + (v >= 1e6 ? (v / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " млн" : v >= 1e3 ? (v / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 0 }) + " тыс." : Math.round(v));
+const price = (x) => "$" + (x >= 1000 ? Math.round(x).toLocaleString("ru-RU") : x >= 10 ? x.toFixed(0) : x.toFixed(2));
+const pct = (x) => (x == null ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(0) + "%");
+const mon = (s) => new Date(s + "-15").toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
+const KIND = ["обычный взнос", "взнос и весь резерв", "продажа 10%", "продажа 30%", "сигнал продажи, продавать нечего"];
+let cur = 0, period = "all";
+try { const s = JSON.parse(localStorage.getItem("metals-report") || "{}"); if (DATA.metals[s.cur]) cur = s.cur; if (s.period) period = s.period; } catch (e) {}
+const save = () => { try { localStorage.setItem("metals-report", JSON.stringify({ cur, period })); } catch (e) {} };
+const PER = [["all", "Вся история"], ["1999", "С 1999"], ["10y", "10 лет"]];
+function range(d) { const n = d.c.length; if (period === "10y") return [Math.max(0, n - 120), n]; if (period === "1999") { const i = d.months.findIndex((m) => m >= "1999-01"); return [Math.max(0, i), n]; } return [0, n]; }
+function setup(cv) { const r = devicePixelRatio || 1, w = cv.parentElement.clientWidth, h = +cv.getAttribute("height"); cv.width = w * r; cv.height = h * r; cv.style.height = h + "px"; const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); return { g, w, h }; }
+function ticksLog(lo, hi) { const out = []; for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v >= lo && v <= hi) out.push(v); } while (out.length > 7) for (let i = out.length - 2; i > 0; i -= 2) out.splice(i, 1); return out; }
+function axes(g, w, h, pad, a, b, d, lo, hi, fmt) {
+  const X = (i) => pad.l + ((i - a) / Math.max(1, b - 1 - a)) * (w - pad.l - pad.r), Y = (v) => pad.t + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - pad.t - pad.b);
+  g.clearRect(0, 0, w, h); g.font = "11px " + css("--font"); g.lineWidth = 1; g.textBaseline = "middle";
+  for (const v of ticksLog(lo, hi)) { const y = Math.round(Y(v)) + 0.5; g.strokeStyle = css("--grid"); g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke(); g.fillStyle = css("--muted"); g.textAlign = "right"; g.fillText(fmt(v), pad.l - 6, y); }
+  g.textAlign = "center"; g.textBaseline = "top"; const span = b - a, step = span > 360 ? 10 : span > 180 ? 5 : span > 60 ? 2 : 1; let lastX = -99;
+  for (let i = a; i < b; i++) { const [y, m] = d.months[i].split("-").map(Number); if (m === 1 && y % step === 0) { const x = X(i); if (x - lastX > 34) { g.fillStyle = css("--muted"); g.fillText(y, x, h - pad.b + 6); lastX = x; } } }
+  return { X, Y };
+}
+function line(g, X, Y, arr, a, b, color, width, dash) { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.lineJoin = "round"; g.beginPath(); let on = false; for (let i = a; i < b; i++) { const v = arr[i]; if (!(v > 0)) continue; if (on) g.lineTo(X(i), Y(v)); else { g.moveTo(X(i), Y(v)); on = true; } } g.stroke(); g.setLineDash([]); }
+let S1 = null, S2 = null;
+function drawPrice(hi) {
+  const d = DATA.metals[cur], [a, b] = range(d), { g, w, h } = setup($("c1")), pad = { l: 62, r: 14, t: 26, b: 26 };
+  let lo = Infinity, mx = 0; for (let i = a; i < b; i++) { lo = Math.min(lo, d.c[i]); mx = Math.max(mx, d.c[i]); } lo *= 0.85; mx *= 1.12;
+  const { X, Y } = axes(g, w, h, pad, a, b, d, lo, mx, price);
+  line(g, X, Y, d.c, a, b, css("--price"), 1.6);
+  const bg = css("--card");
+  for (let i = a; i < b; i++) { const k = d.kind[i]; if (k < 1 || k > 3) continue; const x = X(i), y = Y(d.c[i]); g.strokeStyle = bg; g.lineWidth = 1.5; g.beginPath();
+    if (k === 1) { g.fillStyle = css("--buy"); g.moveTo(x, y + 6); g.lineTo(x - 5, y + 15); g.lineTo(x + 5, y + 15); }
+    else { const s = k === 3 ? 7 : 5, o = k === 3 ? 8 : 6; g.fillStyle = css(k === 3 ? "--sell2" : "--sell"); g.moveTo(x, y - o); g.lineTo(x - s, y - o - s * 1.6); g.lineTo(x + s, y - o - s * 1.6); }
+    g.closePath(); g.stroke(); g.fill(); }
+  if (hi != null) { const x = X(hi); g.strokeStyle = css("--muted"); g.lineWidth = 1; g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, h - pad.b); g.stroke(); g.fillStyle = css("--price"); g.strokeStyle = bg; g.lineWidth = 2; g.beginPath(); g.arc(x, Y(d.c[hi]), 4, 0, 7); g.fill(); g.stroke(); }
+  S1 = { X, a, b, pad, w };
+}
+function drawEquity(hi) {
+  const d = DATA.metals[cur], [a, b] = range(d), { g, w, h } = setup($("c2")), pad = { l: 62, r: 14, t: 12, b: 26 }, base = a ? d.eq[a - 1] : 0, based = a ? d.dq[a - 1] : 0;
+  // на коротком периоде счёт показывается с начала периода: деньги, накопленные раньше, вычитаются, чтобы сравнение было честным
+  const eq = d.eq.map((v, i) => (i < a ? NaN : v - (a ? base * (d.c[i] / d.c[a - 1]) * 0 : 0))), inv = d.c.map((v, i) => DATA.unit * (i + 1));
+  let lo = Infinity, mx = 0; for (let i = a; i < b; i++) for (const v of [d.eq[i], d.dq[i], inv[i]]) { if (v > 0) { lo = Math.min(lo, v); mx = Math.max(mx, v); } } lo = Math.max(10, lo * 0.85); mx *= 1.12;
+  const { X, Y } = axes(g, w, h, pad, a, b, d, lo, mx, short);
+  line(g, X, Y, inv, a, b, css("--inv"), 1.5, [5, 4]); line(g, X, Y, d.dq, a, b, css("--dca"), 2); line(g, X, Y, d.eq, a, b, css("--strat"), 2);
+  if (hi != null) { const x = X(hi); g.strokeStyle = css("--muted"); g.lineWidth = 1; g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, h - pad.b); g.stroke(); for (const [arr, col] of [[d.dq, "--dca"], [d.eq, "--strat"]]) { g.fillStyle = css(col); g.strokeStyle = css("--card"); g.lineWidth = 2; g.beginPath(); g.arc(x, Y(Math.max(lo, arr[hi])), 4, 0, 7); g.fill(); g.stroke(); } }
+  S2 = { X, a, b, pad, w };
+}
+function hover(plot, tip, S, e, html, redraw) { const r = plot.getBoundingClientRect(), x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left, st = S();
+  let i = Math.round(st.a + ((x - st.pad.l) / (st.w - st.pad.l - st.pad.r)) * (st.b - 1 - st.a)); i = Math.max(st.a, Math.min(st.b - 1, i));
+  redraw(i); tip.innerHTML = html(i); tip.hidden = false; const tw = tip.offsetWidth, px = st.X(i); tip.style.left = Math.max(0, Math.min(st.w - tw, px + (px > st.w / 2 ? -tw - 12 : 12))) + "px"; tip.style.top = "8px"; }
+function bind(plot, tip, S, html, redraw) { const mv = (e) => hover(plot, tip, S, e, html, redraw), out = () => { tip.hidden = true; redraw(null); };
+  plot.addEventListener("mousemove", mv); plot.addEventListener("mouseleave", out); plot.addEventListener("touchstart", mv, { passive: true }); plot.addEventListener("touchmove", mv, { passive: true }); plot.addEventListener("touchend", out); }
+bind($("p1"), $("t1"), () => S1, (i) => { const d = DATA.metals[cur], k = d.kind[i]; return `<b>${mon(d.months[i])}</b><br>цена ${price(d.c[i])}<br>${KIND[k]}${k === 4 ? "" : ": " + full(d.amt[i])}<br>в резерве ${full(d.res[i])}`; }, drawPrice);
+bind($("p2"), $("t2"), () => S2, (i) => { const d = DATA.metals[cur]; return `<b>${mon(d.months[i])}</b><br>стратегия ${full(d.eq[i])}<br>DCA ${full(d.dq[i])}<br>внесено ${full(DATA.unit * (i + 1))}`; }, drawEquity);
+function summary() {
+  $("sum").innerHTML = "<thead><tr><th>Металл</th><th>С года</th><th>1965–1998</th><th>1999–2026</th><th>Вся история</th></tr></thead><tbody>" +
+    DATA.summary.map((s, i) => { const c = (v) => `<td class="${v == null ? "" : v >= 0 ? "pos" : "neg"}">${pct(v)}</td>`; return `<tr data-i="${i}" tabindex="0" class="${i === cur ? "on" : ""}"><td>${s.name}${DATA.metals[i].exam ? '<span class="chip">экзамен</span>' : ""}</td><td>${s.from}</td>${c(s.before)}${c(s.after)}${c(s.full)}</tr>`; }).join("") + "</tbody>";
+}
+function render() {
+  const d = DATA.metals[cur], [a, b] = range(d), n = b - 1, inv = DATA.unit * (n + 1), eq = d.eq[n], dq = d.dq[n];
+  summary();
+  $("tabs").innerHTML = DATA.metals.map((m, i) => `<button type="button" id="tab-${m.k}" aria-pressed="${i === cur}" data-i="${i}">${m.name}</button>`).join("");
+  $("per").innerHTML = PER.map(([k, t]) => `<button type="button" id="per-${k}" aria-pressed="${k === period}" data-p="${k}">${t}</button>`).join("");
+  const r = eq / dq;
+  $("tiles").innerHTML = [["Внесено", full(inv), `${(n + 1)} мес. с ${mon(d.months[0])}`], ["Обычный DCA", full(dq), `прибыль ${full(dq - inv)}`], ["Стратегия", full(eq), `прибыль ${full(eq - inv)}`],
+    ["Стратегия к DCA", pct((r - 1) * 100), `разница ${full(eq - dq)}`]].map(([x, y, z]) => `<div class="tile"><small>${x}</small><b>${y}</b><span>${z}</span></div>`).join("");
+  const dots = (k, cls) => `<div class="dots ${cls}">` + Array.from({ length: 7 }, (_, i) => `<i class="${i < k ? "on" : ""}"></i>`).join("") + "</div>";
+  const NEXT = ["обычный взнос", "взнос и весь резерв", "продать 10%", "продать 30%"];
+  $("now").innerHTML = `<div><small>Маркеров вершины</small><b>${d.tn} из 7</b>${dots(d.tn, "t")}<small>${d.top_now.join(", ") || "ни одного"}</small></div>
+    <div><small>Маркеров дна</small><b>${d.bn} из 7</b>${dots(d.bn, "b")}<small>${d.bot_now.join(", ") || "ни одного"}</small></div>
+    <div><small>Действие в следующем месяце</small><b>${NEXT[d.next]}</b></div><div><small>Сейчас в резерве</small><b>${full(d.res[d.res.length - 1])}</b> <small>из счёта ${full(d.eq[d.eq.length - 1])}</small></div>`;
+  const Y = {}; d.kind.forEach((k, i) => { const y = d.months[i].slice(0, 4), o = (Y[y] = Y[y] || { buy: 0, n1: 0, s: 0, n2: 0, last: i }); if (k === 1) { o.n1++; o.buy += d.amt[i]; } if (k === 2 || k === 3) { o.n2++; o.s += d.amt[i]; } o.last = i; });
+  const rows = Object.entries(Y).filter(([y, o]) => o.n1 || o.n2).reverse();
+  $("years").innerHTML = "<thead><tr><th>Год</th><th>Покупок из резерва</th><th>на сумму</th><th>Продаж</th><th>на сумму</th><th>Стратегия к DCA на конец года</th></tr></thead><tbody>" +
+    (rows.length ? rows.map(([y, o]) => { const v = (d.eq[o.last] / d.dq[o.last] - 1) * 100; return `<tr><td>${y}</td><td>${o.n1 || "—"}</td><td>${o.n1 ? full(o.buy) : "—"}</td><td>${o.n2 || "—"}</td><td>${o.n2 ? full(o.s) : "—"}</td><td class="${v >= 0 ? "pos" : "neg"}">${pct(v)}</td></tr>`; }).join("") : '<tr><td colspan="6">Сделок по сигналам не было</td></tr>') + "</tbody>";
+  $("asof").textContent = mon(DATA.asof);
+  drawPrice(null); drawEquity(null);
+}
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { cur = +b.dataset.i; save(); render(); } });
+$("per").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { period = b.dataset.p; save(); render(); } });
+$("sum").addEventListener("click", (e) => { const r = e.target.closest("tr[data-i]"); if (r) { cur = +r.dataset.i; save(); render(); $("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); } });
+$("sum").addEventListener("keydown", (e) => { const r = e.target.closest("tr[data-i]"); if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); r.click(); } });
+addEventListener("resize", () => { drawPrice(null); drawEquity(null); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+render();
+</script>
