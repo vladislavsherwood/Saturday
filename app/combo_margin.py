@@ -8,13 +8,17 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agent4b_loop9  # noqa: F401  up90, hi90, ago_qt
 import agent4c_loop7  # noqa: F401  rel90, rel180
+import agent3_margin  # noqa: F401  beta90/beta180, pair (агент 3)
 from agent4a_loop7 import base_scheme, split  # noqa: F401  btcdays
 from agent4d_margin import Book, P9, PB, BOT, c, safe, IDX, STARTS, HERE, shift  # noqa: F401
 from agent2_margin import grouped
 
 PM = [("BTC-USD", "btc"), ("DOGE-USD", "alt"), ("SHIB-USD", "alt"), ("PEPE24478-USD", "alt"), ("WIF-USD", "alt"), ("BONK-USD", "alt"), ("FLOKI-USD", "alt"),
       ("FARTCOIN-USD", "alt"), ("ETH-USD", "alt")]
-SETS = {"P9": P9, "B": PB, "M": PM}
+# портфели агента 3 (P2 крупные альты, P3 мемы и дикие альты) + BTC первой колонкой, чтобы шорт BTC считался так же (10 монет)
+P2 = [("BTC-USD", "btc")] + [(s, "alt") for s in ("XRP-USD", "BNB-USD", "ADA-USD", "LINK-USD", "AVAX-USD", "TRX-USD", "LTC-USD", "DOT-USD", "BCH-USD")]
+P3 = [("BTC-USD", "btc")] + [(s, "alt") for s in ("SHIB-USD", "BONK-USD", "WIF-USD", "FLOKI-USD", "NEAR-USD", "FIL-USD", "ATOM-USD", "FARTCOIN-USD", "MYX36410-USD")]
+SETS = {"P9": P9, "B": PB, "M": PM, "P2+BTC": P2, "P3+BTC": P3}
 LEV2 = [1, 2, 1.25, 2, 1, 1, 1, 1.25]          # плечо по группам 0..7, схема агента 2
 YEARS = np.array([IDX[s].year for s in STARTS])
 
