@@ -1,11 +1,17 @@
 /* Объединение, итог по монетам: W25, F, F + C6 (осторожный, строгая ✔ к F), F + C1.25 + C6 (выбор) — все группы быстрым оценщиком, половины
    истории, лучше/хуже по монетам, метрики дна/вершин; цифры браузерного стенда (combo_lab.js) из <lab.json>. Сохраняет found/combo-best.json.
-   Запуск: node app/combo_best.js <cands.lab.json> */
+   Добавлены C4 агента 3 (бета > 1,2 и ниже средней 200 → продажи ×1,5) поверх F + C6 и «максимум» C4/C.
+   Запуск: node app/combo_best.js <cands.lab.json> [<cands4.lab.json> …] */
 const K = require('./combo_sim.js');
 const fs = require('fs');
 const G = K.groups(['sel', 'ex', 'rnd', 'n100', 'met']); K.prep(G);
-const LAB = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const V = { W25: K.W25, F: K.F, 'F + C6': K.withC6(K.F), 'F + C1.25': K.withC(K.F, 1.25), 'F + C1.25 + C6': K.withC(K.withC6(K.F), 1.25), 'F + C1.5 + C6': K.withC(K.withC6(K.F), 1.5) };
+const LAB = { rows: [], n100: {} };
+for (const f of process.argv.slice(2)) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); for (const r of j.rows) if (!LAB.rows.some((x) => x.tag === r.tag)) LAB.rows.push(r); for (const k in j.n100) if (!LAB.n100[k]) LAB.n100[k] = j.n100[k]; }
+const { scaleSells, C4c, Cc } = require('./combo_cands.js');
+const V = { W25: K.W25, F: K.F, 'F + C6': K.withC6(K.F), 'F + C1.25': K.withC(K.F, 1.25), 'F + C1.25 + C6': K.withC(K.withC6(K.F), 1.25), 'F + C1.5 + C6': K.withC(K.withC6(K.F), 1.5),
+  'W25 + C4': scaleSells(K.W25, [[C4c, 1.5]]), 'F + C6 + C4': scaleSells(K.withC6(K.F), [[C4c, 1.5]]), 'F + C6 + max(C4 ×1,5, C ×1,25)': scaleSells(K.withC6(K.F), [[C4c, 1.5], [Cc, 1.25]]) };
+// подписи стенда: F + C1.25 + C6 = F + C6 + C1.25 (одни и те же правила)
+if (LAB.n100['F + C6 + C1.25'] && !LAB.n100['F + C1.25 + C6']) LAB.n100['F + C1.25 + C6'] = LAB.n100['F + C6 + C1.25'];
 const R = {}, base = K.ev(G, K.W25), fb = K.ev(G, K.F);
 const pick = (s) => ({ med: s.med, pos: s.pos, n: s.n, worst: s.worst, hpos: s.hpos, hn: s.hn, hworst: s.hworst });
 for (const nm in V) {
@@ -47,10 +53,14 @@ const best = {
     hi90: 'монета обновила 90-дн. максимум закрытия (уже есть в стенде; в python — за последние 7 дней был день с закрытием ≥ максимума предыдущих 89 дней)'
   },
   cautious: { name: 'F + C6 (строгая ✔ к F)', rules: V['F + C6'].rules },
+  alternative_C4: { name: 'F + C6 + C4 (строгая ✔ к F; агент 3: бета180 > 1,2 и sma200 < 1 → продажи ×1,5)', rules: V['F + C6 + C4'].rules,
+    beta180: 'бета дневных лог-доходностей монеты к BTC за 180 дней (не меньше 80% наблюдений); для BTC — 1' },
   results: R,
   rejected: ['фильтр возраста монеты для C (365/450/540/730 дн): ARIA не спасает до 450 дн, а с 450 дн ломает TON (худшая половина отбора)',
     'C на окне 90 дней (rel90 < −10…−25%): хуже худшая половина экзамена (XMR) или 50 случайных',
-    'C ×1,5 поверх F: доход выше (+0,21 к F), но теряет половину на 50 случайных и 2 половины на 100 новых']
+    'C ×1,5 поверх F: доход выше (+0,21 к F), но теряет половину на 50 случайных и 2 половины на 100 новых',
+    'C4 агента 3 вместо C: F + C6 + C4 проходит строгую к F (+0,13), но на 100 новых 336% против 345%, половин в плюсе 174 против 176, хуже F на 17 монетах против 8',
+    'C4 вместе с C («максимум»: слабая по любому признаку монета получает свой множитель, не произведение): +0,207 к F, но строгая мимо (ARIA), 100 новых 346% при 174/200 половин; произведение множителей — ещё больше продаж, те же провалы']
 };
 fs.writeFileSync(__dirname + '/found/combo-best.json', JSON.stringify(best, null, 1));
 console.log('\nсохранено: app/found/combo-best.json');
