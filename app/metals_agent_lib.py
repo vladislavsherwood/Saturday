@@ -434,3 +434,67 @@ def sim_margin(c, low, plan, lev, ff, lo, hi, stress, spread, ml_lvl, lag):
                 debt = 0.0
     fin = units * c[hi - 1] + cash - debt
     return (fin / (du * c[hi - 1]) - 1) * 100, liq, worst, mx
+
+
+@njit(cache=True)
+def sim_short(c, high, plan, ent, ext, ff, lo, hi, f, T, tp, stress, spread, ml_lvl, lag):
+    """Счёт одного металла: стратегия по плану + шорт. Шорт открывается по сигналу ent (если шорта нет) на долю f капитала счёта,
+    закрывается по сигналу ext, через T месяцев или при падении цены на tp от входа (tp ≤ 0 — без фиксации прибыли).
+    Плата за заём металла — ставка ФРС + spread годовых от текущей стоимости шорта; деньги от продажи лежат на счёте без дохода.
+    Ликвидация: (монеты + деньги) / (шорт по максимуму месяца × stress) ≤ ml_lvl → шорт выкупается по этому максимуму.
+    Возвращает итог к DCA, %, ликвидации, число шортов, их суммарный результат в долях капитала."""
+    cash = 0.0
+    units = 0.0
+    S = 0.0
+    du = 0.0
+    liq = 0
+    nsh = 0
+    entry = 0.0
+    t0 = 0
+    pnl = 0.0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        e_ = ent[j] if j >= lo else False
+        x_ = ext[j] if j >= lo else False
+        if S > 0:
+            fee = S * p * (ff[i] + spread) / 1200
+            cash -= fee
+            pnl -= fee
+        before = cash if cash > 0 else 0.0
+        cash += UNIT
+        du += UNIT * (1 - FEE) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - FEE)
+        elif a > 0:
+            v = min(max(cash, 0.0), UNIT * min(a, 1.0) + max(a - 1.0, 0.0) * before)
+            units += v * (1 - FEE) / p
+            cash -= v
+        if S > 0 and (x_ or i - t0 >= T or (tp > 0 and p <= entry * (1 - tp))):
+            cost = S * p * (1 + FEE)
+            cash -= cost
+            pnl += S * entry * (1 - FEE) - cost
+            S = 0.0
+        elif S == 0 and e_:
+            eq = units * p + cash
+            if eq > 0:
+                S = f * eq / p
+                cash += S * p * (1 - FEE)
+                entry = p
+                t0 = i
+                nsh += 1
+        if S > 0:
+            ph = high[i] * stress
+            lvl = (units * ph + cash) / (S * ph)
+            if lvl <= ml_lvl:
+                liq += 1
+                cost = S * ph * (1 + FEE)
+                cash -= cost
+                pnl += S * entry * (1 - FEE) - cost
+                S = 0.0
+    fin = units * c[hi - 1] + cash - S * c[hi - 1]
+    return (fin / (du * c[hi - 1]) - 1) * 100, liq, nsh, pnl
