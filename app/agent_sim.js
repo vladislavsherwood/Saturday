@@ -48,10 +48,12 @@ function decide(R, j) {
   return -1;
 }
 // один актив: итог к DCA, %, и сделки (при rec): покупки резерва (сверх взноса) и продажи
-function edge(X, S, lag, part = 'full', rec = false) {
+function edge(X, S, lag, part = 'full', rec = false, hs = 1) {
   let a0 = 0, b = X.n; if (part === 'h1') b = Math.floor(X.n / 2); if (part === 'h2') a0 = Math.floor(X.n / 2);
   const c = X.c, R = compile(X, S.rules), M = S.mods ? compile(X, S.mods.map((m) => ({ act: m.mult, conds: m.conds }))) : [];
-  let cash = 0, units = 0, du = 0; const tr = rec ? [] : null;
+  // шорт (S.short): {entry: [[условия]...] — открыть, если выполнен любой набор; exit: [[условия]...]; size — доля капитала; rate — проценты в день; maxd — не дольше N дней}
+  const SH = S.short, EN = SH ? compile(X, SH.entry.map((cs) => ({ act: 1, conds: cs }))) : [], EXR = SH ? compile(X, SH.exit.map((cs) => ({ act: 1, conds: cs }))) : [];
+  let cash = 0, units = 0, du = 0, su = 0, shc = 0, sd = 0, liq = 0, shp = 0; const tr = rec ? [] : null;
   for (let i = a0; i < b; i++) {
     const p = c[i], j = i - 1 - lag; du += (UNIT * (1 - FEE)) / p;
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
@@ -60,9 +62,15 @@ function edge(X, S, lag, part = 'full', rec = false) {
     cash += UNIT;
     if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) { const amt = Math.min(cash, m !== 1 ? UNIT * m : UNIT + (a - 1) * before); units += (amt * (1 - FEE)) / p; cash -= amt; if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q }); }
+    if (SH && j >= 0) {
+      if (su > 0) { const fee = su * p * SH.rate; cash -= fee; shp -= fee; sd++; }
+      if (su > 0 && (decide(EXR, j) >= 0 || sd >= (SH.maxd || 1e9))) { const cost = su * p * (1 + FEE); cash += shc - cost; shp += shc - cost; su = 0; shc = 0; sd = 0; if (rec) tr.push({ i, s: 2, p }); }
+      else if (su === 0 && decide(EN, j) >= 0 && decide(EXR, j) < 0) { const eq = cash + units * p; if (eq > 0) { su = (SH.size * eq) / p; shc = su * p * (1 - FEE); shp -= su * p * FEE; sd = 0; if (rec) tr.push({ i, s: -2, p }); } }
+      if (su > 0) { const hi = Math.min(Math.max(X.h[i] || p, p), 2 * Math.max(p, c[i - 1] || p)) * hs, lo = Math.max(Math.min(X.l[i] || p, p), 0.5 * Math.min(p, c[i - 1] || p)) * (2 - hs); /* сбои архива: тени дальше чем вдвое от закрытия обрезаем */ if ((cash + shc + units * lo) / (su * hi) <= 1.1) { liq++; cash = 0; units = 0; su = 0; shc = 0; sd = 0; } }
+    }
   }
-  const dca = du * c[b - 1];
-  return { e: ((units * c[b - 1] + cash) / dca - 1) * 100, tr, fin: units * c[b - 1] + cash, dca, units, cash };
+  const dca = du * c[b - 1], fin = units * c[b - 1] + cash + shc - su * c[b - 1];
+  return { e: (fin / dca - 1) * 100, tr, fin, dca, units, cash, liq, shp };
 }
 const med = (v) => { const s = [...v].sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
 const stat = (full, halves) => ({ n: full.length, pos: full.filter((x) => x > 0).length, worst: Math.min(...full), med: med(full), hpos: halves.filter((x) => x > 0).length, hn: halves.length, hworst: Math.min(...halves) });

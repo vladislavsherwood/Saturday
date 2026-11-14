@@ -187,3 +187,34 @@ if __name__ == "__main__":
         bad += int((ref[m] != RI[m, k]).sum())
     print("расхождений с engine по номерам правил:", bad)
     print("B без плеча:", fmt(portfolio(ACT, GRP)))
+
+
+def mask(any_of):
+    """Матрица дней × монет: выполнен ли хоть один набор условий [[{ind, op, v}, ...], ...]."""
+    M = np.zeros(C.shape, dtype=bool)
+    for k, (sym, kind, t) in enumerate(COINS):
+        close = data.history(sym)[0]; close = close[~close.index.duplicated()]
+        I = indicators(close, kind); m = pd.Series(False, index=close.index)
+        for conds in any_of:
+            mm = pd.Series(True, index=close.index)
+            for c in conds:
+                s = I[c["ind"]]; mm &= (s < c["v"]) if c["op"] == "<" else (s > c["v"])
+            m |= mm.fillna(False)
+        M[:, k] = m.reindex(idx).fillna(False).values
+    return M
+
+
+def short_state(entry, exit_, maxd=0):
+    """Держим шорт с первого дня входа до дня выхода (или не дольше maxd дней)."""
+    W = np.zeros(C.shape)
+    for k in range(C.shape[1]):
+        on, d = False, 0
+        for t in range(C.shape[0]):
+            if on:
+                d += 1
+                if exit_[t, k] or (maxd and d >= maxd):
+                    on = False
+            elif entry[t, k] and not exit_[t, k]:
+                on, d = True, 0
+            W[t, k] = 1.0 if on else 0.0
+    return W
