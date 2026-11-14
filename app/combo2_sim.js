@@ -1,6 +1,6 @@
 /* Объединение 2: находки агентов по сегментам (крупные, мемы, альты, теханализ) поверх combo-best (F + C1.25 + C6).
    Один стенд индикаторов для быстрого оценщика agent_sim.js (через combo_sim.js):
-   - списки монет (единые): BIG — 9 крупных (агент «крупные»), MEME — 18 мемов агента «мемы» + KIMCHI (у агента «альты» мем), STABLE — ZCHF;
+   - списки монет (единые): BIG — 9 крупных (агент «крупные»), MEME — 18 мемов агента «мемы» (KIMCHI, у агента «альты» мем, здесь альт — как в списке агента «мемы»), STABLE — ZCHF;
      ALT — всё остальное. Флаги-индикаторы isbig, meme, isalt (1/0 на всю историю монеты).
    - corr180, vol180, rel180, up90, hi90, ago_qt — уже есть (agent4c_sim / agent4b_cand); b_bbwp, b_w20 — по BTC из ta_sim.js.
    Сборка правил: из «сырой» основы (F + C6, без копий C) — для каждого правила продажи все копии с наборами модификаторов
@@ -11,7 +11,7 @@ const K = require('./combo_sim.js');
 const fs = require('fs');
 const { c } = K;
 const BIG = ['BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'TRX', 'ADA', 'LTC', 'BCH'];
-const MEME = ['DOGE', 'PUMP', 'SHIB', 'PEPE', 'BONK', 'WIF', 'FLOKI', 'FARTCOIN', 'ELON', 'NPC', 'PENGU', 'TIBBIR', 'B', 'APEPE', 'MOG', 'BANANAS31', 'JELLYJELLY', 'NOT', 'KIMCHI'];
+const MEME = ['DOGE', 'PUMP', 'SHIB', 'PEPE', 'BONK', 'WIF', 'FLOKI', 'FARTCOIN', 'ELON', 'NPC', 'PENGU', 'TIBBIR', 'B', 'APEPE', 'MOG', 'BANANAS31', 'JELLYJELLY', 'NOT'];
 const STABLE = ['ZCHF'];
 const seg = (nm) => (BIG.includes(nm) ? 'big' : MEME.includes(nm) ? 'meme' : STABLE.includes(nm) ? 'stable' : 'alt');
 const BEST = JSON.parse(fs.readFileSync(__dirname + '/found/combo-best.json', 'utf8'));
@@ -42,6 +42,8 @@ function mods(o) {
   }
   if (o.a1) M.push({ id: 'A1', sets: [[c('isalt', '>', 0.5)]], k: { wide: o.a1k || 1.25 }, ex: ['CM2'] });
   if (o.ta) M.push({ id: 'TA', sets: [[c('b_bbwp', '<', o.tab || 0.4), c('b_w20', '<', 1)]], k: { fear: o.tak || 1.25 } });
+  // when — доп. условия (например, период по дню t) ко всем новым модификаторам, кроме C (для проверки устойчивости по периодам)
+  if (o.when) for (const m of M) if (m.id !== 'C') m.sets = m.sets.map((s) => [...s, ...o.when]);
   return M;
 }
 // множитель набора модификаторов для класса q; cap — ограничение произведения «не-C» множителей по классу (например, { qt: 1.5, wide: 1.5 })
@@ -75,7 +77,7 @@ function build(o = {}) {
     }
     rules.push(r);
   }
-  if (o.as) rules.push({ act: -(o.asz || 0.1), conds: [c('isalt', '>', 0.5), c('fng', '>', o.asf || 65), c('oth90', '>', 1)] });
+  if (o.as) rules.push({ act: -(o.asz || 0.1), conds: [c('isalt', '>', 0.5), c('fng', '>', o.asf || 65), c('oth90', '>', 1), ...(o.when || [])] });
   return { base: RAW.base, rules };
 }
 // стенд: группы с подготовкой, флаги, индикаторы ТА по BTC

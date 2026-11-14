@@ -1,6 +1,6 @@
 """Объединение 2: портфель с маржой (combo_margin.Port, стенд агента 4D) на пяти портфелях (P9, B, M, P2+BTC, P3+BTC) для основы и вариантов
 объединения сегментных правил. Индикаторы монеты: corr180 (agent3_margin), vol180 (как у агента «крупные»), флаги единых списков combo2_sim.js
-(isbig — 9 крупных, meme — 19 мемов, isalt — остальные кроме стейблов), b_bbwp/b_w20 — как в ta_margin2.py (для варианта с TA).
+(isbig — 9 крупных, meme — 18 мемов, isalt — остальные кроме стейблов), b_bbwp/b_w20 — как в ta_margin2.py (для варианта с TA).
 Схемы: без плеча; осторожная R16 + A4 ×1,25 + шорт BTC 10%; средняя A4 ×1,3 + шорт 15%; лучшая A4 ×1,4 + шорт 20%; край A4 ×1,45 + шорт 20%.
 Каждая — ставка 11% и 15% годовых; в срок и на день позже; стресс −20/−30% (и +20/+30% для шорта).
 Запуск: python3 app/combo2_margin.py <кандидаты.json> <выход.json> [названия через «;»]"""
@@ -13,7 +13,7 @@ import agent_margin as AM  # noqa: E402
 import agent4d_margin as A4D  # noqa: E402
 
 BIG = {"BTC", "ETH", "BNB", "XRP", "SOL", "TRX", "ADA", "LTC", "BCH"}
-MEME = {"DOGE", "PUMP", "SHIB", "PEPE", "BONK", "WIF", "FLOKI", "FARTCOIN", "ELON", "NPC", "PENGU", "TIBBIR", "B", "APEPE", "MOG", "BANANAS31", "JELLYJELLY", "NOT", "KIMCHI"}
+MEME = {"DOGE", "PUMP", "SHIB", "PEPE", "BONK", "WIF", "FLOKI", "FARTCOIN", "ELON", "NPC", "PENGU", "TIBBIR", "B", "APEPE", "MOG", "BANANAS31", "JELLYJELLY", "NOT"}
 STABLE = {"ZCHF"}
 name = lambda sym: re.sub(r"\d*-USD$", "", sym)  # noqa: E731
 seg = lambda nm: "big" if nm in BIG else "meme" if nm in MEME else "stable" if nm in STABLE else "alt"  # noqa: E731
