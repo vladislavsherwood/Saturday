@@ -13,7 +13,7 @@ MS, GS = (1.0, 1.15, 1.3, 1.5), (0.33, 0.5, 0.67)
 def sized(m, g):
     def f(d):
         P = A.DEF
-        return A.r3(d, **A.ACC, s5=P["s5"] * m, s6=min(P["s6"] * m, 0.9), sh=P["sh"] * m, lead=P["lead"] * m, g=g)
+        return A.r3(d, **A.VERS["R5"], s5=P["s5"] * m, s6=min(P["s6"] * m, 0.9), sh=P["sh"] * m, lead=P["lead"] * m, g=g)
     return f
 
 

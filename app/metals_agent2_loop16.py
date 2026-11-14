@@ -14,7 +14,7 @@ def main():
         d = D[k]
         d["_tn7"], d["_bn7"] = L.count(d, thr, TOP), L.count(d, thr, BOT)
     R5 = A.evaluate(D, A.ver("R5"))
-    acc = A.ACC
+    acc = A.VERS["R5"]
     C = {
         "(1) без группового маркера вершины": lambda d: A.r3(d, **acc, tn=d["_tn7"], nt=7),
         "(2) без маркера дна «пром. индекс»": lambda d: A.r3(d, **acc, bn=d["_bn7"], nb=7),

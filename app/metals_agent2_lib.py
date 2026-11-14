@@ -34,7 +34,7 @@ PREC = ["gold", "silver", "platinum"]
 GROUP = {**{k: "prec" for k in PREC + ["palladium"]}, **{k: "ind" for k in IND + ["tin"]}}
 H2 = "1982-01-01"                       # граница половин периода подбора
 # параметры R3 (found/metals.json, круг 10 первого агента)
-DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3, "persist": 0, "rise_h": 0.0, "rise_m": 1.0}
+DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3, "persist": 0, "rise_h": 0.0, "rise_m": 1.0, "hot2": 0.0}
 
 
 def load(fresh=False):
@@ -109,6 +109,8 @@ def r3(d, **kw):
     if P.get("rise_h", 0) > 0:                      # круг 5: рост от последней серии ≥ H → продажи × m
         hit = (p < 0) & (rise(d, p) >= P["rise_h"])
         p = np.where(hit, np.maximum(p * P["rise_m"], -0.9), p)
+    if P.get("hot2", 0) > 0:                        # круг 17: перегрев держится ≥ 2 мес. подряд → продать hot2
+        p = np.where((L.runs(hot) >= 2) & (p < 1.0), np.minimum(p, -P["hot2"]), p)
     return p.astype(np.float64)
 
 
@@ -132,8 +134,9 @@ def rise(d, p):
 
 
 # принятые поправки (накопительно по кругам): круг 3 — «упорство сигнала дна»; круг 5 — крупнее продажи после роста ×2,5 от последней серии
-VERS = {"R3": {}, "R4": {"persist": 4}, "R5": {"persist": 4, "rise_h": 2.5, "rise_m": 1.3}}
-ACC = VERS["R5"]
+VERS = {"R3": {}, "R4": {"persist": 4}, "R5": {"persist": 4, "rise_h": 2.5, "rise_m": 1.3},
+        "R6": {"persist": 4, "rise_h": 2.5, "rise_m": 1.3, "hot2": 0.5}}
+ACC = VERS["R6"]
 
 
 def ver(name):

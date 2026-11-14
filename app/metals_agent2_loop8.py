@@ -36,7 +36,7 @@ def main():
     R5 = A.evaluate(D, A.ver("R5"))
     miss0 = A.agg(R5, A.SEL, "prox_b")["miss"]
     for nm, sh in (("строже на маркер (n−1 → 15%, n → 50%)", 1), ("мягче на маркер (n−3 → 15%, n−2 → 50%)", -1)):
-        R = A.evaluate(D, lambda d, sh=sh: A.r3(d, **A.ACC, tn=d["tn3"] - sh, nt=d["nt"]))
+        R = A.evaluate(D, lambda d, sh=sh: A.r3(d, **A.VERS["R5"], tn=d["tn3"] - sh, nt=d["nt"]))
         s = A.cmp(R, R5)
         print(f"хрупкость продаж, {nm}: {A.fb(s)}; пропущено до 1999 {A.agg(R, A.SEL, 'prox_b')['miss']}/32\n   по металлам до 1999: {A.bymetal(s, 'before')}")
     C, meta = {}, {}

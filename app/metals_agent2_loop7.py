@@ -52,9 +52,9 @@ def main():
                 if A.GROUP[d["key"]] != "ind":
                     return base(d)
                 tn = d["tn3"] + np.nan_to_num(x > q[ser][qq]).astype(np.int64)
-                return A.r3(d, **A.ACC, tn=tn, nt=d["nt"] + 1)
+                return A.r3(d, **A.VERS["R5"], tn=tn, nt=d["nt"] + 1)
             bn = d["bn3"] + np.nan_to_num(x < q[ser][qq]).astype(np.int64)
-            return A.r3(d, **A.ACC, bn=bn, nb=d["nb"] + 1)
+            return A.r3(d, **A.VERS["R5"], bn=bn, nb=d["nb"] + 1)
         return f
 
     C, meta = {}, {}
