@@ -100,3 +100,11 @@ function scale(S, idx, k, extra) {
 }
 const ins = (S, at, rules) => ({ ...S, rules: [...S.rules.slice(0, at), ...rules, ...S.rules.slice(at)] });
 module.exports.addBig = addBig; module.exports.scale = scale; module.exports.ins = ins;
+// кандидаты круга 6: B65 — corr180 > 0,65 и vol180 < 90 → тихие вершины ×kq, страх ×kf; LB65 — то же «список ИЛИ B65»
+const FEAR_I = [14, 15, 16, 17], QT_I = [21, 22, 23, 24];
+function bigSells(S0, kq = 1.5, kf = 1.25, sets = [[{ ind: 'corr180', op: '>', v: 0.65 }, { ind: 'vol180', op: '<', v: 90 }]]) {
+  return { ...S0, rules: S0.rules.flatMap((r, q) => { const k = QT_I.includes(q) ? kq : FEAR_I.includes(q) ? kf : 1; return k === 1 ? [r] : [...sets.map((cs) => ({ act: Math.max(-1, +(r.act * k).toFixed(6)), conds: [...r.conds, ...cs] })), r]; }) };
+}
+const B65 = (S0 = BASE_S) => bigSells(S0);
+const LB65 = (S0 = BASE_S) => bigSells(S0, 1.5, 1.25, [[{ ind: 'isbig', op: '>', v: 0.5 }], [{ ind: 'corr180', op: '>', v: 0.65 }, { ind: 'vol180', op: '<', v: 90 }]]);
+Object.assign(module.exports, { bigSells, B65, LB65 });
