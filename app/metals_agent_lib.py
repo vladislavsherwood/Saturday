@@ -284,3 +284,44 @@ def lagcheck(R, B, keys=SEL):
     dd = np.array([rel(R[k]["full_lag1"], B[k]["full_lag1"]) for k in keys])
     da = np.array([rel(R[k]["after_lag1"], B[k]["after_lag1"]) for k in keys])
     return f"сдвиг исполнения на месяц: вся история не хуже {(dd >= -0.5).sum()}/{len(dd)}, мед. {np.median(dd):+.1f}; после 1999 не хуже {(da >= -0.5).sum()}/{len(da)}, мед. {np.median(da):+.1f}"
+
+
+def episode(bn, k_on, k_hold):
+    """Серия докупок: начинается при bn ≥ k_on, держится, пока bn ≥ k_hold."""
+    ep = np.zeros(len(bn), bool)
+    for i in range(len(bn)):
+        ep[i] = bn[i] >= k_on or (i > 0 and ep[i - 1] and bn[i] >= k_hold)
+    return ep
+
+
+def base_sells(d):
+    tn = d["tn"]
+    return np.select([tn >= 6, tn >= 5], [-0.3, -0.1], default=1.0)
+
+
+def r1_plan(d, sell=None, g=0.5):
+    """Рабочая основа после круга 1: дна ≥ 4 → 50% резерва в месяц, серия держится при дна ≥ 3; иначе продажи (по умолчанию как в основе)."""
+    s = base_sells(d) if sell is None else sell(d)
+    return np.where(episode(d["bn"], 4, 3), 1 + g, s)
+
+
+def pooled(D, f, q, keys=SEL):
+    """Процентиль q признака f по месяцам до 1999 года на металлах keys."""
+    v = np.concatenate([D[k]["F"][f].values[: D[k]["m"]] for k in keys])
+    v = v[np.isfinite(v)]
+    return float(np.quantile(v, q))
+
+
+P3, Y1 = "Цена к средней за 3 года", "Изменение за год, %"
+
+
+def r2_sells(d, s5=0.15, s6=0.5, hot3=1.81, hot1=86.0, sh=0.2):
+    """Продажи после круга 2: вершины 5 → 15%, ≥6 → 50%; цена к средней за 3 года > 1,81 и рост за год > 86% → продать 20% (бо́льшая из продаж)."""
+    tn = d["tn"]
+    p = np.select([tn >= 6, tn >= 5], [-s6, -s5], default=1.0)
+    hot = (np.nan_to_num(d["F"][P3].values) > hot3) & (np.nan_to_num(d["F"][Y1].values) > hot1)
+    return np.where(hot, np.minimum(p, -sh), p)
+
+
+def r2_plan(d):
+    return r1_plan(d, r2_sells)
