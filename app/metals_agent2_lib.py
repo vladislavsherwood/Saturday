@@ -34,7 +34,7 @@ PREC = ["gold", "silver", "platinum"]
 GROUP = {**{k: "prec" for k in PREC + ["palladium"]}, **{k: "ind" for k in IND + ["tin"]}}
 H2 = "1982-01-01"                       # граница половин периода подбора
 # параметры R3 (found/metals.json, круг 10 первого агента)
-DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3}
+DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3, "persist": 0}
 
 
 def load(fresh=False):
@@ -80,17 +80,38 @@ def feat(d, f):
     return d["F"][f].values
 
 
+def series(bn, K, persist=0):
+    """Серия докупок: начало при маркеров дна ≥ K (или ≥ K − 1 подряд persist мес.), удержание, пока ≥ K − 1."""
+    n = len(bn)
+    ep = np.zeros(n, bool)
+    run = 0
+    for i in range(n):
+        run = run + 1 if bn[i] >= K - 1 else 0
+        ep[i] = bn[i] >= K or (persist > 0 and run >= persist) or (i > 0 and ep[i - 1] and bn[i] >= K - 1)
+    return ep
+
+
 def r3(d, **kw):
-    """План R3 по месяцам (1 — взнос, 1+g — взнос и доля резерва, −f — продать долю)."""
+    """План по месяцам (1 — взнос, 1+g — взнос и доля резерва, −f — продать долю). Без kw — ровно R3;
+    принятые вторым агентом поправки включаются ключами (см. ACC)."""
     P = {**DEF, **kw}
     tn, bn, nt, nb = d["tn3"], d["bn3"], d["nt"], d["nb"]
     p = np.select([tn >= nt - 1, tn >= nt - 2], [-P["s6"], -P["s5"]], default=1.0)
     hot = (np.nan_to_num(feat(d, P3)) > P["hot3"]) & (np.nan_to_num(feat(d, Y1)) > P["hot1"])
     p = np.where(hot, np.minimum(p, -P["sh"]), p)
-    ep = L.episode(bn, nb - P["k_on"], nb - P["k_on"] - 1)
+    ep = series(bn, nb - P["k_on"], P.get("persist", 0))
     p = np.where(ep, 1 + P["g"], p)
     p = np.where(d["cu_past"] & (tn >= nt - 3) & (p == 1.0), -P["lead"], p)
     return p.astype(np.float64)
+
+
+# принятые поправки (накопительно по кругам): круг 3 — «упорство сигнала дна»
+ACC = {"persist": 4}
+
+
+def cur(d, **kw):
+    """Текущая лучшая версия = R3 + принятые поправки."""
+    return r3(d, **{**ACC, **kw})
 
 
 def episode_r3(d, k_on=3):
