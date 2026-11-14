@@ -203,8 +203,9 @@ def prox(d, bx, sx, a=0, b=None):
     return r
 
 
-def evaluate(D, planfn, keys=None, lag=True):
-    """planfn(d) → план (или (план, ntr)). {металл: периоды, сдвиг на месяц, метрики близости (вся история и до 1999)}."""
+def evaluate(D, planfn, keys=None, lag=True, interest=False):
+    """planfn(d) → план (или (план, ntr)). {металл: периоды, сдвиг на месяц, метрики близости (вся история и до 1999)}.
+    interest=True — резерв приносит доход 3-месячных векселей."""
     out = {}
     for k in keys or metals(D):
         d = D[k]
@@ -212,9 +213,10 @@ def evaluate(D, planfn, keys=None, lag=True):
         nt = 0
         if isinstance(p, tuple):
             p, nt = p
-        e = edges(d, p, 0, nt)
+        rate = d["tb3"] / 1200 if interest else None
+        e = edges(d, p, 0, nt, rate)
         if lag:
-            e1 = edges(d, p, 1, nt)
+            e1 = edges(d, p, 1, nt, rate)
             for q in PER:
                 e[q + "_lag1"] = e1[q]
         e["prox"] = prox(d, e["bx"], e["sx"])
