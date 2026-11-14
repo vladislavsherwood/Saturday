@@ -18,7 +18,7 @@ const injLiq = (EX) => {
     add('fund7', sum(fund, 7)); add('fund30', sum(fund, 30));
     add('lsr', ls.map((x, i) => x / mean(ls, 90)[i])); add('ls', ls); add('tlsr', tls.map((x, i) => x / mean(tls, 90)[i]));
     add('taker7', mean(tk, 7)); add('oir', hi.map((x, i) => (1 - lo[i] / x) * 100));
-    add('flush10', mn(oic3, 10)); add('oi30', chg(oiv, 30)); add('oic30', chg(oic, 30));
+    add('flush10', mn(oic3, 10)); add('ls7', chg(ls, 7)); add('div', tls.map((x, i) => (x / mean(tls, 90)[i]) / (ls[i] / mean(ls, 90)[i]))); add('oi30', chg(oiv, 30)); add('oic30', chg(oic, 30));
   }
   setup(cur, true);
 };
