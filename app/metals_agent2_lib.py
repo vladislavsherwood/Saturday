@@ -644,3 +644,28 @@ def margin_arrays(d, plan, b=0.5, ffmax=3.0, fhi=0.3, flo=0.1, rise_h=2.5):
     ext = plan > 1.0
     f = np.where(rise(d, plan) >= rise_h, fhi, flo)
     return lev, ent, ext, f
+
+
+@L.njit(cache=True)
+def sim_fee(c, plan, lo, hi, lag, fee):
+    """Как metals_agent_lib.sim без дохода резерва, но с комиссией fee (для проверки чувствительности к издержкам)."""
+    cash = 0.0
+    units = 0.0
+    du = 0.0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        before = cash
+        cash += 300.0
+        du += 300.0 * (1 - fee) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - fee)
+        elif a > 0:
+            v = min(cash, 300.0 * min(a, 1.0) + max(a - 1.0, 0.0) * before)
+            units += v * (1 - fee) / p
+            cash -= v
+    return ((units * c[hi - 1] + cash) / (du * c[hi - 1]) - 1) * 100
