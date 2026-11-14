@@ -408,3 +408,45 @@ def cycle(D):
 def onmetal(d, s):
     """Ряд s (по месяцам _X) на месяцы металла d."""
     return s.reindex(d["t"]).values
+
+
+def margin_eval(D, planfn, levfn, keys=None, starts=True):
+    """Плечо (sim_margin первого агента) против той же стратегии без займа: разница по металлам и периодам, ликвидации во всех прогонах
+    (периоды × стресс минимумов 1/0,8/0,7 × сдвиг 0/1; старты каждый январь 1966–2016 × 3 стресса), мин. обеспечение, разница на стартах."""
+    out = {"rel": {}, "liq": 0, "runs": 0, "worst": 1e9, "starts": [], "res": {}}
+    for k in keys or metals(D):
+        d = D[k]
+        c, lo_, ff, n, m, h = d["c"], d["lo"], d["ff"], len(d["c"]), d["m"], d["h82"]
+        plan = planfn(d)
+        lev = levfn(d, plan)
+        z = np.zeros(n)
+        segs = [("before", 0, m), ("h1", 0, h), ("h2", h, m), ("after", m, n), ("full", 0, n)] if m > 24 else [("after", m, n), ("full", 0, n)]
+        out["rel"][k], out["res"][k] = {}, {}
+        for nm, a0, a1 in segs:
+            e0 = L.sim_margin(c, lo_, plan, z, ff, a0, a1, 1.0, 2.0, 1.1, 0)[0]
+            for st in (1.0, 0.8, 0.7):
+                for lag in (0, 1):
+                    e, lq, w, mx = L.sim_margin(c, lo_, plan, lev, ff, a0, a1, st, 2.0, 1.1, lag)
+                    out["liq"] += lq; out["runs"] += 1
+                    if st == 1.0:
+                        out["worst"] = min(out["worst"], w)
+                    if st == 1.0 and lag == 0:
+                        out["rel"][k][nm] = rel(e, e0)
+                        out["res"][k][nm] = e
+        if starts:
+            for y in range(1966, 2017):
+                a0 = int(np.searchsorted(d["t"].values, np.datetime64(f"{y}-01-01")))
+                if (a0 <= 0 and y > d["t"][0].year) or a0 >= n - 60:
+                    continue
+                e0 = L.sim_margin(c, lo_, plan, z, ff, a0, n, 1.0, 2.0, 1.1, 0)[0]
+                for st in (1.0, 0.8, 0.7):
+                    e, lq, w, mx = L.sim_margin(c, lo_, plan, lev, ff, a0, n, st, 2.0, 1.1, 0)
+                    out["liq"] += lq; out["runs"] += 1
+                    if st == 1.0:
+                        out["starts"].append(rel(e, e0)); out["worst"] = min(out["worst"], w)
+    return out
+
+
+def mstat(o, part, keys=SEL):
+    v = np.array([o["rel"][k][part] for k in keys if part in o["rel"][k]])
+    return {"ok": int((v >= -0.5).sum()), "n": len(v), "med": float(np.median(v)), "worst": float(v.min()), "logsum": float(np.log1p(v / 100).sum() * 100)}
