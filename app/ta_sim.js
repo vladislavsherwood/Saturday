@@ -67,7 +67,7 @@ function btcTA() {
   if (BT) return BT;
   const X = S0.loadPage('strategy-builder-sol').find((x) => x.name === 'BTC');
   const o = taSet(X.t, Array.from(X.c), Array.from(X.h), Array.from(X.l), Array.from(X.ind.vol), 'b_');
-  BT = { map: new Map(), keys: Object.keys(o) }; for (let i = 0; i < X.n; i++) BT.map.set(X.t[i], i); BT.o = o; return BT;
+  BT = { map: new Map(), keys: Object.keys(o), X }; for (let i = 0; i < X.n; i++) BT.map.set(X.t[i], i); BT.o = o; return BT;
 }
 function addTA(X) {
   if (X.ind.t_sma20r) return;
@@ -75,6 +75,11 @@ function addTA(X) {
   for (const k in o) X.ind[k] = Float64Array.from(o[k]);
   const B = btcTA();
   for (const k of B.keys) { const a = new Float64Array(X.n); for (let i = 0; i < X.n; i++) { const j = B.map.get(X.t[i]); a[i] = j == null ? NaN : B.o[k][j]; } X.ind[k] = a; }
+}
+// новый индикатор BTC по полной истории (f(c, h, l, t, vol) → массив), сопоставленный по дню всем монетам групп G
+function addB(G, key, f) {
+  const B = btcTA(), X = B.X, a = f(Array.from(X.c), Array.from(X.h).map((v, i) => v || X.c[i]), Array.from(X.l).map((v, i) => v || X.c[i]), X.t, Array.from(X.ind.vol));
+  for (const g in G) for (const Y of G[g]) { if (Y.ind[key]) continue; const o = new Float64Array(Y.n); for (let i = 0; i < Y.n; i++) { const j = B.map.get(Y.t[i]); o[i] = j == null ? NaN : a[j]; } Y.ind[key] = o; }
 }
 function load(list = ['sel', 'ex', 'rnd', 'n100']) { const G = K.groups(list); K.prep(G); for (const g in G) for (const X of G[g]) addTA(X); return G; }
 const ev = (G, S, withM = true) => K.ev(G, S, withM);
@@ -90,4 +95,4 @@ const isFearSell = (r) => r.act < 0 && has(r, 'fng', '<', 52);
 const isSell = (r) => r.act < 0;
 const isBuy = (r) => r.act > 1;
 const rowS = (t, r, b) => { const [bb, ww] = K.bw(r, b, 'n100'); return `${K.show(t, r, b)} | 100н +${bb}/−${ww}${K.passes(r, b) ? '' : ' [' + K.why(r, b) + ']'}`; };
-module.exports = { K, S0, BASE, load, ev, pre, addC, has, isPanic, isRev, isFearSell, isSell, isBuy, rowS, c, taSet, btcTA, addTA, sma, ema, rsiOf, rollMax, rollMin };
+module.exports = { addB, K, S0, BASE, load, ev, pre, addC, has, isPanic, isRev, isFearSell, isSell, isBuy, rowS, c, taSet, btcTA, addTA, sma, ema, rsiOf, rollMax, rollMin };
