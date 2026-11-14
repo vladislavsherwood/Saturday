@@ -105,8 +105,26 @@ def main():
         st = run(D, plans, e, f, T, tp, starts=True)
         rs = np.array(st["rs"])
         print(f"  {name(x['cfg'])}: ликвидаций {x['liq']} / стресс +20% {s20['liq']} / +30% {s30['liq']} / сдвиг {lg['liq']}; "
-              f"старты: мед. {np.median(rs):+.1f}, худшие 10% {np.percentile(rs, 10):+.1f}, хуже без шорта {np.mean(rs < -0.5) * 100:.0f}%; итог шортов (доли капитала, сумма по металлам) {np.sum(st['pnl']):+.2f}")
+              f"старты: мед. {np.median(rs):+.1f}, худшие 10% {np.percentile(rs, 10):+.1f}, хуже без шорта {np.mean(rs < -0.5) * 100:.0f}%; итог шортов (сумма по металлам и стартам) ${np.sum(st['pnl']):,.0f}")
 
 
 if __name__ == "__main__":
     main()
+
+
+def detail():
+    D = L.load()
+    r3, thr = L.r3_setup(D)
+    signals(D, thr)
+    plans = {k: r3(D[k]) for k in L.metals(D)}
+    for cfg in (("strong", 0.2, 24, 0.0), ("strong", 0.3, 24, 0.0)):
+        r = run(D, plans, *cfg)
+        print(f"\n{cfg}: разница к R3 по металлам (до / после / вся): " + ", ".join(
+            f"{L.NAME[k]} " + "/".join(f"{r['rel'][k].get(p, float('nan')):+.1f}" for p in ("before", "after", "full")) for k in L.metals(D)))
+        for k in L.SEL[:3] + ["copper", "nickel"]:
+            d = D[k]
+            print(f"   {L.NAME[k]}: месяцы входа " + ", ".join(f"{t:%Y-%m}" for t in d["t"][d["_strong"]]))
+
+
+if __name__ == "__main__":
+    detail()
