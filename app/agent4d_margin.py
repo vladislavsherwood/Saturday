@@ -115,7 +115,7 @@ class Book:
             L[g, :] = [f(s) for s, _ in self.coins] if callable(f) else f
         return L
 
-    def port(self, A, G, lev=W25L, SHW=None, LEVM=None, REP=None, rate=0.0003, sh_rate=0.15 / 365, stress=True, xs=False, lag=0, starts=None):
+    def port(self, A, G, lev=W25L, SHW=None, LEVM=None, REP=None, rate=0.0003, sh_rate=0.15 / 365, stress=True, xs=False, lag=0, starts=None, end=None):
         L = lev if isinstance(lev, np.ndarray) and lev.ndim == 2 else self.levmat(lev)
         SH = np.zeros(self.C.shape) if SHW is None else SHW.astype(float)
         LM = np.ones(self.C.shape) if LEVM is None else LEVM.astype(float)
@@ -123,7 +123,11 @@ class Book:
         if lag:
             A, G, SH, LM, RP = shift(A, lag, 1.0), shift(G, lag, 0), shift(SH, lag), shift(LM, lag, 1.0), shift(RP, lag)
         st = STARTS if starts is None else starts
-        R = [sim4(self.C, self.LO, self.HI, A, G, SH, LM, RP, int(s), L, 1.0, sh_rate, rate) for s in st]
+        Cc, Lc, Hc = self.C, self.LO, self.HI
+        if end is not None:                    # итог считаем на день end (цикл целиком, без следующих лет)
+            Cc, Lc, Hc, A, G, SH, LM, RP = (x[:end] for x in (Cc, Lc, Hc, A, G, SH, LM, RP))
+            st = np.array([s for s in st if s < end - 60])
+        R = [sim4(Cc, Lc, Hc, A, G, SH, LM, RP, int(s), L, 1.0, sh_rate, rate) for s in st]
         x = np.array([q[1] for q in R]) * 100
         o = {"liq": int(sum(q[0] > 0 for q in R)), "med": float(np.median(x)), "p10": float(np.percentile(x, 10)), "lvl": float(min(q[2] for q in R)),
              "early": float(np.median(x[:48])), "late": float(np.median(x[48:])), "shpnl": float(np.median([q[3] for q in R]) * 100),
@@ -132,7 +136,7 @@ class Book:
             o["_x"] = x.tolist(); o["_sh"] = [q[3] * 100 for q in R]
         if stress and o["liq"] == 0:
             for sv, key in ((0.8, "l20"), (0.7, "l30")):
-                o[key] = int(sum(sim4(self.C, self.LO, self.HI, A, G, SH, LM, RP, int(s), L, sv, sh_rate, rate)[0] > 0 for s in st))
+                o[key] = int(sum(sim4(Cc, Lc, Hc, A, G, SH, LM, RP, int(s), L, sv, sh_rate, rate)[0] > 0 for s in st))
         return o
 
 
@@ -261,3 +265,15 @@ def both(B, A, G, lev=W25L, **kw):
 def fb(o):
     return (f"худш. из сдвигов {o['med']:+.0f}% (в срок {o['m0']:+.0f}, +1 день {o['m1']:+.0f}) | худшие 10% {o['p10']:+.0f}% | запас {min(o['lvl'], 99):.2f}"
             f" | {'OK' if o['safe'] else 'ЛИКВ ' + str(o['liq'])}" + (f" | шорт {o['sh']:+.1f}%" if o["sh"] else ""))
+
+
+E21 = int(np.searchsorted(IDX, pd.Timestamp("2022-01-01")))          # конец цикла 2019–21
+S21 = np.array([s for s in STARTS if IDX[s] < pd.Timestamp("2021-01-01")])
+S24 = np.array([s for s in STARTS if IDX[s] >= pd.Timestamp("2022-01-01")])
+
+
+def cycles(B, A, G, lev=W25L, **kw):
+    """Медиана итога (в срок / на день позже, худший) по циклам: старты 2018–20 с итогом на 2021-12-31; старты 2022–26 с итогом сейчас."""
+    a = min(B.port(A, G, lev, stress=False, starts=S21, end=E21, lag=l, **kw)["med"] for l in (0, 1))
+    b = min(B.port(A, G, lev, stress=False, starts=S24, lag=l, **kw)["med"] for l in (0, 1))
+    return a, b
