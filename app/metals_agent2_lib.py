@@ -450,3 +450,112 @@ def margin_eval(D, planfn, levfn, keys=None, starts=True):
 def mstat(o, part, keys=SEL):
     v = np.array([o["rel"][k][part] for k in keys if part in o["rel"][k]])
     return {"ok": int((v >= -0.5).sum()), "n": len(v), "med": float(np.median(v)), "worst": float(v.min()), "logsum": float(np.log1p(v / 100).sum() * 100)}
+
+
+@L.njit(cache=True)
+def sim_short2(c, high, plan, ent, ext, ff, lo, hi, f, T, stress, spread, ml_lvl, lag):
+    """Как sim_short первого агента, но доля капитала f — массив по месяцам решения (размер шорта зависит от месяца входа); без фиксации прибыли.
+    Возвращает итог к DCA, %, ликвидации, число шортов, суммарный результат шортов."""
+    cash = 0.0
+    units = 0.0
+    S = 0.0
+    du = 0.0
+    liq = 0
+    nsh = 0
+    entry = 0.0
+    t0 = 0
+    pnl = 0.0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        e_ = ent[j] if j >= lo else False
+        x_ = ext[j] if j >= lo else False
+        fj = f[j] if j >= lo else 0.0
+        if S > 0:
+            fee = S * p * (ff[i] + spread) / 1200
+            cash -= fee
+            pnl -= fee
+        before = cash if cash > 0 else 0.0
+        cash += 300.0
+        du += 300.0 * (1 - 0.001) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - 0.001)
+        elif a > 0:
+            v = min(max(cash, 0.0), 300.0 * min(a, 1.0) + max(a - 1.0, 0.0) * before)
+            units += v * (1 - 0.001) / p
+            cash -= v
+        if S > 0 and (x_ or i - t0 >= T):
+            cost = S * p * (1 + 0.001)
+            cash -= cost
+            pnl += S * entry * (1 - 0.001) - cost
+            S = 0.0
+        elif S == 0 and e_ and fj > 0:
+            eq = units * p + cash
+            if eq > 0:
+                S = fj * eq / p
+                cash += S * p * (1 - 0.001)
+                entry = p
+                t0 = i
+                nsh += 1
+        if S > 0:
+            ph = high[i] * stress
+            lvl = (units * ph + cash) / (S * ph)
+            if lvl <= ml_lvl:
+                liq += 1
+                cost = S * ph * (1 + 0.001)
+                cash -= cost
+                pnl += S * entry * (1 - 0.001) - cost
+                S = 0.0
+    fin = units * c[hi - 1] + cash - S * c[hi - 1]
+    return (fin / (du * c[hi - 1]) - 1) * 100, liq, nsh, pnl
+
+
+def short_eval(D, planfn, sfn, keys=None, T=24, starts=True, ref=None):
+    """Шорт (sfn(d, plan) → (вход, выход, доля f по месяцам)) против той же стратегии без шорта (или против ref-схемы шорта):
+    разница по металлам и периодам, ликвидации (периоды × стресс максимумов 1/1,2/1,3 × сдвиг 0/1; старты × 3 стресса)."""
+    out = {"rel": {}, "relref": {}, "liq": 0, "runs": 0, "starts": [], "res": {}, "n": 0}
+    for k in keys or metals(D):
+        d = D[k]
+        c, hi_, ff, n, m, h = d["c"], d["hi"], d["ff"], len(d["c"]), d["m"], d["h82"]
+        plan = planfn(d)
+        ent, ext, f = sfn(d, plan)
+        z = np.zeros(n)
+        rr = ref(d, plan) if ref else None
+        segs = [("before", 0, m), ("h1", 0, h), ("h2", h, m), ("after", m, n), ("full", 0, n)] if m > 24 else [("after", m, n), ("full", 0, n)]
+        out["rel"][k], out["res"][k], out["relref"][k] = {}, {}, {}
+        for nm, a0, a1 in segs:
+            e0 = sim_short2(c, hi_, plan, ent, ext, ff, a0, a1, z, T, 1.0, 2.0, 1.1, 0)[0]
+            if rr is not None:
+                er = sim_short2(c, hi_, plan, rr[0], rr[1], ff, a0, a1, rr[2], T, 1.0, 2.0, 1.1, 0)[0]
+            for st in (1.0, 1.2, 1.3):
+                for lag in (0, 1):
+                    e, lq, ns, pnl = sim_short2(c, hi_, plan, ent, ext, ff, a0, a1, f, T, st, 2.0, 1.1, lag)
+                    out["liq"] += lq; out["runs"] += 1
+                    if st == 1.0 and lag == 0:
+                        out["rel"][k][nm] = rel(e, e0)
+                        out["res"][k][nm] = e
+                        if rr is not None:
+                            out["relref"][k][nm] = rel(e, er)
+                        if nm == "full":
+                            out["n"] += ns
+        if starts:
+            for y in range(1966, 2017):
+                a0 = int(np.searchsorted(d["t"].values, np.datetime64(f"{y}-01-01")))
+                if (a0 <= 0 and y > d["t"][0].year) or a0 >= n - 60:
+                    continue
+                e0 = sim_short2(c, hi_, plan, ent, ext, ff, a0, n, z, T, 1.0, 2.0, 1.1, 0)[0]
+                for st in (1.0, 1.2, 1.3):
+                    e, lq, _, _ = sim_short2(c, hi_, plan, ent, ext, ff, a0, n, f, T, st, 2.0, 1.1, 0)
+                    out["liq"] += lq; out["runs"] += 1
+                    if st == 1.0:
+                        out["starts"].append(rel(e, e0))
+    return out
+
+
+def sstat(o, part, which="rel", keys=SEL):
+    v = np.array([o[which][k][part] for k in keys if part in o[which][k]])
+    return {"ok": int((v >= -0.5).sum()), "n": len(v), "med": float(np.median(v)), "worst": float(v.min()), "logsum": float(np.log1p(v / 100).sum() * 100)}
