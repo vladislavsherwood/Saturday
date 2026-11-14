@@ -40,3 +40,17 @@ function line(tag, r, b, groups = ['sel', 'ex', 'rnd', 'n100']) {
 function bw(r, b, g, filt = () => true) { let u = 0, d = 0; r[g].forEach((x, i) => { if (!filt(x)) return; if (x.f > b[g][i].f + 0.5) u++; else if (x.f < b[g][i].f - 0.5) d++; }); return [u, d]; }
 const day = (X, i) => new Date(X.t[i] * 864e5).toISOString().slice(0, 10);
 module.exports = { K, S0, BASE, MEMES, BORDER, isMeme, load, evc, evs, st, sum, cmp, line, bw, day, med, c: K.c };
+// флаги: meme (по списку) — индикатор 1/0 на всех монетах; поведенческий — условие beta180 > v
+function flags(G) { for (const g in G) for (const X of G[g]) if (!X.ind.meme) { const a = new Float64Array(X.n); a.fill(X.meme ? 1 : 0); X.ind.meme = a; } }
+const FL = { all: [], meme: [K.c('meme', '>', 0.5)], b13: [K.c('beta180', '>', 1.3)], b15: [K.c('beta180', '>', 1.5)] };
+// копия правил, выбранных sel(r, i), с добавленными условиями cond и новым act — перед исходным
+const pre = (S, sel, cond, act) => ({ ...S, rules: S.rules.flatMap((r, i) => (sel(r, i) ? [{ act: typeof act === 'function' ? act(r) : act, conds: [...r.conds, ...cond] }, r] : [r])) });
+const isWide = (r) => r.act < 0 && r.conds.some((x) => x.ind === 'oth90');
+const isNarrow = (r) => r.act < 0 && r.conds.some((x) => x.ind === 'qt');
+const isRet = (r) => r.conds.some((x) => x.ind === 'ago_qt');
+const isPanic = (r) => r.act > 1 && r.conds.some((x) => x.ind === 'usdt') && !r.conds.some((x) => x.ind === 'btcr30');
+const isPump = (r) => r.act < 0 && r.conds.some((x) => x.ind === 'up90');
+module.exports = { ...module.exports, flags, FL, pre, isWide, isNarrow, isRet, isPanic, isPump };
+// по мемам: итог основы → варианта (полная история и половины)
+function diffMemes(r, b, filt = (x) => x.meme) { const o = []; for (const g in r) r[g].forEach((x, i) => { if (!filt(x)) return; const q = b[g][i]; if (Math.abs(x.f - q.f) > 0.5 || Math.abs(x.h1 - q.h1) > 0.5 || Math.abs(x.h2 - q.h2) > 0.5) o.push(`${x.name} ${q.f.toFixed(0)}→${x.f.toFixed(0)} (${q.h1.toFixed(0)}→${x.h1.toFixed(0)}/${q.h2.toFixed(0)}→${x.h2.toFixed(0)})`); }); return o.join(', '); }
+module.exports.diffMemes = diffMemes;
