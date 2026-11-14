@@ -54,3 +54,10 @@ module.exports = { ...module.exports, flags, FL, pre, isWide, isNarrow, isRet, i
 // по мемам: итог основы → варианта (полная история и половины)
 function diffMemes(r, b, filt = (x) => x.meme) { const o = []; for (const g in r) r[g].forEach((x, i) => { if (!filt(x)) return; const q = b[g][i]; if (Math.abs(x.f - q.f) > 0.5 || Math.abs(x.h1 - q.h1) > 0.5 || Math.abs(x.h2 - q.h2) > 0.5) o.push(`${x.name} ${q.f.toFixed(0)}→${x.f.toFixed(0)} (${q.h1.toFixed(0)}→${x.h1.toFixed(0)}/${q.h2.toFixed(0)}→${x.h2.toFixed(0)})`); }); return o.join(', '); }
 module.exports.diffMemes = diffMemes;
+// устойчивая мера для малых групп: средний лог-прирост по монетам-мемам (полная история) и число лучше/хуже, отдельно для старых групп и 100 новых
+function robust(r, b, filt = (x) => x.meme) { const o = {}; for (const [k, gs] of [['old', ['sel', 'ex', 'rnd']], ['n100', ['n100']]]) { let s = 0, n = 0, u = 0, d = 0, hu = 0, hd = 0;
+  for (const g of gs) if (r[g]) r[g].forEach((x, i) => { if (!filt(x)) return; const q = b[g][i]; s += Math.log1p(x.f / 100) - Math.log1p(q.f / 100); n++; if (x.f > q.f + 0.5) u++; else if (x.f < q.f - 0.5) d++;
+    for (const h of ['h1', 'h2']) { if (x[h] > q[h] + 0.5) hu++; else if (x[h] < q[h] - 0.5) hd++; } });
+  o[k] = { mlog: s / n, u, d, hu, hd }; } return o; }
+const rs = (o) => `сред.лог мемов старые ${o.old.mlog >= 0 ? '+' : ''}${o.old.mlog.toFixed(3)} (лучше/хуже ${o.old.u}/${o.old.d}, половин ${o.old.hu}/${o.old.hd}) | 100н ${o.n100.mlog >= 0 ? '+' : ''}${o.n100.mlog.toFixed(3)} (${o.n100.u}/${o.n100.d}, пол. ${o.n100.hu}/${o.n100.hd})`;
+module.exports.robust = robust; module.exports.rs = rs;
