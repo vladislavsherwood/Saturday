@@ -204,3 +204,30 @@ def part_b():
 
 if __name__ == "__main__":
     part_b()
+
+
+def part_c():
+    """Часть В: простота — нужны ли индекс у дна и медь-лидер, если маркер «золото к нефти» только у золота и серебра."""
+    D = L.load()
+    thr = prep(D)
+    keys = L.metals(D)
+    R2 = L.run(D, L.r2_plan)
+
+    def hy(index, leader):
+        def f(d):
+            k = d["key"]
+            top, bot = list(TOP), list(BOT) + ([(II, "lo")] if index else [])
+            if GROUP[k] == "ind":
+                top.append((F10, "hi"))
+            elif k in ("gold", "silver"):
+                top.append((GO, "hi"))
+            return build(top, bot, thr, leader=leader)(d)
+        return f
+    print("\n=== ЧАСТЬ В: групповые маркеры (промышленные — цена к ср. 10 лет, золото и серебро — золото к нефти) + части ===")
+    for name, a, b in (("только групповые маркеры", False, False), ("+ индекс у дна", True, False), ("+ медь-лидер", False, True), ("+ оба", True, True)):
+        R = L.run(D, hy(a, b))
+        print(f"  {name}:\n     " + L.line(R, keys) + "\n" + L.summary_line("     к R2:", R, R2) + "\n     " + L.lagcheck(R, R2))
+
+
+if __name__ == "__main__":
+    part_c()

@@ -237,7 +237,7 @@ def line(R, keys, parts=("before", "after", "full")):
 def summary_line(name, R, B, keys=SEL):
     s = compare(R, B, keys)
     a = agg_prox(R, keys)
-    return (f"{name}\n   к основе: до 1999 не хуже {s['before']['ok']}/{s['before']['n']}, медиана {s['before']['med']:+.1f}, худший {s['before']['worst']:+.1f} | "
+    return (f"{name}\n   разница: до 1999 не хуже {s['before']['ok']}/{s['before']['n']}, медиана {s['before']['med']:+.1f}, худший {s['before']['worst']:+.1f} | "
             f"после {s['after']['ok']}/{s['after']['n']}, {s['after']['med']:+.1f}, {s['after']['worst']:+.1f} | вся {s['full']['ok']}/{s['full']['n']}, {s['full']['med']:+.1f}, {s['full']['worst']:+.1f}"
             f"\n   {fmt_prox(a)}")
 
