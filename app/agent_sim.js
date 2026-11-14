@@ -40,6 +40,18 @@ function derive(X) {
   add('up90', (i) => { let m = Infinity; for (let j = Math.max(0, i - 89); j <= i; j++) if (c[j] < m) m = c[j]; return (c[i] / m - 1) * 100; });
   // рост монеты к средней 200 уже есть (sma200); дни с последнего страха-продажи
   { let s = NaN; const a = new Float64Array(n); for (let i = 0; i < n; i++) { if (I.fng[i] < 52 && I.usdtd[i] < 7.6) s = 0; else s = s + 1; a[i] = s; } X.ind.fearoff = a; }
+  // «после выноса» — как в ls_inject.js (injLs): минимум OI и лонги/шорты за N дней, первый день выхода толпы из шортов после выноса
+  if (I.oidd30 && I.lsr) {
+    const mn = (a, w) => { const o = new Float64Array(n); for (let i = 0; i < n; i++) { if (i < w - 1) { o[i] = NaN; continue; } let m = Infinity, bad = false; for (let j = i - w + 1; j <= i; j++) { if (isNaN(a[j])) { bad = true; break; } if (a[j] < m) m = a[j]; } o[i] = bad ? NaN : m; } return o; };
+    const oi = I.oidd30, lsr = I.lsr;
+    for (const w of [20, 40]) { X.ind['oimin' + w] = mn(oi, w); X.ind['lsrmin' + w] = mn(lsr, w); }
+    for (const w of [20, 40]) for (const x of [0.95, 1.0]) {
+      const on = new Float64Array(n), f = new Float64Array(n), om = X.ind['oimin' + w], lm = X.ind['lsrmin' + w];
+      for (let i = 0; i < n; i++) on[i] = om[i] < -28 && oi[i] > -28 && lsr[i] > x && lm[i] < 0.9 ? 1 : 0;
+      for (let i = 0; i < n; i++) f[i] = on[i] && !(i > 0 && on[i - 1]) ? 1 : 0;
+      X.ind[`dly${w}_${x * 100}`] = on; X.ind[`dly${w}_${x * 100}f`] = f;
+    }
+  }
 }
 
 const compile = (X, rules) => rules.filter((r) => r.conds.every((cd) => X.ind[cd.ind])).map((r) => ({ act: r.act, cs: r.conds.map((cd) => [X.ind[cd.ind], cd.op === '<', cd.v]), r }));

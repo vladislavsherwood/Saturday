@@ -25,6 +25,12 @@ _full = data.dominances()
 _fng = data.fear_greed()
 _btc = data.history("BTC-USD")[0]
 _lq = engine._liq()
+# лонги/шорты Binance и OI к 30-дн. максимуму по календарю — для индикаторов «после выноса» (как ls_inject.js / ls_margin.py)
+_lx = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "liq_extra.json")))
+_bls = pd.Series(_lx["bls"], index=pd.to_datetime(_lx["t"], unit="D"), dtype=float)
+_oidd_cal = (_lq["oic"] / _lq["oic"].rolling(30, min_periods=1).max() - 1) * 100
+_lsr_cal = _bls / _bls.rolling(90).mean()
+EXTRA = {}          # name -> f(close, kind, I) -> Series: дополнительные индикаторы для гипотез (регистрируют скрипты кругов)
 
 
 def indicators(close, kind):
@@ -47,6 +53,15 @@ def indicators(close, kind):
     I["feard"] = run(((fng < 52) & (d["usdt"] < 7.6)).fillna(False))
     I["qtrun"] = run(I["qt"] > 0.5)
     I["hotd"] = run((fund30 > 2).fillna(False))
+    # отложенная покупка: за 20 (40) дней был вынос OI < −28% при толпе в шортах (лонги/шорты к средней 90 дн. < 0,9), сегодня OI выше −28% и толпа вышла (> x)
+    I["lsr"] = _lsr_cal.reindex(ix)
+    for w in (20, 40):
+        for x in (0.95, 1.0):
+            on = (_oidd_cal.rolling(w).min() < -28) & (_oidd_cal > -28) & (_lsr_cal > x) & (_lsr_cal.rolling(w).min() < 0.9)
+            I[f"dly{w}_{int(x * 100)}"] = on.reindex(ix).fillna(False).astype(float)
+            I[f"dly{w}_{int(x * 100)}f"] = (on & ~on.shift(1, fill_value=False)).reindex(ix).fillna(False).astype(float)
+    for k, f in EXTRA.items():
+        I[k] = f(close, kind, I)
     return I
 
 
@@ -64,7 +79,7 @@ def rule_index(close, kind, rules):
 
 def plan_of(S):
     """Матрицы по дням и монетам: доля действия ACT (1 — взнос) и номер группы плеча GRP (0 — без плеча, 4 — продажа)."""
-    B = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "main-crypto.json")))
+    B = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "main-crypto-B.json")))     # группы плеча — по правилам B
     bgrp = [1, 1, 2, 2, 0, 3, 2, 4, 4, 3, 4, 4]
     acts = np.array([r["act"] for r in S["rules"]] + [S.get("base", 1)])
     grp = []
@@ -175,7 +190,7 @@ def fmt(o):
 
 
 if __name__ == "__main__":
-    B = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "main-crypto.json")))
+    B = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "main-crypto-B.json")))
     ACT, GRP, RI = plan_of(B)
     # сверка с engine: номера правил основной стратегии
     bad = 0
