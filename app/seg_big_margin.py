@@ -23,21 +23,22 @@ def _ind(self, k):
 
 
 A4D.Book.ind = _ind
-C = json.load(open(sys.argv[1]))
-OUT = sys.argv[2] if len(sys.argv) > 2 else None
-R = dict(lr=1.5)
-CFG = [("без плеча", dict(lev=False), 0.0),
-       ("ОСТОРОЖНАЯ: R16 + A4 ×1,25 + шорт 10%", dict(D=60, lp=1.25, **R), 0.1),
-       ("ЛУЧШАЯ: R16 + A4 ×1,4 + шорт 20%", dict(D=60, lp=1.4, **R), 0.2)]
-PS = {k: Port(v) for k, v in SETS.items()}
-RES = {}; t = time.time()
-for vn, S0 in C.items():
-    for tag, kw, sh in CFG:
-        S, L = scheme(S0, **kw); row = {}
-        for nm, P in PS.items():
-            row[nm] = full(P, S, L, sh)
-        RES[f"{vn} | {tag}"] = row
-        ok = all(o["safe"] for o in row.values())
-        print(f"{'OK ' if ok else '✘  '}{vn} | {tag} [{time.time() - t:.0f} с]\n" + "\n".join(f"     {nm:8s} {fmt(o)}" for nm, o in row.items()), flush=True)
-if OUT:
-    json.dump(RES, open(OUT, "w"), ensure_ascii=False, indent=1)
+if __name__ == "__main__":
+    C = json.load(open(sys.argv[1]))
+    OUT = sys.argv[2] if len(sys.argv) > 2 else None
+    R = dict(lr=1.5)
+    CFG = [("без плеча", dict(lev=False), 0.0),
+           ("ОСТОРОЖНАЯ: R16 + A4 ×1,25 + шорт 10%", dict(D=60, lp=1.25, **R), 0.1),
+           ("ЛУЧШАЯ: R16 + A4 ×1,4 + шорт 20%", dict(D=60, lp=1.4, **R), 0.2)]
+    PS = {k: Port(v) for k, v in SETS.items()}
+    RES = {}; t = time.time()
+    for vn, S0 in C.items():
+        for tag, kw, sh in CFG:
+            S, L = scheme(S0, **kw); row = {}
+            for nm, P in PS.items():
+                row[nm] = full(P, S, L, sh)
+            RES[f"{vn} | {tag}"] = row
+            ok = all(o["safe"] for o in row.values())
+            print(f"{'OK ' if ok else '✘  '}{vn} | {tag} [{time.time() - t:.0f} с]\n" + "\n".join(f"     {nm:8s} {fmt(o)}" for nm, o in row.items()), flush=True)
+    if OUT:
+        json.dump(RES, open(OUT, "w"), ensure_ascii=False, indent=1)
