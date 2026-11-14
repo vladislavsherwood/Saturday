@@ -35,8 +35,11 @@ function show(tag, r, b) {
   const m = r.m ? ` | дно ${r.m.buyAbove90.toFixed(0)}/${r.m.zone15.toFixed(0)}/${r.m.bott3.toFixed(0)} вершины ${r.m.sellToTop.toFixed(0)}/${r.m.missedTops.toFixed(0)}` : '';
   return `${pass} ${d(r, b) >= 0 ? '+' : ''}${d(r, b).toFixed(3)} | ${S.line(r)} | худш. отбор ${r.sel.worst.toFixed(0)} 50сл ${r.rnd.worst.toFixed(0)}${n}${m} | ${tag}`;
 }
+// почему не прошла строгую проверку: список пунктов с цифрами
+function why(r, b) { const o = []; for (const k of ['sel', 'ex']) { if (r[k].pos < b[k].pos) o.push(`${k} в плюсе ${r[k].pos}<${b[k].pos}`); if (r[k].worst < b[k].worst - 1e-9) o.push(`${k} худшая ${r[k].worst.toFixed(2)}<${b[k].worst.toFixed(2)}`); if (r[k].hworst < b[k].hworst - 1e-9) o.push(`${k} худш.пол. ${r[k].hworst.toFixed(2)}<${b[k].hworst.toFixed(2)}`); if (r[k].hpos < b[k].hpos) o.push(`${k} половин ${r[k].hpos}<${b[k].hpos}`); }
+  if (r.rnd.pos < b.rnd.pos) o.push(`rnd в плюсе ${r.rnd.pos}<${b.rnd.pos}`); if (r.rnd.hpos < b.rnd.hpos) o.push(`rnd половин ${r.rnd.hpos}<${b.rnd.hpos}`); if (r.rnd.hworst < b.rnd.hworst - 1e-9) o.push(`rnd худш.пол. ${r.rnd.hworst.toFixed(2)}<${b.rnd.hworst.toFixed(2)}`); return o.join('; '); }
 const HDR = 'строго доход | ' + S.HDR + ' | 100н мед/плюс/пол+ | дно: выше мин90/в зоне/≥3 дней; вершины: к макс/пропущено';
 // правка правил: заменить порог/действие по условию
 const mapRules = (X, f) => ({ ...X, rules: X.rules.flatMap((r, i) => { const o = f(r, i); return o == null ? [] : Array.isArray(o) ? o : [o]; }) });
 const has = (r, ind) => r.conds.some((cd) => cd.ind === ind);
-module.exports = { ...S, S, MAIN, groups, ev, show, HDR, d, mapRules, has, EXTRA, addBtc, c };
+module.exports = { ...S, S, MAIN, groups, ev, show, why, HDR, d, mapRules, has, EXTRA, addBtc, c };

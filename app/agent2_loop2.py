@@ -51,20 +51,23 @@ if __name__ == "__main__":
         for lb, lp, lu, lr, ld in itertools.product((1.5, 2, 2.5), (1, 1.25, 1.5), (1, 1.25), (1.5, 2, 2.5), (1, 1.5, 2)):
             if su != "K1" and lu != 1:
                 continue
-            lev = (1, lb, lp, lr, 1, lu, ld, lp if su == "K1" else 1)         # группа 7 (неподтверждённая как K1) — с плечом паники
-            if su == "K1" and lu != 1:
-                lev = (1, lb, lp, lr, 1, 1, ld, lu)
+            lev = (1, lb, lp, lr, 1, 1, ld, lu)                                # группа 7 — неподтверждённая с размером подтверждённой (K1), плечо lu
             o = port2(A, G, lev, stress=False, sep=True)
             o["cfg"] = [sb, sp, su, sr, sd, lb, lp, lu, lr, ld]; rows.append(o)
     print(f"\nсхем {len(rows)}, {time.time() - t0:.0f} с", flush=True)
-    rows.sort(key=lambda o: -o["med"]); nsafe = 0
-    for o in rows:
-        if o["liq"] == 0 and nsafe < 400:
-            sb, sp, su, sr, sd, lb, lp, lu, lr, ld = o["cfg"]
-            S = su_sized(sized(MAIN, sb, sp, sr, sd), su); A, G, _ = plan_of(S)
-            lev = (1, lb, lp, lr, 1, 1, ld, lu) if su == "K1" else (1, lb, lp, lr, 1, 1, ld, 1)
-            o2 = port2(A, G, lev, sep=True); o.update(l20=o2["l20"], l30=o2["l30"])
-            if safe(o):
-                nsafe += 1
+    json.dump(rows, open(out, "w"))
+    # стресс: сначала −30% (быстрый выход на первой ликвидации), лучшие по медиане без ликвидаций
+    from agent2_margin import stress_ok
+    rows.sort(key=lambda o: -o["med"]); nsafe = 0; plans = {}
+    for o in [o for o in rows if o["liq"] == 0][:4000]:
+        sb, sp, su, sr, sd, lb, lp, lu, lr, ld = o["cfg"]
+        key = (sb, sp, su, sr, sd)
+        if key not in plans:
+            plans[key] = plan_of(su_sized(sized(MAIN, sb, sp, sr, sd), su))[:2]
+        A, G = plans[key]
+        lev = (1, lb, lp, lr, 1, 1, ld, lu)
+        ok = stress_ok(A, G, lev)
+        o.update(l20=0 if ok else 1, l30=0 if ok else 1)
+        nsafe += ok
     print(f"проверено в стрессе, безопасных {nsafe}, {time.time() - t0:.0f} с", flush=True)
     json.dump(rows, open(out, "w"))

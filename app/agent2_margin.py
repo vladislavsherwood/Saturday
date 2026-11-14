@@ -191,3 +191,19 @@ def fmt2(o):
     return (f"медиана {o['med']:+.0f}% | худшие 10% {o['p10']:+.0f}% | 2018–21 {o['early']:+.0f}%, 2022–26 {o['late']:+.0f}% | ликв. {o['liq']}"
             + (f", −20%: {o['l20']}, −30%: {o['l30']}" if "l20" in o else "") + f" | мин. активы/долг {min(o['lvl'], 99):.2f}"
             + (f" | шорт {o['shpnl']:+.1f}%" if o["shpnl"] else "") + (f" | % за минус резерва {o['neg']:.2f}%" if o.get("neg") else ""))
+
+
+@njit(cache=True)
+def any_liq(C, LO, HI, A, G, SH, S0, levv, stress, sh, sh_rate, sh_coin, negrate, sep):
+    """Есть ли хоть одна ликвидация на любом из стартов (быстрый выход на первой)."""
+    for s in S0:
+        if sim2(C, LO, HI, A, G, SH, s, levv, stress, sh, sh_rate, sh_coin, negrate, sep)[0] > 0:
+            return True
+    return False
+
+
+def stress_ok(A, G, lev, W=None, sh=0.0, sep=True, sh_coin=0):
+    """Сначала самый жёсткий стресс −30%, потом −20%; True — ноль ликвидаций в обоих."""
+    levv = np.array(list(lev) + [1.0] * (8 - len(lev)), float); SH = NOSH if W is None or not sh else W.astype(float)
+    S0 = np.array(starts, dtype=np.int64)
+    return not any_liq(CC, LO, HI, A, G, SH, S0, levv, 0.7, sh, 0.15 / 365, sh_coin, True, sep) and not any_liq(CC, LO, HI, A, G, SH, S0, levv, 0.8, sh, 0.15 / 365, sh_coin, True, sep)
