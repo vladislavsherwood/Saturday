@@ -354,3 +354,83 @@ def plan_generic(d, tn, bn, g=0.5, k_on=4, k_hold=3, s5=0.15, s6=0.5, k5=5, k6=6
     hot = (np.nan_to_num(d["F"][P3].values) > hot3) & (np.nan_to_num(d["F"][Y1].values) > hot1)
     p = np.where(hot, np.minimum(p, -sh), p)
     return np.where(episode(bn, k_on, k_hold), 1 + g, p)
+
+
+def r3_setup(D):
+    """Готовит признаки связей и пороги для R3 (круг 7). Возвращает planfn."""
+    from metals_agent_loop7 import F10, GO, GROUP, II, build, prep
+    thr = prep(D)
+
+    def plan(d):
+        k = d["key"]
+        top, bot = list(TOP), list(BOT) + [(II, "lo")]
+        if GROUP[k] == "ind":
+            top.append((F10, "hi"))
+        elif k in ("gold", "silver"):
+            top.append((GO, "hi"))
+        return build(top, bot, thr, leader=True)(d)
+    return plan, thr
+
+
+@njit(cache=True)
+def sim_margin(c, low, plan, lev, ff, lo, hi, stress, spread, ml_lvl, lag):
+    """Счёт одного металла с займом. В месяц серии докупок (план > 1) к покупке из резерва добавляется заём lev[j] × (доля резерва).
+    Проценты — ставка ФРС + spread (годовых), помесячно. Долг гасится выручкой от продаж, а в обычные месяцы — взносом (вместо покупки).
+    Ликвидация: (монеты по минимуму месяца × stress + деньги) / долг ≤ ml_lvl → всё продаётся по этому минимуму.
+    Возвращает итог к DCA, %, число ликвидаций, минимальный уровень обеспечения, максимальный долг к стоимости позиции."""
+    cash = 0.0
+    units = 0.0
+    debt = 0.0
+    du = 0.0
+    liq = 0
+    worst = 1e9
+    mx = 0.0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        L_ = lev[j] if j >= lo else 0.0
+        debt *= 1 + (ff[i] + spread) / 1200
+        before = cash
+        cash += UNIT
+        du += UNIT * (1 - FEE) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - FEE)
+        elif a > 1.0:
+            v = min(cash, UNIT + (a - 1.0) * before)
+            extra = L_ * (v - UNIT)
+            units += (v + extra) * (1 - FEE) / p
+            cash -= v
+            debt += extra
+        elif a > 0:
+            if debt > 0:
+                r = min(debt, UNIT)
+                debt -= r
+                cash -= r
+                if UNIT - r > 0:
+                    units += (UNIT - r) * (1 - FEE) / p
+                    cash -= UNIT - r
+            else:
+                units += UNIT * (1 - FEE) / p
+                cash -= UNIT
+        if debt > 0 and cash > 0 and a <= 1.0:
+            r = min(debt, cash)
+            debt -= r
+            cash -= r
+        if debt > 0:
+            pl = low[i] * stress
+            lvl = (units * pl + cash) / debt
+            if lvl < worst:
+                worst = lvl
+            if units * p > 0 and debt / (units * p) > mx:
+                mx = debt / (units * p)
+            if lvl <= ml_lvl:
+                liq += 1
+                cash += units * pl * (1 - FEE) - debt
+                units = 0.0
+                debt = 0.0
+    fin = units * c[hi - 1] + cash - debt
+    return (fin / (du * c[hi - 1]) - 1) * 100, liq, worst, mx
