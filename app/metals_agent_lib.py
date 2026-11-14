@@ -95,14 +95,17 @@ def metals(D):
 
 
 @njit(cache=True)
-def sim(c, plan, lo, hi, lag, rate):
-    """Итог к DCA, % на [lo, hi); rate — доход резерва за месяц (0 — как в основе). Возвращает итог, докупки резерва и продажи по месяцам."""
+def sim(c, plan, lo, hi, lag, rate, ntr=0):
+    """Итог к DCA, % на [lo, hi); rate — доход резерва за месяц (0 — как в основе). Возвращает итог, докупки резерва и продажи по месяцам.
+    ntr > 0 — равные доли: в первый месяц серии докупок (план > 1) фиксируется доля = резерв × (план − 1) / ntr, дальше каждый месяц серии — она же."""
     n = len(c)
     bx = np.zeros(n)
     sx = np.zeros(n)
     cash = 0.0
     units = 0.0
     du = 0.0
+    tr = 0.0
+    prev = 1.0
     for i in range(lo, hi):
         p = c[i]
         j = i - 1 - lag
@@ -118,22 +121,28 @@ def sim(c, plan, lo, hi, lag, rate):
                 cash += v * (1 - FEE)
                 sx[i] = v
         elif a > 0:
-            v = min(cash, UNIT * min(a, 1.0) + max(a - 1.0, 0.0) * before)
+            if ntr > 0 and a > 1.0:
+                if prev <= 1.0:
+                    tr = before * (a - 1.0) / ntr
+                v = min(cash, UNIT + tr)
+            else:
+                v = min(cash, UNIT * min(a, 1.0) + max(a - 1.0, 0.0) * before)
             units += v * (1 - FEE) / p
             cash -= v
             if v > UNIT * 1.001:
                 bx[i] = v - UNIT
+        prev = a
     return ((units * c[hi - 1] + cash) / (du * c[hi - 1]) - 1) * 100, bx, sx
 
 
-def edges(d, plan, lag=0, interest=False):
+def edges(d, plan, lag=0, interest=False, ntr=0):
     c, m, n = d["c"], d["m"], len(d["c"])
     rate = d["tb3"] / 1200 if interest else np.zeros(n)
     plan = np.asarray(plan, np.float64)
     out = {}
-    out["before"] = sim(c, plan, 0, m, lag, rate)[0] if m > 24 else np.nan
-    out["after"] = sim(c, plan, m, n, lag, rate)[0]
-    e, bx, sx = sim(c, plan, 0, n, lag, rate)
+    out["before"] = sim(c, plan, 0, m, lag, rate, ntr)[0] if m > 24 else np.nan
+    out["after"] = sim(c, plan, m, n, lag, rate, ntr)[0]
+    e, bx, sx = sim(c, plan, 0, n, lag, rate, ntr)
     out["full"] = e
     out["bx"], out["sx"] = bx, sx
     return out
@@ -174,15 +183,18 @@ def base_plan(d):
     return np.select([bn >= 4, tn >= 6, tn >= 5], [2.0, -0.3, -0.1], default=1.0).astype(np.float64)
 
 
-def run(D, planfn, keys=None, lag=0, interest=False, prox=True):
-    """planfn(d) → план по месяцам. Возвращает {металл: {before, after, full, (метрики)}}."""
+def run(D, planfn, keys=None, lag=0, interest=False, prox=True, ntr=0):
+    """planfn(d) → план по месяцам (или (план, ntr)). Возвращает {металл: {before, after, full, (метрики)}}."""
     out = {}
     for k in keys or metals(D):
         d = D[k]
         p = planfn(d)
-        e = edges(d, p, lag, interest)
+        nt = ntr
+        if isinstance(p, tuple):
+            p, nt = p
+        e = edges(d, p, lag, interest, nt)
         if lag == 0 and not interest:
-            e1 = edges(d, p, 1)
+            e1 = edges(d, p, 1, False, nt)
             e["full_lag1"], e["after_lag1"], e["before_lag1"] = e1["full"], e1["after"], e1["before"]
         if prox:
             e.update(proximity(d, e["bx"], e["sx"]))
@@ -249,3 +261,26 @@ def since(m):
             last = i
         out[i] = i - last
     return out
+
+
+def study(D, cands, B, keys=SEL, show=12, sort="before", extra=None):
+    """Считает каждый вариант (имя → planfn), печатает лучшие по сумме лог-разниц к основе на периоде sort (по умолчанию — до 1999)."""
+    rows = []
+    for name, fn in cands.items():
+        R = run(D, fn, keys)
+        s = compare(R, B, keys)
+        rows.append({"name": name, "R": R, "s": s, "a": agg_prox(R, keys)})
+    rows.sort(key=lambda r: -r["s"][sort]["logsum"])
+    for r in rows[:show]:
+        s, a = r["s"], r["a"]
+        print(f"  {r['name']}\n     до 1999: не хуже {s['before']['ok']}/8, сумма {s['before']['logsum']:+.0f}, мед. {s['before']['med']:+.1f}, худш. {s['before']['worst']:+.1f} | "
+              f"после: {s['after']['ok']}/8, сумма {s['after']['logsum']:+.0f}, мед. {s['after']['med']:+.1f}, худш. {s['after']['worst']:+.1f} | вся: {s['full']['ok']}/8, мед. {s['full']['med']:+.1f}, худш. {s['full']['worst']:+.1f}"
+              f"\n     доньев ≥1/≥2 мес.: {a['b1']}/{a['b2']} из {a['bots']}, выше мин. {a['above']:.0f}%, в зоне {a['zone']:.0f}% | продажи {a['sell_top']:.0f}%, пропущено {a['miss']}/{a['tops']}")
+    return rows
+
+
+def lagcheck(R, B, keys=SEL):
+    """Устойчивость к исполнению на месяц позже: разница к основе (тоже со сдвигом) по всей истории."""
+    dd = np.array([rel(R[k]["full_lag1"], B[k]["full_lag1"]) for k in keys])
+    da = np.array([rel(R[k]["after_lag1"], B[k]["after_lag1"]) for k in keys])
+    return f"сдвиг исполнения на месяц: вся история не хуже {(dd >= -0.5).sum()}/{len(dd)}, мед. {np.median(dd):+.1f}; после 1999 не хуже {(da >= -0.5).sum()}/{len(da)}, мед. {np.median(da):+.1f}"
