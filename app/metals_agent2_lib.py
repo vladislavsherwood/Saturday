@@ -307,3 +307,31 @@ def runs(m):
 
 def dbn(provider, dataset, code):
     return ml.dbn(provider, dataset, code)
+
+
+def plateau(by, key, axes):
+    """Плато: все существующие соседи по каждой оси (±1 шаг сетки) тоже прошли критерий. by: {кортеж параметров: строка}."""
+    for j, vals in enumerate(axes):
+        if vals is None:
+            continue
+        i = vals.index(key[j])
+        for dj in (-1, 1):
+            if 0 <= i + dj < len(vals):
+                nk = list(key); nk[j] = vals[i + dj]
+                nk = tuple(nk)
+                if nk in by and not by[nk]["ok"]:
+                    return False
+    return True
+
+
+def pick(rows, meta, axes, extra=None):
+    """Отбор по заранее записанному правилу: прошёл select_ok, плато по сетке, доп. условие; из таких — наибольшая сумма до 1999."""
+    by = {meta[r["name"]]: r for r in rows}
+    good = []
+    for r in rows:
+        key = meta[r["name"]]
+        r["plateau"] = plateau(by, key, axes(key) if callable(axes) else axes)
+        if r["ok"] and r["plateau"] and (extra is None or extra(r)):
+            good.append(r)
+    good.sort(key=lambda r: -r["s"]["before"]["logsum"])
+    return good, by
