@@ -57,7 +57,19 @@ def funding(sym):
     p.columns = ["t", "interval", "rate"][: len(p.columns)] if p.columns[0] != "calc_time" else p.columns
     tcol = p.columns[0]; rcol = p.columns[-1]
     s = pd.Series(pd.to_numeric(p[rcol], errors="coerce").values, index=pd.to_datetime(pd.to_numeric(p[tcol]), unit="ms"))
-    return s.resample("D").sum() * 100           # % за день
+    s = s.resample("D").sum(min_count=1) * 100           # % за день
+    # архив выкладывает фандинг помесячно: дни текущего месяца добираем с Hyperliquid (там ставка почасовая, за день сумма сопоставима)
+    coin = sym.replace("USDT", "")
+    start = int((s.dropna().index[-1] + pd.Timedelta(days=1)).timestamp() * 1000)
+    try:
+        r = requests.post("https://api.hyperliquid.xyz/info", json={"type": "fundingHistory", "coin": coin, "startTime": start}, timeout=30).json()
+        h = pd.Series([float(x["fundingRate"]) for x in r], index=pd.to_datetime([x["time"] for x in r], unit="ms")).resample("D").sum(min_count=20) * 100
+        h = h[h.index > s.dropna().index[-1]].dropna()
+        s = pd.concat([s.dropna(), h])
+        print(f"  {sym}: фандинг Hyperliquid за {len(h)} дн. дописан")
+    except Exception as e:  # noqa: BLE001
+        print("  Hyperliquid недоступен:", e)
+    return s
 
 
 if __name__ == "__main__":

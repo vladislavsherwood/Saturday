@@ -6,7 +6,7 @@ let col = null, sampler = null;
 const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
 const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
-const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
+const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
 async function boot() {
   try {
@@ -19,14 +19,20 @@ async function boot() {
   try {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
-      for (const d of snap.docs) { const v = d.data(); if (!v) continue; if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+      for (const d of snap.docs) { const v = d.data(); if (!v) continue; if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
   mem.tickers = mem.tickers.filter((t) => coin(t.symbol));
+  // один раз: монеты на прежней основной стратегии переходят на новую основную (Тихая вершина + ликвидации)
+  if (mem.mig !== "main1") {
+    for (const t of mem.tickers) if (t.strategy === "quiet" && coin(t.symbol).h.strategies.some((x) => x.code === "main")) t.strategy = "main";
+    mem.mig = "main1";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }

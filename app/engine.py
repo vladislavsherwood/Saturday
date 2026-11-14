@@ -30,7 +30,8 @@ STRATEGIES = {
     "fngx": ("Страх и жадность", "Покупает на страхе, продаёт на жадности", "crypto"),
     "usdt": ("USDT.D", "Больше при высокой доле USDT на рынке", "crypto"),
     "vix": ("VIX", "Больше при высоком индексе волатильности", "stock"),
-    "quiet": ("Тихая вершина", "Основная для криптовалют: продаёт на страхе и на тихой вершине рынка, докупает из резерва на панике и на развороте биткоина", "crypto"),
+    "quiet": ("Тихая вершина", "Продаёт на страхе и на тихой вершине рынка, докупает из резерва на панике и на развороте биткоина", "crypto"),
+    "main": ("Тихая вершина + ликвидации", "Основная для криптовалют: Тихая вершина, плюс докупка после волны ликвидаций и при капитуляции, продажа при перегретом фандинге", "crypto"),
     "merged": ("Объединённая", "Продаёт на страхе и у вершины рынка, докупает из резерва на панике, у дна и на развороте", "crypto"),
 }
 
@@ -41,7 +42,15 @@ MERGED_RULES = [(1.5, "у дна рынка: взнос и половина ре
 # Основная стратегия: стабильная с тихой вершиной (проверки — app/found, qtmix.js, new100.js). Ей не нужны рыночные ряды из EXTRA.
 QUIET_RULES = [(1.5, "паника в стейблах: взнос и половина резерва"), (-0.3, "сильный страх: продать 30%"), (-0.16, "страх: продать 16%"),
                (2.0, "разворот биткоина: взнос и весь резерв"), (-0.1, "тихая вершина: продать 10%")]
-RESERVE = {"quiet": QUIET_RULES, "merged": MERGED_RULES}
+# Основная с ноября 2026: Тихая вершина + ликвидации (app/found/main-crypto.json; проверки — liq_rules*.js, liq_order.js, liq_conflicts.js, liq_sizes*.js).
+# Нужны ряды деривативов из found/liq_extra.json (готовит liq_data.py: архив Binance + фандинг Hyperliquid за текущий месяц).
+MAIN_RULES = [(1.25, "капитуляция: взнос и 25% резерва"), (1.5, "волна ликвидаций: взнос и половина резерва"),
+              (1.25, "паника в стейблах при сильном страхе: взнос и 25% резерва"), (1.5, "паника в стейблах при страхе: взнос и половина резерва"),
+              (1.0, "разворот биткоина на страхе: только взнос"), (2.0, "разворот биткоина при перегретом фандинге: взнос и весь резерв"),
+              (1.5, "паника в стейблах: взнос и половина резерва"), (-0.3, "сильный страх: продать 30%"), (-0.16, "страх: продать 16%"),
+              (2.0, "разворот биткоина: взнос и весь резерв"), (-0.05, "перегретый фандинг: продать 5%"), (-0.2, "тихая вершина: продать 20%")]
+RESERVE = {"quiet": QUIET_RULES, "merged": MERGED_RULES, "main": MAIN_RULES}
+LIQ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "liq_extra.json")
 EXTRA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "market_extra.json")
 
 
@@ -57,13 +66,26 @@ def kind_of(symbol, quote_type):
 
 
 def default_strategy(kind):
-    return {"btc": "quiet", "alt": "quiet"}.get(kind, "dca")
+    return {"btc": "main", "alt": "main"}.get(kind, "dca")
 
 
 def _market_extra():
     """Рыночные ряды для маркеров вершин и дна (готовит market_extra.py): ширина рынка, сеть биткоина, DeFi, MVRV."""
     d = json.load(open(EXTRA))
     return pd.DataFrame({k: d[k] for k in ("breadth", "btctx", "btcaddr", "tvldd", "mvrv")}, index=pd.to_datetime(d["t"], unit="D"), dtype=float)
+
+
+def _liq():
+    """Открытый интерес по биткоину (контракты Binance) и фандинг по дням; дни сбоя архива (OI падает больше чем на 30% за день) заменены прошлым значением."""
+    d = json.load(open(LIQ))
+    x = pd.DataFrame({"oic": d["boic"], "fund": d["bfund"]}, index=pd.to_datetime(d["t"], unit="D"), dtype=float)
+    oic, last = [], np.nan
+    for v in x["oic"].values:
+        if v > 0 and not (v < 0.7 * last):
+            last = v
+        oic.append(last)
+    x["oic"] = oic
+    return x
 
 
 def _reserve_plans(close, kind):
@@ -110,6 +132,35 @@ def _reserve_plans(close, kind):
     ]
     build("quiet", [panic, strong, weak, btcr30 > 20, quiet_top],
           f"страх и жадность {f:.0f} · биткоин {bd:.0f}% до максимума" if pd.notna(f) and pd.notna(bd) else "", state)
+    if os.path.exists(LIQ):
+        lq = _liq()
+        oidd = ((lq["oic"] / lq["oic"].rolling(30, min_periods=1).max() - 1) * 100).reindex(idx, method="ffill", limit=3)
+        fund30 = lq["fund"].rolling(30, min_periods=30).sum().reindex(idx, method="ffill", limit=3)
+        liq, capit, hotf = oidd < -28, fng < 10, fund30 > 2
+        rb = btcr30 > 20
+        c_rb = cond("Биткоин за 30 дней", btcr30, ">", 20, -40, 60, "%", 0)
+        c_oi = cond("Открытый интерес по биткоину к максимуму за 30 дней", oidd, "<", -28, -50, 0, "%", 0)
+        c_fund = cond("Фандинг по биткоину за 30 дней", fund30, ">", 2, -1, 5, "%", 2)
+        c_panic = [cond("USDT.D к своей средней", usdt_r, ">", 1.07, 0.6, 1.6, "×", 2), cond("Доля альткоинов", d["oth"], "<", 25, 15, 40, "%", 1)]
+        why_p = "Деньги бегут в стейблкоины, а альткоины уже сдулись — рынок напуган сильнее обычного."
+        mstate = [
+            {"title": "Капитуляция", "what": "взнос и 25% резерва", "kind": "buy", "why": "Страх на самом дне шкалы — так бывает рядом с низом.", "conds": [c_fng(10)]},
+            {"title": "Волна ликвидаций", "what": "взнос и половина резерва", "kind": "buy", "why": "Открытый интерес резко сдулся: плечи вынесены, продавать вынужденно уже почти некому.", "conds": [c_oi]},
+            {"title": "Паника в стейблах при сильном страхе", "what": "взнос и 25% резерва", "kind": "buy", "why": why_p + " Страх сильный, поэтому докупаем осторожно.", "conds": [*c_panic, c_fng(40), c_usdt]},
+            {"title": "Паника в стейблах при страхе", "what": "взнос и половина резерва", "kind": "buy", "why": why_p, "conds": [*c_panic, c_fng(52), c_usdt]},
+            {"title": "Разворот биткоина на страхе", "what": "только взнос", "kind": "hold", "why": "Биткоин резко вырос, но страх ещё держится: не продаём и не тратим резерв.", "conds": [c_rb, c_fng(52), c_usdt]},
+            {"title": "Разворот при перегретом фандинге", "what": "взнос и весь резерв", "kind": "buy", "why": "Рост подтверждён деньгами с плечом — резерв возвращается в рынок.", "conds": [c_rb, c_fund]},
+            {"title": "Паника в стейблах", "what": "взнос и половина резерва", "kind": "buy", "why": why_p, "conds": c_panic},
+            {"title": "Сильный страх", "what": "продать 30%", "kind": "sell", "why": "Страх уже есть, а в стейблы ещё не убежали — так выглядит начало падения.", "conds": [c_fng(40), c_usdt]},
+            {"title": "Страх", "what": "продать 16%", "kind": "sell", "why": "То же самое, но слабее: продаём понемногу.", "conds": [c_fng(52), c_usdt]},
+            {"title": "Разворот биткоина", "what": "взнос и весь резерв", "kind": "buy", "why": "Биткоин резко вырос за месяц — тревога снята, резерв возвращается в рынок.", "conds": [c_rb]},
+            {"title": "Перегретый фандинг", "what": "продать 5%", "kind": "sell", "why": "Лонги месяц платят шортам много — рынок перегрет плечами.", "conds": [c_fund]},
+            {"title": "Тихая вершина", "what": "продать 20%", "kind": "sell", "why": "Биткоин у максимума, а деньги перетекают в альткоины — поздняя стадия роста.",
+             "conds": [cond("Биткоин до максимума", btcath, "<", 10, 0, 80, "%", 0), cond("Доля альткоинов за 90 дней", oth90, ">", 1.5, -6, 6, " п.п.", 1)]},
+        ]
+        o, fu = oidd.iloc[-1], fund30.iloc[-1]
+        build("main", [capit, liq, panic & strong, panic & weak, rb & weak, rb & hotf, panic, strong, weak, rb, hotf, quiet_top],
+              f"страх {f:.0f} · OI {o:+.0f}% к максимуму · фандинг {fu:.2f}%" if pd.notna(f) and pd.notna(o) and pd.notna(fu) else "", mstate)
     if os.path.exists(EXTRA):
         hi90 = (close >= close.rolling(90, min_periods=60).max()).rolling(7, min_periods=1).max() > 0
         ex = _market_extra().reindex(idx, method="ffill")
@@ -121,7 +172,7 @@ def _reserve_plans(close, kind):
     return out
 
 
-def position(symbol, kind, since, unit, strategy="quiet"):
+def position(symbol, kind, since, unit, strategy="main"):
     """Резерв и позиция на сегодня, если с даты since каждый день следовать плану стратегии с резервом, и сумма на сегодня."""
     s = series(symbol, kind)
     st = next(x for x in s["strategies"] if x["code"] == strategy)
