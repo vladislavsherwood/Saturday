@@ -559,3 +559,88 @@ def short_eval(D, planfn, sfn, keys=None, T=24, starts=True, ref=None):
 def sstat(o, part, which="rel", keys=SEL):
     v = np.array([o[which][k][part] for k in keys if part in o[which][k]])
     return {"ok": int((v >= -0.5).sum()), "n": len(v), "med": float(np.median(v)), "worst": float(v.min()), "logsum": float(np.log1p(v / 100).sum() * 100)}
+
+
+@L.njit(cache=True)
+def sim_combo2(c, low, high, plan, lev, ent, ext, ff, lo, hi, stress, spread, ml_lvl, lag, f, T):
+    """Как sim_combo первого агента (один счёт: стратегия + заём на докупках + шорт), но доля шорта f — массив по месяцам решения.
+    Обеспечение — по худшему сочетанию месяца: монеты по минимуму × stress, шорт по максимуму × (2 − stress).
+    Возвращает итог к DCA, %, ликвидации, минимальный уровень обеспечения."""
+    cash = 0.0
+    units = 0.0
+    debt = 0.0
+    S = 0.0
+    du = 0.0
+    liq = 0
+    worst = 1e9
+    t0 = 0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        L_ = lev[j] if j >= lo else 0.0
+        e_ = ent[j] if j >= lo else False
+        x_ = ext[j] if j >= lo else False
+        fj = f[j] if j >= lo else 0.0
+        debt *= 1 + (ff[i] + spread) / 1200
+        if S > 0:
+            cash -= S * p * (ff[i] + spread) / 1200
+        before = cash if cash > 0 else 0.0
+        cash += 300.0
+        du += 300.0 * (1 - 0.001) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - 0.001)
+        elif a > 1.0:
+            v = min(max(cash, 0.0), 300.0 + (a - 1.0) * before)
+            extra = L_ * max(v - 300.0, 0.0)
+            units += (v + extra) * (1 - 0.001) / p
+            cash -= v
+            debt += extra
+        elif a > 0:
+            r = min(debt, 300.0) if debt > 0 else 0.0
+            debt -= r
+            cash -= r
+            if 300.0 - r > 0:
+                units += (300.0 - r) * (1 - 0.001) / p
+                cash -= 300.0 - r
+        if S > 0 and (x_ or i - t0 >= T):
+            cash -= S * p * (1 + 0.001)
+            S = 0.0
+        elif S == 0 and e_ and fj > 0:
+            eq = units * p + cash - debt
+            if eq > 0:
+                S = fj * eq / p
+                cash += S * p * (1 - 0.001)
+                t0 = i
+        free = cash - S * p * 1.5
+        if debt > 0 and free > 0 and a <= 1.0:
+            r = min(debt, free)
+            debt -= r
+            cash -= r
+        if debt > 0 or S > 0:
+            pl = low[i] * stress
+            ph = high[i] * (2.0 - stress)
+            lvl = (units * pl + cash) / (debt + S * ph)
+            if lvl < worst:
+                worst = lvl
+            if lvl <= ml_lvl:
+                liq += 1
+                cash += units * pl * (1 - 0.001) - debt - S * ph * (1 + 0.001)
+                units = 0.0
+                debt = 0.0
+                S = 0.0
+    fin = units * c[hi - 1] + cash - debt - S * c[hi - 1]
+    return (fin / (du * c[hi - 1]) - 1) * 100, liq, worst
+
+
+def margin_arrays(d, plan, b=0.5, ffmax=3.0, fhi=0.3, flo=0.1, rise_h=2.5):
+    """Схема маржи второго агента: заём b × суммы докупки при ставке ФРС < ffmax; шорт на сильной вершине — fhi капитала, если цена ≥ rise_h ×
+    средней цены последней серии, иначе flo; выход шорта — начало серии докупок или 24 мес."""
+    lev = np.where((plan > 1.0) & (d["ff"] < ffmax), b, 0.0)
+    ent = d["tn3"] >= d["nt"] - 1
+    ext = plan > 1.0
+    f = np.where(rise(d, plan) >= rise_h, fhi, flo)
+    return lev, ent, ext, f
