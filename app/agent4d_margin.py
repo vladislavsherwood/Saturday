@@ -161,7 +161,7 @@ def fmt(o):
 @njit(cache=True)
 def sim4(C, LO, HI, ACT, GRP, SHW, LEVM, REP, s0, LEV, stress, sh_rate, rate):
     n, K = C.shape
-    r = np.zeros(K); u = np.zeros(K); debt = np.zeros(K); su = np.zeros(K)
+    r = np.zeros(K); u = np.zeros(K); debt = np.zeros(K); su = np.zeros(K); stg = np.zeros(K)
     inv = 0.0; nl = 0; side = 0.0; worst = 1e9; shpnl = 0.0; paid = 0.0; shc = 0.0
     for t in range(s0, n):
         tot = 0.0
@@ -210,16 +210,16 @@ def sim4(C, LO, HI, ACT, GRP, SHW, LEVM, REP, s0, LEV, stress, sh_rate, rate):
                     r[k] -= debt[k]; debt[k] = 0.0
             if t > s0:
                 want = SHW[t - 1, k]
-                if want > 0 and su[k] == 0:
+                if want > stg[k] + 1e-12:              # открыть или добавить к шорту (лесенка по силе перегрева): +(want − текущая цель) капитала
                     eq = side + shc
                     for j in range(K):
                         eq += r[j] - debt[j]
                         if not np.isnan(C[t, j]):
                             eq += u[j] * C[t, j] - su[j] * C[t, j]
-                    q = want * max(eq, 0.0) / p
-                    su[k] = q; shpnl -= q * p * FEE; shc += q * p * (1 - FEE)
+                    q = (want - stg[k]) * max(eq, 0.0) / p
+                    su[k] += q; shpnl -= q * p * FEE; shc += q * p * (1 - FEE); stg[k] = want
                 elif want == 0 and su[k] > 0:
-                    shc -= su[k] * p * (1 + FEE); shpnl -= su[k] * p * FEE; su[k] = 0.0
+                    shc -= su[k] * p * (1 + FEE); shpnl -= su[k] * p * FEE; su[k] = 0.0; stg[k] = 0.0
         R = shc
         for k in range(K):
             R += r[k]
@@ -236,7 +236,7 @@ def sim4(C, LO, HI, ACT, GRP, SHW, LEVM, REP, s0, LEV, stress, sh_rate, rate):
             if lv <= ML:
                 nl += 1; left = assets - D
                 for k in range(K):
-                    r[k] = 0.0; u[k] = 0.0; debt[k] = 0.0; su[k] = 0.0
+                    r[k] = 0.0; u[k] = 0.0; debt[k] = 0.0; su[k] = 0.0; stg[k] = 0.0
                 side = max(0.0, left); shc = 0.0
     fin = side + shc
     for k in range(K):
