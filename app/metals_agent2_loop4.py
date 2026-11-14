@@ -13,7 +13,7 @@ QA, DB, GL, GH = (0.1, 0.2, 0.3), (0.0, 0.05, 0.10), (0.2, 0.33, 0.5), (0.5, 0.6
 
 def depth(a, gl, gh):
     def f(d):
-        p = A.cur(d)
+        p = A.ver("R4")(d)
         ep = p > 1.0
         deep = np.nan_to_num(A.feat(d, A.P3), nan=9.0) < a
         return np.where(ep, 1 + np.where(deep, gh, gl), p)
@@ -22,7 +22,7 @@ def depth(a, gl, gh):
 
 def avgdown(dd, gl, gh):
     def f(d):
-        p = A.cur(d)
+        p = A.ver("R4")(d)
         c = d["c"]
         ep = p > 1.0
         ref = np.full(len(c), np.nan)
@@ -39,7 +39,7 @@ def avgdown(dd, gl, gh):
 
 def main():
     D = A.load()
-    R4 = A.evaluate(D, A.cur)
+    R4 = A.evaluate(D, A.ver("R4"))
     print("R4 до 1999: " + A.fprox(A.agg(R4, A.SEL, "prox_b")))
     C, meta = {}, {}
     for q in QA:

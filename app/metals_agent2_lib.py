@@ -34,7 +34,7 @@ PREC = ["gold", "silver", "platinum"]
 GROUP = {**{k: "prec" for k in PREC + ["palladium"]}, **{k: "ind" for k in IND + ["tin"]}}
 H2 = "1982-01-01"                       # граница половин периода подбора
 # параметры R3 (found/metals.json, круг 10 первого агента)
-DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3, "persist": 0}
+DEF = {"g": 0.5, "s5": 0.15, "s6": 0.5, "hot3": 1.81, "hot1": 86.0, "sh": 0.2, "lead": 0.2, "k_on": 3, "persist": 0, "rise_h": 0.0, "rise_m": 1.0}
 
 
 def load(fresh=False):
@@ -102,11 +102,40 @@ def r3(d, **kw):
     ep = series(bn, nb - P["k_on"], P.get("persist", 0))
     p = np.where(ep, 1 + P["g"], p)
     p = np.where(d["cu_past"] & (tn >= nt - 3) & (p == 1.0), -P["lead"], p)
+    if P.get("rise_h", 0) > 0:                      # круг 5: рост от последней серии ≥ H → продажи × m
+        hit = (p < 0) & (rise(d, p) >= P["rise_h"])
+        p = np.where(hit, np.maximum(p * P["rise_m"], -0.9), p)
     return p.astype(np.float64)
 
 
-# принятые поправки (накопительно по кругам): круг 3 — «упорство сигнала дна»
-ACC = {"persist": 4}
+def rise(d, p):
+    """Цена / средняя цена месяцев последней серии докупок (до первой серии — минимум за 36 мес.)."""
+    c = d["c"]
+    ep = p > 1.0
+    ref = np.full(len(c), np.nan)
+    s = cnt = 0.0
+    last = np.nan
+    for i in range(len(c)):
+        if ep[i]:
+            if i == 0 or not ep[i - 1]:
+                s = cnt = 0.0
+            s += c[i]; cnt += 1
+            last = s / cnt
+        ref[i] = last
+    fb = pd.Series(c).rolling(36, min_periods=1).min().values
+    ref = np.where(np.isnan(ref), fb, ref)
+    return c / ref
+
+
+# принятые поправки (накопительно по кругам): круг 3 — «упорство сигнала дна»; круг 5 — крупнее продажи после роста ×2,5 от последней серии
+VERS = {"R3": {}, "R4": {"persist": 4}, "R5": {"persist": 4, "rise_h": 2.5, "rise_m": 1.3}}
+ACC = VERS["R5"]
+
+
+def ver(name):
+    """План версии name (R3, R4, …) — для воспроизводимости скриптов прошлых кругов."""
+    kw = VERS[name]
+    return lambda d: r3(d, **kw)
 
 
 def cur(d, **kw):
