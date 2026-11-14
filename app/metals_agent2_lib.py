@@ -96,6 +96,10 @@ def r3(d, **kw):
     принятые вторым агентом поправки включаются ключами (см. ACC)."""
     P = {**DEF, **kw}
     tn, bn, nt, nb = d["tn3"], d["bn3"], d["nt"], d["nb"]
+    if P.get("tn") is not None:                     # подмена счётчиков (другие наборы маркеров)
+        tn, nt = P["tn"], P["nt"]
+    if P.get("bn") is not None:
+        bn, nb = P["bn"], P["nb"]
     p = np.select([tn >= nt - 1, tn >= nt - 2], [-P["s6"], -P["s5"]], default=1.0)
     hot = (np.nan_to_num(feat(d, P3)) > P["hot3"]) & (np.nan_to_num(feat(d, Y1)) > P["hot1"])
     p = np.where(hot, np.minimum(p, -P["sh"]), p)
@@ -385,3 +389,20 @@ def pick(rows, meta, axes, extra=None):
             good.append(r)
     good.sort(key=lambda r: -r["s"]["before"]["logsum"])
     return good, by
+
+
+def cycle(D):
+    """Новые данные делового цикла (круг 7): загрузка мощностей ФРС (G17, с 1967) и деловая уверенность США (ОЭСР BCI, с 1950),
+    обе сдвинуты на месяц вперёд (срок публикации). Возвращает DataFrame по месяцам (конец месяца)."""
+    cu = dbn("FED", "G17_CAPUTL", "CAPUTL.B50001.S")
+    bci = dbn("OECD", "DSD_STES@DF_CLI", "USA.M.BCICP.IX._Z.AA.IX._Z.H")
+    idx = D["_X"].index
+    G = pd.DataFrame(index=idx)
+    G["cu"] = cu.reindex(idx).shift(1)
+    G["bci"] = bci.reindex(idx).shift(1)
+    return G
+
+
+def onmetal(d, s):
+    """Ряд s (по месяцам _X) на месяцы металла d."""
+    return s.reindex(d["t"]).values
