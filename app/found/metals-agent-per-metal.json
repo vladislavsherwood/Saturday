@@ -1,0 +1,376 @@
+{
+ "note": "Индивидуальные варианты по металлам (круги 5 и 7): своя замена одного маркера и свои размеры, выбранные по истории металла до 1999 (палладий — без своей истории до 1999, для него общая версия R2). Итог к DCA, %: до 1999 / после 1999 / вся история. Вывод: индивидуальные версии переобучены (золото после 1999 −47% против +25% у основы), рекомендуем гибрид R3.",
+ "metals": {
+  "gold": {
+   "name": "Золото",
+   "group": "драгоценные",
+   "exam": false,
+   "base": {
+    "before": 18.4,
+    "after": 25.3,
+    "full": 49.8
+   },
+   "general_R2": {
+    "before": 33.1,
+    "after": 19.7,
+    "full": 54.2
+   },
+   "hybrid_R3": {
+    "before": 51.4,
+    "after": 24.9,
+    "full": 81.8
+   },
+   "individual": {
+    "before": 61.7,
+    "after": -47.5,
+    "full": -46.4
+   },
+   "individual_rules": {
+    "marker_change": "дно + «Золото к серебру: уровень» низко",
+    "bottom_share_per_month": 0.33,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + золото к нефти высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "silver": {
+   "name": "Серебро",
+   "group": "драгоценные",
+   "exam": false,
+   "base": {
+    "before": 79.7,
+    "after": 100.9,
+    "full": 275.1
+   },
+   "general_R2": {
+    "before": 118.5,
+    "after": 136.8,
+    "full": 412.0
+   },
+   "hybrid_R3": {
+    "before": 137.7,
+    "after": 186.1,
+    "full": 578.0
+   },
+   "individual": {
+    "before": 186.3,
+    "after": 219.3,
+    "full": 777.1
+   },
+   "individual_rules": {
+    "marker_change": "вершина + «До исторического максимума, %» высоко",
+    "bottom_share_per_month": 0.33,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + золото к нефти высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "platinum": {
+   "name": "Платина",
+   "group": "драгоценные",
+   "exam": false,
+   "base": {
+    "before": 70.1,
+    "after": 54.8,
+    "full": 236.3
+   },
+   "general_R2": {
+    "before": 94.1,
+    "after": 68.2,
+    "full": 313.6
+   },
+   "hybrid_R3": {
+    "before": 106.6,
+    "after": 71.4,
+    "full": 349.2
+   },
+   "individual": {
+    "before": 112.6,
+    "after": 77.2,
+    "full": 384.3
+   },
+   "individual_rules": {
+    "marker_change": "вершина без «Изменение за год, %»",
+    "bottom_share_per_month": 0.33,
+    "sell_at_n-2": 0.2,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.1,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "palladium": {
+   "name": "Палладий",
+   "group": "драгоценные",
+   "exam": true,
+   "base": {
+    "before": null,
+    "after": 95.0,
+    "full": 96.0
+   },
+   "general_R2": {
+    "before": null,
+    "after": 161.4,
+    "full": 166.5
+   },
+   "hybrid_R3": {
+    "before": null,
+    "after": 162.4,
+    "full": 167.5
+   },
+   "individual": {
+    "before": null,
+    "after": 161.4,
+    "full": 166.5
+   },
+   "individual_rules": "нет истории до 1999 — общая версия R2",
+   "hybrid_corrections": [
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "copper": {
+   "name": "Медь",
+   "group": "промышленные",
+   "exam": false,
+   "base": {
+    "before": 38.0,
+    "after": 52.3,
+    "full": 135.7
+   },
+   "general_R2": {
+    "before": 41.4,
+    "after": 78.3,
+    "full": 191.9
+   },
+   "hybrid_R3": {
+    "before": 62.3,
+    "after": 143.6,
+    "full": 362.2
+   },
+   "individual": {
+    "before": 64.4,
+    "after": 39.4,
+    "full": 146.8
+   },
+   "individual_rules": {
+    "marker_change": "вершина + «Изменение за 3 года, %» высоко",
+    "bottom_share_per_month": 0.33,
+    "sell_at_n-2": 0.2,
+    "sell_at_n-1": 0.3,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "aluminum": {
+   "name": "Алюминий",
+   "group": "промышленные",
+   "exam": false,
+   "base": {
+    "before": 67.3,
+    "after": 3.1,
+    "full": 63.2
+   },
+   "general_R2": {
+    "before": 78.6,
+    "after": 7.5,
+    "full": 90.3
+   },
+   "hybrid_R3": {
+    "before": 98.0,
+    "after": 10.5,
+    "full": 103.9
+   },
+   "individual": {
+    "before": 104.0,
+    "after": 21.4,
+    "full": 161.9
+   },
+   "individual_rules": {
+    "marker_change": "вершина без «Реальная ставка: изменение за год, п.п.»",
+    "bottom_share_per_month": 0.5,
+    "sell_at_n-2": 0.2,
+    "sell_at_n-1": 0.3,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "nickel": {
+   "name": "Никель",
+   "group": "промышленные",
+   "exam": false,
+   "base": {
+    "before": 10.6,
+    "after": 43.5,
+    "full": 75.1
+   },
+   "general_R2": {
+    "before": 32.4,
+    "after": 146.8,
+    "full": 355.3
+   },
+   "hybrid_R3": {
+    "before": 78.1,
+    "after": 163.0,
+    "full": 520.2
+   },
+   "individual": {
+    "before": 102.7,
+    "after": 173.3,
+    "full": 606.7
+   },
+   "individual_rules": {
+    "marker_change": "вершина + «Реальная цена (с поправкой на инфляцию) к средней за 20 лет» высоко",
+    "bottom_share_per_month": 0.5,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.3,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "lead": {
+   "name": "Свинец",
+   "group": "промышленные",
+   "exam": false,
+   "base": {
+    "before": 68.9,
+    "after": 81.6,
+    "full": 240.5
+   },
+   "general_R2": {
+    "before": 102.9,
+    "after": 142.9,
+    "full": 466.1
+   },
+   "hybrid_R3": {
+    "before": 104.1,
+    "after": 145.9,
+    "full": 476.4
+   },
+   "individual": {
+    "before": 139.9,
+    "after": 169.7,
+    "full": 641.5
+   },
+   "individual_rules": {
+    "marker_change": "вершина без «Доллар к средней за 5 лет»",
+    "bottom_share_per_month": 0.33,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "zinc": {
+   "name": "Цинк",
+   "group": "промышленные",
+   "exam": false,
+   "base": {
+    "before": 26.6,
+    "after": 19.7,
+    "full": 62.6
+   },
+   "general_R2": {
+    "before": 51.4,
+    "after": 103.7,
+    "full": 315.3
+   },
+   "hybrid_R3": {
+    "before": 56.0,
+    "after": 99.0,
+    "full": 314.1
+   },
+   "individual": {
+    "before": 69.5,
+    "after": 98.4,
+    "full": 349.3
+   },
+   "individual_rules": {
+    "marker_change": "вершина + «Инфляция за год, %» высоко",
+    "bottom_share_per_month": 1.0,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  },
+  "tin": {
+   "name": "Олово",
+   "group": "промышленные",
+   "exam": true,
+   "base": {
+    "before": 5.2,
+    "after": 39.5,
+    "full": 63.2
+   },
+   "general_R2": {
+    "before": 3.9,
+    "after": 22.6,
+    "full": 31.5
+   },
+   "hybrid_R3": {
+    "before": 16.6,
+    "after": 26.5,
+    "full": 50.1
+   },
+   "individual": {
+    "before": 18.8,
+    "after": 35.3,
+    "full": 58.9
+   },
+   "individual_rules": {
+    "marker_change": "вершина + «Цена к средней за 10 лет» высоко",
+    "bottom_share_per_month": 1.0,
+    "sell_at_n-2": 0.1,
+    "sell_at_n-1": 0.7,
+    "sell_on_price_overheat": 0.3,
+    "fitted_on": "собственная история до 1999"
+   },
+   "hybrid_corrections": [
+    "вершина + цена к средней за 10 лет высоко",
+    "дно + промышленный индекс дёшев к средней за 3 года",
+    "медь прошла вершину → продать 20% при ≥ n−3 маркерах вершины"
+   ]
+  }
+ }
+}

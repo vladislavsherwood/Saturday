@@ -498,3 +498,77 @@ def sim_short(c, high, plan, ent, ext, ff, lo, hi, f, T, tp, stress, spread, ml_
                 S = 0.0
     fin = units * c[hi - 1] + cash - S * c[hi - 1]
     return (fin / (du * c[hi - 1]) - 1) * 100, liq, nsh, pnl
+
+
+@njit(cache=True)
+def sim_combo(c, low, high, plan, lev, ent, ext, ff, lo, hi, stress, spread, ml_lvl, lag, f, T):
+    """Один счёт: стратегия по плану + заём на докупках (как sim_margin) + шорт на сигналах вершины (как sim_short).
+    Обеспечение проверяется по худшему сочетанию месяца: монеты по минимуму, шорт по максимуму (оба со стрессом).
+    Возвращает итог к DCA, %, ликвидации, минимальный уровень обеспечения."""
+    cash = 0.0
+    units = 0.0
+    debt = 0.0
+    S = 0.0
+    du = 0.0
+    liq = 0
+    worst = 1e9
+    t0 = 0
+    for i in range(lo, hi):
+        p = c[i]
+        j = i - 1 - lag
+        a = plan[j] if j >= lo else 1.0
+        L_ = lev[j] if j >= lo else 0.0
+        e_ = ent[j] if j >= lo else False
+        x_ = ext[j] if j >= lo else False
+        debt *= 1 + (ff[i] + spread) / 1200
+        if S > 0:
+            cash -= S * p * (ff[i] + spread) / 1200
+        before = cash if cash > 0 else 0.0
+        cash += UNIT
+        du += UNIT * (1 - FEE) / p
+        if a < 0:
+            v = -a * units * p
+            if v > 0:
+                units += a * units
+                cash += v * (1 - FEE)
+        elif a > 1.0:
+            v = min(max(cash, 0.0), UNIT + (a - 1.0) * before)
+            extra = L_ * max(v - UNIT, 0.0)
+            units += (v + extra) * (1 - FEE) / p
+            cash -= v
+            debt += extra
+        elif a > 0:
+            r = min(debt, UNIT) if debt > 0 else 0.0
+            debt -= r
+            cash -= r
+            if UNIT - r > 0:
+                units += (UNIT - r) * (1 - FEE) / p
+                cash -= UNIT - r
+        if S > 0 and (x_ or i - t0 >= T):
+            cash -= S * p * (1 + FEE)
+            S = 0.0
+        elif S == 0 and e_:
+            eq = units * p + cash - debt
+            if eq > 0:
+                S = f * eq / p
+                cash += S * p * (1 - FEE)
+                t0 = i
+        free = cash - S * p * 1.5            # деньги сверх обеспечения шорта гасят долг
+        if debt > 0 and free > 0 and a <= 1.0:
+            r = min(debt, free)
+            debt -= r
+            cash -= r
+        if debt > 0 or S > 0:
+            pl = low[i] * stress
+            ph = high[i] * (2.0 - stress)
+            lvl = (units * pl + cash) / (debt + S * ph)
+            if lvl < worst:
+                worst = lvl
+            if lvl <= ml_lvl:
+                liq += 1
+                cash += units * pl * (1 - FEE) - debt - S * ph * (1 + FEE)
+                units = 0.0
+                debt = 0.0
+                S = 0.0
+    fin = units * c[hi - 1] + cash - debt - S * c[hi - 1]
+    return (fin / (du * c[hi - 1]) - 1) * 100, liq, worst
