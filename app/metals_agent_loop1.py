@@ -53,7 +53,7 @@ def main():
                 if g5 < g4:
                     continue
                 C[f"H1a лесенка: дна 3 → {g3:.0%}, 4 → {g4:.0%}, ≥5 → {g5:.0%} резерва"] = graded(g3, g4, g5)
-    for g in (0.2, 0.25, 0.33, 0.5):
+    for g in (0.2, 0.25, 0.33, 0.4, 0.5, 0.67):
         for hold in (False, True):
             C[f"H1b геом.: дна ≥4{' (держать при ≥3)' if hold else ''} → {g:.0%} резерва в месяц"] = spread(g, hold)
     for n in (2, 3, 4, 6, 9):
@@ -71,7 +71,7 @@ def main():
             cells.append(f"{r['s']['before']['med']:+5.1f}/{r['s']['after']['med']:+5.1f}")
         print(f"  дна 3 → {g3:4.0%}: " + "  ".join(f"4→{g:.0%}: {c}" for g, c in zip((0.25, 0.33, 0.5, 1.0), cells)))
     print("\nПЛАТО (H1b геом., держать при ≥3; равные доли, держать при ≥3): до / после / доньев ≥2 мес.")
-    for g in (0.2, 0.25, 0.33, 0.5):
+    for g in (0.2, 0.25, 0.33, 0.4, 0.5, 0.67):
         r = by[f"H1b геом.: дна ≥4 (держать при ≥3) → {g:.0%} резерва в месяц"]
         print(f"  {g:.0%}: {r['s']['before']['med']:+.1f} / {r['s']['after']['med']:+.1f} / {r['a']['b2']}")
     for n in (2, 3, 4, 6, 9):
@@ -83,16 +83,18 @@ def main():
              "лесенка 3 → 20%, 4 → 50%, ≥5 → 100%": (graded(0.2, 0.5, 1.0), graded(0.2, 0.5, 1.0, 1)),
              "лесенка 3 → 10%, 4 → 33%, ≥5 → 100%": (graded(0.1, 0.33, 1.0), graded(0.1, 0.33, 1.0, 1)),
              "геом. 33%/мес, держать при ≥3": (spread(0.33, True), spread(0.33, True, 0, 1)),
-             "равные доли /4, держать при ≥3": (spread(None, True, 4), spread(None, True, 4, 1))}
+             "равные доли /4, держать при ≥3": (spread(None, True, 4), spread(None, True, 4, 1)),
+             "геом. 50%/мес, держать при ≥3": (spread(0.5, True), spread(0.5, True, 0, 1)),
+             "равные доли /3, держать при ≥3": (spread(None, True, 3), spread(None, True, 3, 1))}
     for name, (f0, f1) in tests.items():
         R0, R1 = L.run(D, f0, L.SEL), L.run(D, f1, L.SEL)
         s0, s1 = L.compare(R0, B), L.compare(R1, B)
         print(f"  {name}: как есть {s0['before']['med']:+.1f}/{s0['after']['med']:+.1f} (худш. {s0['before']['worst']:+.1f}/{s0['after']['worst']:+.1f}); "
               f"+1 маркер: {s1['before']['med']:+.1f}/{s1['after']['med']:+.1f} (худш. {s1['before']['worst']:+.1f}/{s1['after']['worst']:+.1f})")
-    # подробно по металлам для лидеров
-    for name in ("H1a лесенка: dummy",):
-        pass
-    for r in rows[:3]:
+    # подробно по металлам: лидеры по «до 1999» и ровные варианты с плато
+    pick = rows[:2] + [by[n] for n in ("H1b геом.: дна ≥4 (держать при ≥3) → 50% резерва в месяц", "H1b геом.: дна ≥4 (держать при ≥3) → 40% резерва в месяц",
+                                         "H1b равные доли: дна ≥4 (держать при ≥3) → резерв/3 в месяц")]
+    for r in pick:
         print(f"\n{r['name']}:\n   " + L.line(r["R"], L.SEL) + "\n   " + L.lagcheck(r["R"], B))
     print("\nоснова:\n   " + L.line(B, L.SEL))
 
