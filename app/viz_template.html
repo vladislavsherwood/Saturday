@@ -1,0 +1,242 @@
+<title>Сделки стратегий по монетам</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Рабочий экран трейдера: монеты и стратегии сверху одной строкой, большой график цены с кружками сделок, ниже — итоги и счёт. */
+  :root {
+    --bg: #f5f5f2; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983; --rule: #e3e2dc; --grid: #eceae4;
+    --chip: #ecebe6; --chip-on: #0b0b0b; --chip-on-ink: #fcfcfb;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --dca: #8a8983;
+    --good: #0f7a4a; --bad: #c43d3d;
+    --sans: "Manrope", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111110; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8d8c84; --rule: #2c2c2a; --grid: #242422;
+      --chip: #262624; --chip-on: #f0efec; --chip-on-ink: #111110;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --dca: #8d8c84; --good: #3cbf7f; --bad: #e66767; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111110; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8d8c84; --rule: #2c2c2a; --grid: #242422;
+    --chip: #262624; --chip-on: #f0efec; --chip-on-ink: #111110;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --dca: #8d8c84; --good: #3cbf7f; --bad: #e66767; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .lead { color: var(--ink-2); margin: 4px 0 0; max-width: 70ch; line-height: 1.5; font-size: 13.5px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin-right: 4px; min-width: 64px; }
+  button.chip { font: 600 13px var(--sans); border: 0; background: var(--chip); color: var(--ink); padding: 6px 11px; border-radius: 999px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  button.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+  button.chip:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .sep { width: 1px; height: 20px; background: var(--rule); margin: 0 4px; }
+  .panel { background: var(--surface); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+  .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .coin { font-size: 20px; font-weight: 700; }
+  .coin small { font-size: 12px; color: var(--ink-3); font-weight: 500; margin-left: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); align-items: center; }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  .ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink-2); display: inline-block; box-sizing: border-box; }
+  .fill { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-2); display: inline-block; }
+  .cv { position: relative; width: 100%; }
+  canvas { display: block; width: 100%; touch-action: pan-y; }
+  #tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; max-width: 260px; z-index: 5; }
+  #tip b { font-weight: 700; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .st { border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+  .st .nm { font-size: 12.5px; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .st .big { font: 600 20px var(--mono); font-variant-numeric: tabular-nums; }
+  .st .sub { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .up { color: var(--good); } .dn { color: var(--bad); }
+  .note { font-size: 12px; color: var(--ink-3); line-height: 1.5; max-width: 90ch; }
+  .range { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  input[type=range] { width: 140px; accent-color: var(--ink); }
+  .small { font-size: 12px; color: var(--ink-2); }
+  @media (max-width: 560px) { .lbl { min-width: 0; width: 100%; } .coin { font-size: 18px; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Сделки стратегий по монетам</h1>
+    <p class="lead">Цена монеты на логарифмической шкале. Кружок — сделка из резерва: заливка — покупка, кольцо — продажа. Размер — величина сделки: какую долю счёта она составила в тот момент. Цвет — стратегия. Взнос $10 в день с первого дня истории монеты, решение по вчерашнему закрытию, комиссия 0,1%. Обычные ежедневные взносы не показаны.</p>
+  </header>
+
+  <div class="bar" id="coins" role="group" aria-label="Монета"></div>
+  <div class="bar" id="strats" role="group" aria-label="Стратегии"></div>
+  <div class="bar">
+    <span class="lbl">Период</span>
+    <span id="periods" class="range" role="group" aria-label="Период"></span>
+    <span class="sep"></span>
+    <label class="small" for="minsz">Скрыть сделки меньше</label>
+    <input type="range" id="minsz" min="0" max="20" step="1" value="2" aria-label="Скрыть сделки меньше доли счёта">
+    <span class="small" id="minszv"></span>
+  </div>
+
+  <section class="panel">
+    <div class="head">
+      <div class="coin" id="title"></div>
+      <div class="legend">
+        <span><i class="fill"></i>покупка из резерва</span>
+        <span><i class="ring"></i>продажа</span>
+        <span id="leg"></span>
+      </div>
+    </div>
+    <div class="cv" id="cvwrap"><canvas id="cv" height="420" aria-label="График цены со сделками"></canvas><div id="tip" hidden></div></div>
+  </section>
+
+  <section class="stats" id="stats"></section>
+
+  <section class="panel">
+    <div class="head"><div class="small">Стоимость счёта: стратегии и обычный DCA (логарифмическая шкала)</div></div>
+    <div class="cv"><canvas id="eq" height="200" aria-label="Стоимость счёта стратегий и DCA"></canvas></div>
+  </section>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+const D = /*DATA*/null;
+const COL = ['--s1', '--s2', '--s3'];
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const GROUPS = [['Крупные', ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA']], ['Альты', ['LINK', 'HYPE', 'ENA', 'ZEC', 'VVV', 'MYX']], ['Мемы и лоукап', ['DOGE', 'PEPE', 'PUMP', 'PENGU', 'USELESS']]];
+const SEG = { big: 'крупная', alt: 'альт', meme: 'мем', stable: 'стейбл' };
+let st = { coin: 'BTC', on: Object.fromEntries(D.strategies.map((s, i) => [s.id, i === 0])), period: 0, minsz: 2 };
+try { const s = JSON.parse(localStorage.getItem('viz-trades') || 'null'); if (s && D.coins.some((c) => c.name === s.coin)) st = { ...st, ...s }; } catch (e) {}
+const save = () => { try { localStorage.setItem('viz-trades', JSON.stringify(st)); } catch (e) {} };
+const coin = () => D.coins.find((c) => c.name === st.coin);
+const day = (t) => new Date(t * 864e5);
+const fmtD = (t) => day(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const money = (v) => (v >= 1e6 ? '$' + (v / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' млн' : v >= 1e4 ? '$' + Math.round(v / 1e3).toLocaleString('ru-RU') + ' тыс.' : '$' + Math.round(v).toLocaleString('ru-RU'));
+const price = (p) => (p >= 100 ? p.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) : p >= 1 ? p.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : p.toPrecision(3));
+
+function chips() {
+  const cw = document.getElementById('coins'); cw.innerHTML = '';
+  for (const [g, list] of GROUPS) {
+    const l = document.createElement('span'); l.className = 'lbl'; l.textContent = g; cw.appendChild(l);
+    for (const nm of list) { if (!D.coins.some((c) => c.name === nm)) continue;
+      const b = document.createElement('button'); b.className = 'chip'; b.textContent = nm; b.setAttribute('aria-pressed', String(st.coin === nm));
+      b.onclick = () => { st.coin = nm; save(); chips(); draw(); }; cw.appendChild(b); }
+    const s = document.createElement('span'); s.className = 'sep'; cw.appendChild(s);
+  }
+  cw.lastChild.remove();
+  const sw = document.getElementById('strats'); sw.innerHTML = '<span class="lbl">Стратегии</span>';
+  D.strategies.forEach((s, i) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.setAttribute('aria-pressed', String(!!st.on[s.id]));
+    b.innerHTML = `<i class="dot" style="background:var(${COL[i]})"></i>${s.name}`;
+    b.onclick = () => { st.on[s.id] = !st.on[s.id]; if (!Object.values(st.on).some(Boolean)) st.on[s.id] = true; save(); chips(); draw(); }; sw.appendChild(b);
+  });
+  const pw = document.getElementById('periods'); pw.innerHTML = '';
+  [[0, 'вся история'], [1095, '3 года'], [365, '1 год'], [180, 'полгода']].forEach(([d, t]) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.setAttribute('aria-pressed', String(st.period === d));
+    b.onclick = () => { st.period = d; save(); chips(); draw(); }; pw.appendChild(b);
+  });
+  document.getElementById('minsz').value = st.minsz;
+  document.getElementById('minszv').textContent = st.minsz ? st.minsz + '% счёта' : 'показывать все';
+}
+document.getElementById('minsz').oninput = (e) => { st.minsz = +e.target.value; save(); document.getElementById('minszv').textContent = st.minsz ? st.minsz + '% счёта' : 'показывать все'; draw(); };
+
+let hits = [];
+function setup(cv, h) {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx, w: r.width, h };
+}
+function ticksLog(lo, hi) {
+  const out = []; const a = Math.floor(Math.log10(lo)), b = Math.ceil(Math.log10(hi));
+  for (let e = a; e <= b; e++) for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v >= lo && v <= hi) out.push(v); }
+  return out.length > 7 ? out.filter((v) => /^1/.test(String(v / 10 ** Math.floor(Math.log10(v))))) : out;
+}
+function draw() {
+  const C = coin(), n = C.t.length, a = st.period ? Math.max(0, n - st.period) : 0;
+  document.getElementById('title').innerHTML = `${C.name}<small>${SEG[C.seg] || ''} · ${fmtD(C.t[a])} — ${fmtD(C.t[n - 1])}</small>`;
+  const isPhone = window.innerWidth < 560, H = isPhone ? 320 : 420;
+  const { ctx, w, h } = setup(document.getElementById('cv'), H);
+  const L = isPhone ? 46 : 62, R = 10, T = 12, B = 26;
+  let lo = Infinity, hi = 0; for (let i = a; i < n; i++) { if (C.c[i] > 0) { lo = Math.min(lo, C.c[i]); hi = Math.max(hi, C.c[i]); } }
+  lo *= 0.85; hi *= 1.15;
+  const X = (i) => L + ((i - a) / Math.max(1, n - 1 - a)) * (w - L - R), Y = (p) => T + (1 - (Math.log(p) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - T - B);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '11px ' + css('--mono'); ctx.fillStyle = css('--ink-3'); ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+  for (const v of ticksLog(lo, hi)) { const y = Y(v); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(price(v), L - 6, y + 4); }
+  // годы
+  ctx.textAlign = 'center'; let lastY = null;
+  for (let i = a; i < n; i++) { const d = day(C.t[i]); const yy = d.getUTCFullYear(); const span = n - a;
+    const mark = span > 500 ? (d.getUTCMonth() === 0 && d.getUTCDate() === 1) : (d.getUTCDate() === 1 && d.getUTCMonth() % (span > 200 ? 3 : 1) === 0);
+    if (mark && yy !== lastY + 0.5) { const x = X(i); if (x > L + 20 && x < w - 20) { ctx.fillText(span > 500 ? yy : d.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit', timeZone: 'UTC' }), x, h - 8); ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, h - B); ctx.stroke(); } }
+  }
+  // цена
+  ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = a; i < n; i++) { const x = X(i), y = Y(C.c[i]); i === a ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke();
+  // сделки
+  hits = []; const act = D.strategies.map((s, k) => ({ s, k })).filter((o) => st.on[o.s.id]);
+  const rmax = isPhone ? 13 : 18, cut = st.minsz / 100;   // размер — доля счёта в момент сделки
+  const all = [];
+  for (const { s, k } of act) for (const tr of C.s[s.id].tr) if (tr[0] >= a && tr[4] >= cut) all.push({ tr, s, k });
+  all.sort((p, q) => q.tr[4] - p.tr[4]);
+  ctx.lineWidth = 2;
+  for (const o of all) {
+    const [i, side, amt] = o.tr, x = X(i), y = Y(C.c[i]), r = Math.max(2.5, rmax * Math.sqrt(Math.min(1, o.tr[4]))), col = css(COL[o.k]);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
+    if (side > 0) { ctx.globalAlpha = 0.55; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = css('--surface'); ctx.lineWidth = 1; ctx.stroke(); }
+    else { ctx.globalAlpha = 0.9; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1; }
+    hits.push({ x, y, r, o, p: C.c[i], t: C.t[i] });
+  }
+  document.getElementById('leg').innerHTML = all.length ? `${all.length} сделок на графике` : 'нет сделок в периоде';
+  stats(C, a); equity(C, a);
+}
+function stats(C, a) {
+  const box = document.getElementById('stats'); box.innerHTML = '';
+  const dqEnd = C.dq[C.dq.length - 1], inv = C.inv;
+  D.strategies.forEach((s, k) => {
+    const S = C.s[s.id], vs = (S.last / dqEnd - 1) * 100, pr = (S.last / inv - 1) * 100;
+    const trs = S.tr.filter((t) => t[0] >= a), b = trs.filter((t) => t[1] > 0).length, sl = trs.length - b;
+    const el = document.createElement('div'); el.className = 'st'; el.style.opacity = st.on[s.id] ? 1 : 0.55;
+    el.innerHTML = `<div class="nm"><i class="dot" style="background:var(${COL[k]})"></i>${s.name}</div>
+      <div class="big">${money(S.last)}</div>
+      <div class="sub">к вложенному <span class="${pr >= 0 ? 'up' : 'dn'}">${pr >= 0 ? '+' : ''}${Math.round(pr).toLocaleString('ru-RU')}%</span> · к DCA <span class="${vs >= 0 ? 'up' : 'dn'}">${vs >= 0 ? '+' : ''}${Math.round(vs).toLocaleString('ru-RU')}%</span></div>
+      <div class="sub">в резерве сейчас ${money(S.cashLast)} (${Math.round((S.cashLast / Math.max(1, S.last)) * 100)}%)</div>
+      <div class="sub">в выбранном периоде: покупок из резерва ${b}, продаж ${sl}</div>`;
+    box.appendChild(el);
+  });
+  const el = document.createElement('div'); el.className = 'st';
+  el.innerHTML = `<div class="nm"><i class="dot" style="background:var(--dca)"></i>Обычный DCA</div><div class="big">${money(dqEnd)}</div>
+    <div class="sub">вложено ${money(inv)} · к вложенному <span class="${dqEnd >= inv ? 'up' : 'dn'}">${dqEnd >= inv ? '+' : ''}${Math.round((dqEnd / inv - 1) * 100).toLocaleString('ru-RU')}%</span></div>
+    <div class="sub">$10 каждый день, без продаж</div>`;
+  box.appendChild(el);
+  document.getElementById('note').textContent = 'Итоги — на всю историю монеты, независимо от выбранного периода. Огромные суммы у монет с долгой историей — эффект сложного процента за много лет при старте почти от нуля; для сравнения смотрите проценты к DCA. Это бэктест на истории, а не обещание доходности.';
+}
+function equity(C, a) {
+  const { ctx, w, h } = setup(document.getElementById('eq'), window.innerWidth < 560 ? 160 : 200);
+  const L = window.innerWidth < 560 ? 46 : 62, R = 10, T = 8, B = 22, step = C.step, i0 = Math.floor(a / step);
+  const series = [{ v: C.dq, col: css('--dca'), dash: [4, 4] }, ...D.strategies.map((s, k) => ({ v: C.s[s.id].eq, col: css(COL[k]), on: st.on[s.id] }))];
+  let lo = Infinity, hi = 0; for (const s of series) for (let i = i0; i < s.v.length; i++) if (s.v[i] > 0) { lo = Math.min(lo, s.v[i]); hi = Math.max(hi, s.v[i]); }
+  lo = Math.max(lo, 1) * 0.9; hi *= 1.1;
+  const m = C.dq.length, X = (i) => L + ((i - i0) / Math.max(1, m - 1 - i0)) * (w - L - R), Y = (v) => T + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - T - B);
+  ctx.clearRect(0, 0, w, h); ctx.font = '11px ' + css('--mono'); ctx.fillStyle = css('--ink-3'); ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+  for (const v of ticksLog(lo, hi)) { const y = Y(v); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(money(v).replace(' тыс.', 'k').replace(' млн', 'M'), L - 6, y + 4); }
+  for (const s of series) { if (s.on === false) continue; ctx.strokeStyle = s.col; ctx.lineWidth = 2; ctx.setLineDash(s.dash || []); ctx.beginPath(); let first = true;
+    for (let i = i0; i < s.v.length; i++) { if (!(s.v[i] > 0)) continue; const x = X(i), y = Y(s.v[i]); first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false; } ctx.stroke(); }
+  ctx.setLineDash([]);
+}
+const cv = document.getElementById('cv'), tip = document.getElementById('tip');
+function hover(ev) {
+  const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  let best = null, bd = 1e9; for (const hh of hits) { const d = Math.hypot(hh.x - x, hh.y - y); if (d < Math.max(hh.r, 8) + 3 && d < bd) { bd = d; best = hh; } }
+  if (!best) { tip.hidden = true; return; }
+  const [, side, amt, rule, sh] = best.o.tr;
+  tip.innerHTML = `<b>${best.o.s.name}</b><br>${fmtD(best.t)} · цена ${price(best.p)}<br>${side > 0 ? 'Покупка из резерва' : 'Продажа'}: <b>${money(amt)}</b> (${Math.round(sh * 100)}% счёта)<br>Правило: ${rule}`;
+  tip.hidden = false; const tw = tip.offsetWidth; tip.style.left = Math.min(r.width - tw - 4, Math.max(4, x + 12)) + 'px'; tip.style.top = Math.max(4, y - 70) + 'px';
+}
+cv.addEventListener('mousemove', hover); cv.addEventListener('mouseleave', () => (tip.hidden = true));
+cv.addEventListener('click', hover);
+window.addEventListener('resize', () => draw());
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => draw());
+new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+chips(); draw();
+</script>
