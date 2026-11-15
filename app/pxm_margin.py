@@ -10,7 +10,7 @@ import combo3_margin as C3M  # noqa: E402
 import imp6_common as I6  # noqa: E402
 from combo_margin import SETS  # noqa: E402
 
-POL = {"on": False, "A": 540, "t": 0.98, "k": 0.25, "rv": 0.965, "su": 1.2}
+POL = {"on": False, "A": 540, "t": 0.98, "k": 0.25, "rv": 0.965, "su": 1.2, "m": 1.0}  # m — надбавка при выдаче на развороте (panicx2: k 0, m 2)
 GAP = 10
 
 
@@ -51,7 +51,7 @@ def defer(B, S, A, G, RI):
                     owed = min(before, owed + extra * (1 - POL["k"])); extra *= POL["k"]; gL = G[t, k]; stat["deferred_days"] += 1
                 rel = 0.0
                 if owed > 0 and (upk[t] < POL["rv"] or pend[t]):
-                    rel = owed; owed = 0.0; stat["release_days"] += 1
+                    rel = owed * (POL["m"] if upk[t] < POL["rv"] else 1.0); owed = 0.0; stat["release_days"] += 1
                     if not (ri >= 0 and a > 1 and G[t, k] != 0): G[t, k] = gL
                 amt = min(r, 1.0 + extra + rel); units += amt * 0.999 / p; r -= amt
                 if before > 1e-9 and a > 0: A[t, k] = 1.0 + (amt - 1.0) / before
