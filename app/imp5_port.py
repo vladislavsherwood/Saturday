@@ -7,7 +7,8 @@ simP = sim4 (agent4d_margin) + опции:
   WT    — веса распределения общего резерва по дням × монетам (по умолчанию равные);
   wmode — 1: вес монеты ещё × число её взносов с начала старта (новая монета не получает сразу 1/K накопленного общего резерва).
   RB    — ребалансировка каждые RB дней от старта: доля rho разрыва между чистой стоимостью монеты и целевой (поровну среди монет с ценой)
-          закрывается обменом (продажа перевеса, покупка недовеса за вырученные деньги, без плеча).
+          закрывается обменом (продажа перевеса, покупка недовеса за вырученные деньги, без плеча); band — продаются только монеты
+          выше цели в band раз, покупаются только ниже цели в band раз (band 1 — все).
   cap   — потолок доли одной монеты в капитале счёта (чистая стоимость монеты / капитал); проверка каждый день, излишек продаётся в резерв
           (общий при pool > 0, иначе в резерв этой монеты); долг монеты гасится в той же доле.
 При pool = spill = 0, RB = 0, cap = 0 считает ровно как sim4 (проверка в imp5_check).
@@ -26,7 +27,7 @@ CFGS = {"без плеча": (dict(lev=False), 0.0), "лучшая": (dict(D=60,
 
 
 @njit(cache=True)
-def simP(C, LO, HI, ACT, GRP, SHW, WT, s0, LEV, stress, sh_rate, rate, pool, spill, RB, rho, cap, wmode):
+def simP(C, LO, HI, ACT, GRP, SHW, WT, s0, LEV, stress, sh_rate, rate, pool, spill, RB, rho, cap, wmode, band):
     n, K = C.shape
     r = np.zeros(K); u = np.zeros(K); debt = np.zeros(K); su = np.zeros(K); stg = np.zeros(K)
     P = 0.0; cnt = np.zeros(K)
@@ -132,18 +133,18 @@ def simP(C, LO, HI, ACT, GRP, SHW, WT, s0, LEV, stress, sh_rate, rate, pool, spi
                     if np.isnan(C[t, k]):
                         continue
                     nv = u[k] * C[t, k] - debt[k]
-                    if nv > tg and u[k] > 0:
+                    if nv > tg * band and u[k] > 0:
                         x = rho * (nv - tg)
                         f = min(1.0, x / (u[k] * C[t, k]))
                         sold += f * u[k] * C[t, k] * (1 - FEE); u[k] *= 1 - f
-                    elif nv < tg:
+                    elif nv < tg / band:
                         need += rho * (tg - nv)
                 if need > 0:
                     for k in range(K):
                         if np.isnan(C[t, k]):
                             continue
                         nv = u[k] * C[t, k] - debt[k]
-                        if nv < tg:
+                        if nv < tg / band:
                             x = sold * rho * (tg - nv) / need
                             u[k] += x * (1 - FEE) / C[t, k]
         R = shc + P
@@ -175,13 +176,13 @@ def simP(C, LO, HI, ACT, GRP, SHW, WT, s0, LEV, stress, sh_rate, rate, pool, spi
 
 
 def runP(Pt, S, L, sh=0.0, lag=0, rate=0.0003, stress=True, opt=None, WT=None):
-    o = dict(pool=0.0, spill=0.0, RB=0, rho=1.0, cap=0.0, wmode=0); o.update(opt or {})
+    o = dict(pool=0.0, spill=0.0, RB=0, rho=1.0, cap=0.0, wmode=0, band=1.0); o.update(opt or {})
     A, G = Pt.plan(S); B = Pt.B
     Lm = B.levmat(L); SH = Pt.W * sh if sh else np.zeros(B.C.shape)
     Wt = np.ones(B.C.shape) if WT is None else np.nan_to_num(WT.astype(float), nan=0.0)
     if lag:
         A, G, SH, Wt = shift(A, lag, 1.0), shift(G, lag, 0), shift(SH, lag), shift(Wt, lag, 1.0)
-    args = (float(o["pool"]), float(o["spill"]), int(o["RB"]), float(o["rho"]), float(o["cap"]), int(o["wmode"]))
+    args = (float(o["pool"]), float(o["spill"]), int(o["RB"]), float(o["rho"]), float(o["cap"]), int(o["wmode"]), float(o["band"]))
     R = [simP(B.C, B.LO, B.HI, A, G, SH, Wt, int(s), Lm, 1.0, 0.15 / 365, rate, *args) for s in STARTS]
     x = np.array([q[1] for q in R]) * 100
     out = {"liq": int(sum(q[0] > 0 for q in R)), "med": float(np.median(x)), "p10": float(np.percentile(x, 10)), "lvl": float(min(q[2] for q in R)),
@@ -235,3 +236,16 @@ def score(res, base, sets=("P9", "B", "M", "P2+BTC", "P3+BTC")):
     dp = min(res[k]["p10"] - base[k]["p10"] for k in ks)
     dw = min(res[k]["worst"] - base[k]["worst"] for k in ks)
     return lg, dp, dw, all(res[k]["safe"] for k in ks)
+
+
+def wt_rel(g=-1.0, w=180):
+    """Вес котла exp(−g·rel{w}/100): g < 0 — больше монетам, обгоняющим BTC; нет истории — вес 1."""
+    def f(Pt):
+        X = Pt.B.series(f"rel{w}")
+        W = np.exp(-g * np.clip(X, -90, 300) / 100)
+        W[~np.isfinite(W)] = 1.0
+        return W
+    return f
+
+
+S1 = (dict(spill=0.25, wmode=1), wt_rel(-1.0))          # круг 2: 25% выручки продаж в котёл, котёл по взносам × силе к BTC
