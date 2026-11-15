@@ -45,8 +45,10 @@ def run(P, mode, starts, last):
     return out
 
 
-MODES = ["спот-маржа", "перп XC 2", "перп XC 1", "перп XC 0.5", "спот"]
-for name, coins in [("USELESS", [("USELESS36828-USD", "alt")]), ("XMR", [("XMR-USD", "alt")]), ("ZEC", [("ZEC-USD", "alt")]), ("P9", SETS["P9"])]:
+MODES = ["спот-маржа", "перп XC 4", "перп XC 3", "перп XC 2", "перп XC 1", "спот"]
+GROUPS = [("USELESS", [("USELESS36828-USD", "alt")]), ("XMR", [("XMR-USD", "alt")]), ("ZEC", [("ZEC-USD", "alt")]), ("P9", SETS["P9"])]
+if len(sys.argv) > 1 and sys.argv[1] == "trio": GROUPS = [("USELESS+XMR+ZEC", [("USELESS36828-USD", "alt"), ("XMR-USD", "alt"), ("ZEC-USD", "alt")])]
+for name, coins in GROUPS:
     P = I6.LP(coins); fill(P)
     ok = np.where(np.isfinite(P.B.C).any(axis=1))[0]; first, last = int(ok[0]), int(ok[-1])
     if len(coins) == 1:
