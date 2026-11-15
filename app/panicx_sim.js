@@ -50,6 +50,7 @@ function decide(R, j) { for (let q = 0; q < R.length; q++) { const cs = R[q].cs;
    pol.buy(ctx) → доля резерва, которую правило паники тратит сегодня (share = act − 1 по умолчанию); остаток (share − доля) × before уходит в «долг», $
    pol.release(ctx) → доля долга (0…1), которая тратится сегодня (вызывается в любой день покупки/взноса, не в день продажи)
    pol.extra(ctx) → доля резерва (before), которую докупить сегодня сверх правила (в любой день покупки/взноса).
+   pol.other(rule) / buyO / releaseO / expireO — то же для второго «долга» (другие правила покупки, не паника), st.oo $.
    ctx: {X, j (день решения), share, before, st: {owed $, spent $, r0 — резерв на старте эпизода}}. Долг сгорает (остаётся в резерве) в конце эпизода (pend), если release его не потратил. */
 function edge(X, S, lag, part = 'full', rec = false, pol = null) {
   let a0 = 0, b = X.n; if (part === 'h1') b = Math.floor(X.n / 2); if (part === 'h2') a0 = Math.floor(X.n / 2);
@@ -60,19 +61,22 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
     const a = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
     cash += UNIT;
-    if (pol && j >= 0 && I.pday[j] === 1 && st.ep !== j) st = { owed: 0, spent: 0, r0: before, ep: j };
+    if (pol && j >= 0 && I.pday[j] === 1 && st.ep !== j) st = { owed: 0, spent: 0, r0: before, ep: j, oo: st.oo || 0 };
     if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) {
-      let want, pan = false, rel = 0;
+      let want, pan = false, rel = 0, oth = false, relO = 0;
       if (pol && pol.buy && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
+      else if (pol && pol.other && q >= 0 && pol.other(R[q].r)) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buyO({ X, j, share, before, st, r: R[q].r }))); want = UNIT + fr * before; st.oo = Math.min(before + UNIT - want, (st.oo || 0) + (share - fr) * before); oth = true; }
       else { want = UNIT + (a - 1) * before; pan = q >= 0 && R[q].p; }
       if (pol && pol.release && st.owed > 0 && j >= 0) { const k = pol.release({ X, j, before, st }); if (k > 0) { rel = Math.min(1, k) * st.owed; st.owed -= rel; } }
+      if (pol && pol.releaseO && st.oo > 0 && j >= 0) { const k = pol.releaseO({ X, j, before, st }); if (k > 0) { relO = Math.min(1, k) * st.oo; st.oo -= relO; } }
       if (pol && pol.extra && j >= 0) { const k = pol.extra({ X, j, before, st }); if (k > 0) rel += Math.min(1, k) * before; } // докупка из резерва (доля резерва накануне)
-      const amt = Math.min(cash, want + rel); units += (amt * (1 - FEE)) / p; cash -= amt;
+      const amt = Math.min(cash, want + rel + relO); units += (amt * (1 - FEE)) / p; cash -= amt;
       if (pan || rel) st.spent += amt - UNIT;
-      if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q, pan: pan || rel > 0 });
+      if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q, pan: pan || rel > 0, oth: oth || relO > 0 });
     }
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
+    if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
   }
   const dca = du * c[b - 1], fin = units * c[b - 1] + cash;
   return { e: (fin / dca - 1) * 100, tr };
@@ -96,8 +100,10 @@ function metric(S, pol, lists = ['sel', 'ex', 'rnd']) {
 }
 const f = (s) => `${Math.round(s.med)}/${s.pos}/${s.hpos}/${s.hworst.toFixed(1)}`;
 let BR = null, BS = null, BM = null;
-function baseline() { if (!BR) { BR = evc(base, null); BS = Z.sum(BR); BM = metric(base, null); } return { BR, BS, BM }; }
-let B100 = null;
+let BSt = null, BPol = null, B100 = null;
+function baseline() { if (!BR) { BR = evc(BSt || base, BPol); BS = Z.sum(BR); BM = metric(BSt || base, BPol); } return { BR, BS, BM }; }
+// сменить основу для сравнения (стратегия + политика паники); null, null — combo3 без tune1
+function setBaseline(S, pol) { BSt = S; BPol = pol; BR = BS = BM = B100 = null; return baseline(); }
 // сравнение с основой: строка отчёта (медиана/в плюсе/половин/худшая половина по группам | доход по сегментам и строгая | метрика паники)
 function report(nm, S, pol, { n100 = false, quiet = false } = {}) {
   baseline();
@@ -105,7 +111,7 @@ function report(nm, S, pol, { n100 = false, quiet = false } = {}) {
   const segs = Z.SEGS.map((s) => `${s} ${(Z.inc(RS, s) - Z.inc(BS, s)).toFixed(3)}${Z.strict(RS, BS, s).length ? '✗' : '✔'}`).join(' ');
   let n = '', N = null;
   if (n100) {
-    if (!B100) B100 = evc(base, null, ['n100']);
+    if (!B100) B100 = evc(BSt || base, BPol, ['n100']);
     const R1 = evc(S, pol, ['n100']), s1 = Z.sum(R1), b1 = Z.sum(B100), m = Z.mlog(R1, B100, 'all', ['n100']);
     const sg = ['big', 'alt', 'meme'].map((s) => { const q = Z.mlog(R1, B100, s, ['n100']); return `${s} ${q.m.toFixed(4)} ${q.u}/${q.d}`; }).join(', ');
     N = { s1, b1, m }; n = ` | 100н ${f(s1.n100.all)} (осн ${f(b1.n100.all)}) лог ${m.m.toFixed(4)} лучше/хуже ${m.u}/${m.d} [${sg}]`;
@@ -117,4 +123,4 @@ function report(nm, S, pol, { n100 = false, quiet = false } = {}) {
 const clone = C3.clone;
 // правила паники: f(r) → массив правил вместо r
 function mapP(fn) { const S = clone(base); S.rules = S.rules.flatMap((r) => (isP(r) ? fn(r) : [r])); return S; }
-module.exports = { Z, C3, base, isP, load, edge, E, evc, metric, report, baseline, mapP, clone, f, episodes };
+module.exports = { Z, C3, base, isP, load, edge, E, evc, metric, report, baseline, setBaseline, mapP, clone, f, episodes };
