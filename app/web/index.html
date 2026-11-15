@@ -215,7 +215,11 @@ async function load() {
 function phrase(i) {
   if (i.reserve_mode) {
     const a = i.plan_today, why = (i.action || "").split(":")[0];
+    if (i.wait) return `<i>копим $${big(i.wait.have)} из $${big(i.wait.need)}</i> · минимум открытия перпа`;
+    if (i.small_sell) return `<i class="s">продажа меньше 0,01 монеты</i> · пропускаем`;
     if (i.nothing_to_sell) return `<i class="s">продавать нечего</i> · взнос в резерв`;
+    if (i.mode === "perp" && a >= 0 && i.amount > 0) return `<i>открыть лонг${i.borrowed > 0 ? `, плечом $${big(i.borrowed)}` : ""}</i>${a > 1 ? " · " + esc(why) : ""}`;
+    if (i.margin && a >= 0 && i.borrowed > 0 && a <= 1) return `обычный взнос · <i>$${big(i.borrowed)} в долг</i>`;
     if (a < 0) return `<i class="s">продать ${Math.round(-a * 100)}%</i> · ${esc(why)}`;
     if (a > 1) return `<i>взнос + ${a >= 2 ? "весь резерв" : Math.round((a - 1) * 100) + "% резерва"}</i> · ${esc(why)}`;
     return "обычный взнос";
