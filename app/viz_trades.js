@@ -8,7 +8,7 @@ const Z = require('./combo2_sim.js');
 const G = Z.load(['sel', 'ex', 'rnd', 'mine']);
 const WANT = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA', 'DOGE', 'LINK', 'HYPE', 'PUMP', 'PEPE', 'PENGU', 'ENA', 'ZEC', 'VVV', 'MYX', 'USELESS'];
 const rd = (f) => JSON.parse(fs.readFileSync(__dirname + '/found/' + f, 'utf8'));
-const STRATS = [{ id: 'combo2', name: 'combo2 (лучшая)', S: rd('combo2-best.json') }];
+const STRATS = [{ id: 'combo3', name: 'combo3 (итоговая)', S: rd('combo3-best.json') }];
 const FEE = 0.001, U = 10;
 function label(r) {
   const h = (k) => r.conds.some((c) => c.ind === k), v = (k) => (r.conds.find((c) => c.ind === k) || {}).v;
