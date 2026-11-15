@@ -11,7 +11,7 @@ import imp6_common as I6  # noqa: E402
 from combo3_msim import sim6 as _sim6  # noqa: E402
 from minbuy_msim import sim6 as _sim6b  # noqa: E402
 from bybit_msim import sim6 as _sim6c  # noqa: E402
-UNITS = {"USELESS36828-USD": 1.0, "XMR-USD": 2.0, "ZEC-USD": 2.0}   # взнос пользователя, $ в день
+UNITS = {"USELESS36828-USD": 1.0, "XMR-USD": 2.0, "ZEC-USD": 2.0, "FARTCOIN-USD": 1.0}   # взнос пользователя, $ в день
 sim6 = _sim6c if os.environ.get("BYBIT") else _sim6b if os.environ.get("SELLANY") else _sim6
 from perp_margin import fill, ST  # noqa: E402
 
@@ -19,7 +19,9 @@ PX.POL.update(on=True, k=0.0, m=2.0, A=0)
 LPS = [float(x) for x in os.environ.get("LPS", "1.5").split(",")]
 MODES = [(f"перпы, схема ×{lp}", lp, True) for lp in LPS] + [("перпы 1× (без плеча)", 0, True), ("спот без плеча", 0, False)]
 GR = [("USELESS", [("USELESS36828-USD", "alt")]), ("XMR", [("XMR-USD", "alt")]), ("ZEC", [("ZEC-USD", "alt")]),
-       ("все три вместе", [("USELESS36828-USD", "alt"), ("XMR-USD", "alt"), ("ZEC-USD", "alt")])]
+       ("все три вместе", [("USELESS36828-USD", "alt"), ("XMR-USD", "alt"), ("ZEC-USD", "alt")]),
+       ("FARTCOIN", [("FARTCOIN-USD", "alt")]),
+       ("четыре вместе", [("USELESS36828-USD", "alt"), ("XMR-USD", "alt"), ("ZEC-USD", "alt"), ("FARTCOIN-USD", "alt")])]
 if os.environ.get("ONLY"): GR = [g for g in GR if g[0] == os.environ["ONLY"]]
 for name, coins in GR:
     P = I6.LP(coins); fill(P)
