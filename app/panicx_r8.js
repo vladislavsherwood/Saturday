@@ -8,8 +8,8 @@ for (const g in G) for (const X of G[g]) if (!X.ind.upk10) { const u = X.ind.usd
 const why = (r) => { const { BS } = P.baseline(); return Z.SEGS.map((s) => { const w = Z.strict(r.RS, BS, s); return w.length ? `${s}: ${w.join(',')}` : ''; }).filter(Boolean).join(' | '); };
 const btcH1 = (r) => { const x = r.R.sel.find((y) => y.name === 'BTC'); return `BTC ${x.f.toFixed(1)}/${x.h1.toFixed(2)}/${x.h2.toFixed(1)}`; };
 const run = (nm, pol) => { const r = P.report(nm, P.base, pol, { quiet: true }); const L = r.line.replace(/ (sel|ex|rnd):\S*/g, '').replace(/ +/g, ' '); console.log(L, btcH1(r), '||', why(r)); return r; };
-const Pol = ({ t = 0.98, k = 0.25, rv = 0.96, A = 540, strong = false, cap = false } = {}) => ({
-  buy: ({ X, j, share }) => { const I = X.ind; if (strong && I.usdt[j] > 1.2) return share; return I.age[j] > A && I.upk10[j] >= t ? share * k : share; },
+const Pol = ({ t = 0.98, k = 0.25, rv = 0.96, A = 540, strong = false, cap = false, su = 1.2 } = {}) => ({
+  buy: ({ X, j, share }) => { const I = X.ind; if (strong && I.usdt[j] > su) return share; return I.age[j] > A && I.upk10[j] >= t ? share * k : share; },
   release: ({ X, j }) => { const I = X.ind; return I.upk10[j] < rv || I.pend[j] || (cap && I.fng[j] < 10) ? 1 : 0; },
 });
 module.exports = { Pol };
