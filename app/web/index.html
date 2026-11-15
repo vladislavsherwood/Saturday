@@ -42,10 +42,10 @@
   .hero small { font-size: 0.5em; font-weight: 700; color: var(--mute); margin-right: 2px; vertical-align: 0.42em; }
   .hero.ok { color: var(--accent); } .hero.sell { color: var(--sell); } .hero.calm { font-size: 40px; line-height: 1.1; padding: 14px 0 6px; }
   .also { margin: 6px 2px 0; font-size: 17px; font-weight: 750; color: var(--sell); }
-  .purse { display: flex; gap: 8px; margin: 16px 0 18px; }
+  .purse { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 16px 0 18px; }
   .purse div { flex: 1; min-width: 0; background: var(--surface); border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow); }
   .purse small { display: block; color: var(--mute); font-size: 12px; font-weight: 650; }
-  .purse b { font-size: 18px; font-weight: 750; }
+  .purse b { font-size: 18px; font-weight: 750; } .purse b.up { color: var(--accent); } .purse b.down { color: var(--sell); }
 
   /* список активов */
   .list { background: var(--surface); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
@@ -247,7 +247,13 @@ function render() {
   else if (doneAny) { verb.textContent = "Сегодня"; hero.className = "hero num calm ok"; hero.textContent = "Всё сделано"; }
   else { verb.textContent = "Сегодня"; hero.className = "hero num calm"; hero.textContent = "Без сделок"; }
   $("purse").hidden = false;
-  $("purse").innerHTML = `<div><small>В резерве</small><b class="num">$${big(state.reserve)}</b></div><div><small>В активах</small><b class="num">$${big(state.holding)}</b></div>`;
+  const pl = state.pnl || 0, pp = state.invested_total > 0 ? (pl / state.invested_total) * 100 : 0, sg = pl >= 0 ? "+" : "−";
+  $("purse").innerHTML = `<div><small>Портфель</small><b class="num">$${big(state.value ?? state.holding + state.reserve)}</b></div>
+    <div><small>П/У</small><b class="num ${pl > 0.005 ? "up" : pl < -0.005 ? "down" : ""}">${sg}$${big(Math.abs(pl))} <span style="font-size:13px">${sg}${num(Math.abs(pp))}%</span></b></div>
+    <div><small>Вложено</small><b class="num">$${big(state.invested_total || 0)}</b></div>
+    <div><small>В резерве</small><b class="num">$${big(state.reserve)}</b></div>
+    <div><small>В активах</small><b class="num">$${big(state.holding)}</b></div>
+    ${state.debt > 0.005 ? `<div><small>Плечо / долг</small><b class="num">$${big(state.debt)}</b></div>` : ""}`;
   $("list").innerHTML = '<div class="list">' + items.map(row).join("") + "</div>";
 }
 
@@ -315,6 +321,8 @@ function actionCard(i) {
 function position(i) {
   const cells = [["В активе", "$" + big(i.holding || 0)], ["Количество", i.qty ? qty(i.qty) : "—"], ["Средняя цена", i.avg_price ? "$" + qty(i.avg_price) : "—"]];
   if (i.reserve != null) cells.push(["В резерве", "$" + big(i.reserve)]);
+  if (i.value != null) { const pl = i.pnl || 0, pp = i.invested_total > 0 ? (pl / i.invested_total) * 100 : 0; cells.push(["Стоимость (с резервом)", "$" + big(i.value)], ["П/У к вложенному", `${pl >= 0 ? "+" : "−"}$${big(Math.abs(pl))} (${pl >= 0 ? "+" : "−"}${num(Math.abs(pp))}%)`]); }
+  if (i.debt > 0.005) cells.push([i.mode === "perp" ? "Плечом в позиции" : "Долг по марже", "$" + big(i.debt)]);
   const p = i.profit || 0, has = i.trades > 0;
   return `<h3>Мой счёт</h3><div class="grid">${cells.map(([a, b]) => `<div class="cell"><small>${a}</small><b class="num">${b}</b></div>`).join("")}
     <div class="cell" style="grid-column: 1 / -1"><small>Результат по сделкам</small><b class="num ${!has ? "" : p >= 0 ? "up" : "down"}">${has ? (p >= 0 ? "+" : "−") + "$" + big(Math.abs(p)) : "сделок пока нет"}</b></div></div>

@@ -75,8 +75,9 @@ async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row
 async function dropTrades(ids) { mem.trades = mem.trades.filter((t) => !ids.includes(t.id)); if (col) for (const id of ids) await col.doc("t" + id).delete(); else await saveCfg(); }
 
 function ledger(symbol, since) {
-  const o = { bought: 0, sold: 0, qty: 0, cost: 0, today: 0, n: 0, boughtSince: 0, soldSince: 0, borrowedSince: 0, repaidSince: 0 }, day = todayStr();
+  const o = { bought: 0, sold: 0, qty: 0, cost: 0, today: 0, n: 0, boughtSince: 0, soldSince: 0, borrowedSince: 0, repaidSince: 0, boughtBefore: 0, soldBefore: 0 }, day = todayStr();
   for (const r of mem.trades.filter((t) => t.symbol === symbol).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.id - b.id))) {
+    if (since && r.day < since) { if (r.side === "sell") o.soldBefore += r.amount; else o.boughtBefore += r.amount; }
     if (since && r.day >= since) { if (r.side === "sell") { o.soldSince += r.amount; o.repaidSince += r.repaid || 0; } else { o.boughtSince += r.amount; o.borrowedSince += r.borrowed || 0; if (!o.lastBuy || r.day > o.lastBuy) o.lastBuy = r.day; } }   // резерв и долг — с даты старта монеты
     if (r.side === "sell") { o.sold += r.amount; if (o.qty > 0) o.cost *= Math.max(0, 1 - r.qty / o.qty); o.qty = Math.max(0, o.qty - r.qty); }
     else { o.bought += r.amount; o.cost += r.amount; o.qty += r.qty; }
@@ -114,13 +115,17 @@ function today() {
       } else amount = a < 0 ? a * qty * h.price : a > 0 ? Math.min(reserve, unit + (a - 1) * before) : 0;
       Object.assign(i, { reserve: r2(reserve), amount: r2(amount), plan_today: a, mode, margin: mode !== "spot" && !!st.m, has_margin: !!st.m, borrowed: r2(borrowed), repaid: r2(repaid), debt: r2(debt),
         lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small });
+      // портфель: вложено = взносы с даты старта + чистые покупки до неё; стоимость = позиция + резерв − долг (для перпа — капитал счёта)
+      const inv = unit * days + Math.max(0, bk.boughtBefore - bk.soldBefore), val = qty * h.price + reserve - debt;
+      Object.assign(i, { invested_total: r2(inv), value: r2(val), pnl: r2(val - inv) });
       if (a < 0 && Math.abs(amount) < 0.005) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
     }
     return i;
   });
   const todo = items.filter((i) => !i.done), sum = (a, f) => r2(a.reduce((s, i) => s + f(i), 0));
   return { day, unit: mem.unit, items, total: sum(items, (i) => Math.max(0, i.amount)), left: sum(todo, (i) => Math.max(0, i.amount)), sell_left: sum(todo, (i) => Math.max(0, -i.amount)),
-    reserve: sum(items, (i) => i.reserve || 0), holding: sum(items, (i) => i.holding || 0), scan: !!sampler, strategies: names };
+    reserve: sum(items, (i) => i.reserve || 0), holding: sum(items, (i) => i.holding || 0), scan: !!sampler, strategies: names,
+    value: sum(items, (i) => i.value || 0), invested_total: sum(items, (i) => i.invested_total || 0), pnl: sum(items, (i) => i.pnl || 0), debt: sum(items, (i) => i.debt || 0) };
 }
 const fail = (text) => { throw new Error(text); };
 async function addTrade(b) {
