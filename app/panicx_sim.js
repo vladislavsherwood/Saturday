@@ -49,6 +49,7 @@ function decide(R, j) { for (let q = 0; q < R.length; q++) { const cs = R[q].cs;
 /* pol — политика для правил паники (необязательно):
    pol.buy(ctx) → доля резерва, которую правило паники тратит сегодня (share = act − 1 по умолчанию); остаток (share − доля) × before уходит в «долг», $
    pol.release(ctx) → доля долга (0…1), которая тратится сегодня (вызывается в любой день покупки/взноса, не в день продажи)
+   pol.extra(ctx) → доля резерва (before), которую докупить сегодня сверх правила (в любой день покупки/взноса).
    ctx: {X, j (день решения), share, before, st: {owed $, spent $, r0 — резерв на старте эпизода}}. Долг сгорает (остаётся в резерве) в конце эпизода (pend), если release его не потратил. */
 function edge(X, S, lag, part = 'full', rec = false, pol = null) {
   let a0 = 0, b = X.n; if (part === 'h1') b = Math.floor(X.n / 2); if (part === 'h2') a0 = Math.floor(X.n / 2);
@@ -63,9 +64,10 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) {
       let want, pan = false, rel = 0;
-      if (pol && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
+      if (pol && pol.buy && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
       else { want = UNIT + (a - 1) * before; pan = q >= 0 && R[q].p; }
       if (pol && pol.release && st.owed > 0 && j >= 0) { const k = pol.release({ X, j, before, st }); if (k > 0) { rel = Math.min(1, k) * st.owed; st.owed -= rel; } }
+      if (pol && pol.extra && j >= 0) { const k = pol.extra({ X, j, before, st }); if (k > 0) rel += Math.min(1, k) * before; } // докупка из резерва (доля резерва накануне)
       const amt = Math.min(cash, want + rel); units += (amt * (1 - FEE)) / p; cash -= amt;
       if (pan || rel) st.spent += amt - UNIT;
       if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q, pan: pan || rel > 0 });
