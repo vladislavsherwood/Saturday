@@ -198,7 +198,8 @@ function histDetail(symbol, years) {
     else { const amt = Math.min(cash, unit + (x - 1) * before), eb = cash + units * p; units += amt * 0.999 / p; cash -= amt; if (amt > unit * 1.5) tr.push([i - a, 1, r2(amt - unit), f, (amt - unit) / eb]); }
     eq.push(cash + units * p); dq.push(du * p);
   }
-  return { t: h.t.slice(a), c: h.c.slice(a), tr, eq, dq, unit };
+  const cut = (x) => (x ? x.slice(a) : null);
+  return { t: h.t.slice(a), c: h.c.slice(a), o: cut(h.o), h: cut(h.h), l: cut(h.l), tr, eq, dq, unit };
 }
 const fail = (text) => { throw new Error(text); };
 async function addTrade(b) {

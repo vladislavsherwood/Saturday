@@ -476,11 +476,21 @@ function drawTrades(box, D) {
   const prep = (cv, H) => { cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = "10.5px system-ui, sans-serif"; return g; };
   const fmt = (v) => v >= 1000 ? Math.round(v).toLocaleString("ru-RU") : v >= 1 ? num(v) : Number(v.toPrecision(2)).toString();
   // цена
-  let g = prep(cp, 200), lo = Math.min(...D.c), hi = Math.max(...D.c); const ly = (v) => 8 + (Math.log(hi / v) / Math.log(hi / lo || 2)) * (200 - 26);
+  // свечи: дневные, если дней ≤ 120; иначе — по k дней (неделя, две, месяц…), чтобы свечей было не больше ~120
+  const O = D.o || D.c, Hh = D.h || D.c, Ll = D.l || D.c, k = n <= 120 ? 1 : n <= 840 ? 7 : n <= 1800 ? 14 : 30, cs = [];
+  for (let s0 = 0; s0 < n; s0 += k) { const e0 = Math.min(n, s0 + k) - 1; let hh = -Infinity, ll = Infinity;
+    for (let j = s0; j <= e0; j++) { const a1 = Hh[j] || D.c[j], b1 = Ll[j] || D.c[j]; if (a1 > hh) hh = a1; if (b1 < ll) ll = b1; }
+    cs.push({ s: s0, e: e0, o: O[s0] || D.c[s0], h: Math.max(hh, D.c[e0]), l: Math.min(ll, D.c[e0]), c: D.c[e0] }); }
+  let g = prep(cp, 200), lo = Math.min(...cs.map((x) => x.l)), hi = Math.max(...cs.map((x) => x.h)); const ly = (v) => 8 + (Math.log(hi / v) / Math.log(hi / lo || 2)) * (200 - 26);
   g.strokeStyle = col("--line"); g.fillStyle = col("--mute");
   for (const v of [hi, Math.sqrt(hi * lo), lo]) { g.beginPath(); g.moveTo(L, ly(v)); g.lineTo(W - R, ly(v)); g.stroke(); g.fillText("$" + fmt(v), 0, ly(v) + 3); }
   g.fillText(dt(0), L, 196); const de = dt(n - 1); g.fillText(de, W - R - g.measureText(de).width, 196);
-  g.strokeStyle = col("--text"); g.lineWidth = 1.2; g.beginPath(); D.c.forEach((v, i) => (i ? g.lineTo(X(i), ly(v)) : g.moveTo(X(i), ly(v)))); g.stroke();
+  const cw = Math.max(1.5, Math.min(9, ((W - L - R) / cs.length) * 0.62)), up = col("--accent"), dn = col("--sell");
+  g.globalAlpha = 0.55;
+  for (const x of cs) { const xc = (X(x.s) + X(x.e)) / 2, c = x.c >= x.o ? up : dn; g.strokeStyle = c; g.fillStyle = c; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(xc, ly(x.h)); g.lineTo(xc, ly(x.l)); g.stroke(); const y0 = ly(Math.max(x.o, x.c)), hb = Math.max(1, Math.abs(ly(x.o) - ly(x.c))); g.fillRect(xc - cw / 2, y0, cw, hb); }
+  g.globalAlpha = 1;
+  g.fillStyle = col("--mute"); g.fillText(k === 1 ? "свеча — день" : k === 7 ? "свеча — неделя" : k === 14 ? "свеча — 2 недели" : "свеча — месяц", W - R - 90, 10);
   const rmax = Math.max(6, Math.min(14, W / 40));
   for (const [i, sd, amt, f, sh] of D.tr.slice().sort((a, b) => b[4] - a[4])) {
     if (sh < 0.01) continue; const r = Math.max(2.5, rmax * Math.sqrt(Math.min(1, sh))), c = PAL[FAMC[f]] || col("--mute");
