@@ -73,7 +73,9 @@ function build(o = {}) {
       // декартово произведение альтернатив (ИЛИ) модификаторов
       let combos = [[]];
       for (const m of sub) combos = combos.flatMap((cs) => m.sets.map((s) => [...cs, ...s]));
-      for (const cs of combos) rules.push({ act, conds: [...r.conds, ...cs] });
+      // копии с двумя разными флагами сегмента (мем и крупная по списку, альт и крупная по списку) никогда не срабатывают — не добавляю
+      const SEGF = ['isbig', 'meme', 'isalt'];
+      for (const cs of combos) if (new Set(cs.filter((x) => SEGF.includes(x.ind) && x.op === '>').map((x) => x.ind)).size < 2) rules.push({ act, conds: [...r.conds, ...cs] });
     }
     rules.push(r);
   }
