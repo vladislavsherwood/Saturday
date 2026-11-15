@@ -7,7 +7,8 @@ t = time.time()
 PS = {k: LP(v) for k, v in SETS.items()}
 S0 = {"base": BEST["base"], "rules": BEST["rules"]}
 SPLIT = [1 if g in (1, 2, 5, 7, 4) else 0 for g in range(8)]
-for lp in (1.4, 1.3, 1.25, 1.2):
+import sys
+for lp in [float(x) for x in sys.argv[1:]] or (1.4, 1.3, 1.25, 1.2):
     S, L = scheme(S0, D=60, lp=lp, lr=1.5)
     for tag, WT, SPL, shw in (("основа", (1.0,), [0] * 8, 0.2), ("50/50", (0.5, 0.5), SPLIT, 0.2)):
         out = []
