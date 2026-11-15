@@ -42,10 +42,18 @@
   .hero small { font-size: 0.5em; font-weight: 700; color: var(--mute); margin-right: 2px; vertical-align: 0.42em; }
   .hero.ok { color: var(--accent); } .hero.sell { color: var(--sell); } .hero.calm { font-size: 40px; line-height: 1.1; padding: 14px 0 6px; }
   .also { margin: 6px 2px 0; font-size: 17px; font-weight: 750; color: var(--sell); }
-  .purse { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 16px 0 18px; }
-  .purse div { flex: 1; min-width: 0; background: var(--surface); border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow); }
-  .purse small { display: block; color: var(--mute); font-size: 12px; font-weight: 650; }
-  .purse b { font-size: 18px; font-weight: 750; } .purse b.up { color: var(--accent); } .purse b.down { color: var(--sell); }
+  .purse { margin: 16px 0 18px; }
+  .pf { background: var(--surface); border-radius: 22px; padding: 16px; box-shadow: var(--shadow); }
+  .pf small { display: block; color: var(--mute); font-size: 12px; font-weight: 650; }
+  .pf-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .pf-top b { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+  .pf-pl { text-align: right; } .pf-pl b { font-size: 20px; } .pf-pl span { display: block; font-size: 12px; color: var(--mute); margin-top: 2px; }
+  .pf-pl.up b { color: var(--accent); } .pf-pl.down b { color: var(--sell); }
+  .pf-bar { display: flex; gap: 2px; height: 8px; margin: 14px 0 8px; } .pf-bar i { border-radius: 4px; min-width: 4px; }
+  .pf-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); } .pf-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .pf-leg b { color: var(--text); font-weight: 700; }
+  .pf-chart { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; } .pf-ct small + small { min-height: 15px; margin-top: 2px; color: var(--text); font-weight: 600; }
+  #pnlC { width: 100%; display: block; margin-top: 6px; touch-action: pan-y; }
 
   /* список активов */
   .list { background: var(--surface); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
@@ -211,6 +219,37 @@ async function load() {
   catch (e) { $("hero").innerHTML = "—"; $("list").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; }
 }
 
+// свечной график П/У портфеля по дням: зелёная свеча — день закрылся выше открытия, оранжевая — ниже; пунктир — ноль
+let pnlRows = [];
+async function drawPnl() {
+  try { pnlRows = await api("/api/pnl"); } catch (e) { pnlRows = []; }
+  const cv = $("pnlC"); if (!cv) return;
+  const css = getComputedStyle(document.documentElement), col = (v) => css.getPropertyValue(v).trim();
+  const W = cv.clientWidth, H = 150, dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const rows = pnlRows.slice(-60), L = 46, R = 6, T = 8, B = 18;
+  g.font = "11px system-ui, sans-serif"; g.fillStyle = col("--mute");
+  if (!rows.length) { g.fillText("Свечи появятся после первого дня с взносами", 0, H / 2); return; }
+  let lo = Math.min(0, ...rows.map((r) => r.l)), hi = Math.max(0, ...rows.map((r) => r.h)); if (hi - lo < 1) { hi += 0.5; lo -= 0.5; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B), n = Math.max(rows.length, 20), step = (W - L - R) / n, bw = Math.max(3, Math.min(12, step * 0.7));
+  const fmt = (v) => (v < 0 ? "−" : "") + "$" + (Math.abs(v) >= 1000 ? Math.round(Math.abs(v) / 100) / 10 + "k" : num(Math.abs(v)));
+  g.strokeStyle = col("--line"); g.lineWidth = 1;
+  for (const v of [hi - pad, lo + pad]) { g.beginPath(); g.moveTo(L, y(v)); g.lineTo(W - R, y(v)); g.stroke(); g.fillText(fmt(v), 0, y(v) + 4); }
+  g.setLineDash([3, 3]); g.strokeStyle = col("--mute"); g.beginPath(); g.moveTo(L, y(0)); g.lineTo(W - R, y(0)); g.stroke(); g.setLineDash([]); g.fillText("$0", 0, y(0) + 4);
+  rows.forEach((r, k) => {
+    const x = L + step * (k + n - rows.length) + step / 2, up = r.c >= r.o, c = up ? col("--accent") : col("--sell");
+    g.strokeStyle = c; g.fillStyle = c; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y(r.h)); g.lineTo(x, y(r.l)); g.stroke();
+    const t0 = y(Math.max(r.o, r.c)), h0 = Math.max(2, Math.abs(y(r.o) - y(r.c))); g.beginPath(); g.roundRect ? g.roundRect(x - bw / 2, t0, bw, h0, 1.5) : g.rect(x - bw / 2, t0, bw, h0); g.fill();
+  });
+  const dt = (d) => new Date(d * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+  g.fillStyle = col("--mute"); g.fillText(dt(rows[0].d), L + step * (n - rows.length), H - 3); const e = dt(rows[rows.length - 1].d); g.fillText(e, W - R - g.measureText(e).width, H - 3);
+  const tip = (ev) => { const bx = cv.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - bx.left, k = Math.floor((px - L) / step) - (n - rows.length);
+    const r = rows[Math.max(0, Math.min(rows.length - 1, k))]; $("pnlTip").textContent = `${dt(r.d)}: П/У ${fmt(r.c)} (мин ${fmt(r.l)}, макс ${fmt(r.h)}) · портфель $${big(r.v)}`; };
+  cv.onmousemove = tip; cv.ontouchstart = tip; cv.ontouchmove = tip; cv.onmouseleave = () => ($("pnlTip").textContent = "");
+}
+window.addEventListener("resize", () => { if ($("pnlC")) drawPnl(); });
+
 // короткая подпись действия для строки актива: что сделать и почему
 function phrase(i) {
   if (i.reserve_mode) {
@@ -247,13 +286,16 @@ function render() {
   else if (doneAny) { verb.textContent = "Сегодня"; hero.className = "hero num calm ok"; hero.textContent = "Всё сделано"; }
   else { verb.textContent = "Сегодня"; hero.className = "hero num calm"; hero.textContent = "Без сделок"; }
   $("purse").hidden = false;
-  const pl = state.pnl || 0, pp = state.invested_total > 0 ? (pl / state.invested_total) * 100 : 0, sg = pl >= 0 ? "+" : "−";
-  $("purse").innerHTML = `<div><small>Портфель</small><b class="num">$${big(state.value ?? state.holding + state.reserve)}</b></div>
-    <div><small>П/У</small><b class="num ${pl > 0.005 ? "up" : pl < -0.005 ? "down" : ""}">${sg}$${big(Math.abs(pl))} <span style="font-size:13px">${sg}${num(Math.abs(pp))}%</span></b></div>
-    <div><small>Вложено</small><b class="num">$${big(state.invested_total || 0)}</b></div>
-    <div><small>В резерве</small><b class="num">$${big(state.reserve)}</b></div>
-    <div><small>В активах</small><b class="num">$${big(state.holding)}</b></div>
-    ${state.debt > 0.005 ? `<div><small>Плечо / долг</small><b class="num">$${big(state.debt)}</b></div>` : ""}`;
+  const pl = state.pnl || 0, pp = state.invested_total > 0 ? (pl / state.invested_total) * 100 : 0, sg = pl >= 0 ? "+" : "−", tone = pl > 0.005 ? "up" : pl < -0.005 ? "down" : "";
+  const parts = [["В монетах", state.holding, "var(--text)"], ["В резерве", state.reserve, "var(--mute)"]].filter((p) => p[1] > 0.005), tot = parts.reduce((x, p) => x + p[1], 0) || 1;
+  $("purse").innerHTML = `<div class="pf">
+      <div class="pf-top"><div><small>Портфель</small><b class="num">$${big(state.value ?? state.holding + state.reserve)}</b></div>
+        <div class="pf-pl ${tone}"><small>П/У за всё время</small><b class="num">${sg}$${big(Math.abs(pl))}</b><span class="num">${sg}${num(Math.abs(pp))}% · вложено $${big(state.invested_total || 0)}</span></div></div>
+      <div class="pf-bar">${parts.map((p) => `<i style="flex:${p[1] / tot};background:${p[2]}"></i>`).join("")}</div>
+      <div class="pf-leg">${parts.map((p) => `<span><i style="background:${p[2]}"></i>${p[0]} <b class="num">$${big(p[1])}</b></span>`).join("")}${state.debt > 0.005 ? `<span><i style="background:var(--sell)"></i>Долг / плечо <b class="num">$${big(state.debt)}</b></span>` : ""}</div>
+      <div class="pf-chart"><div class="pf-ct"><small>П/У по дням</small><small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля по дням" role="img"></canvas></div>
+    </div>`;
+  drawPnl();
   $("list").innerHTML = '<div class="list">' + items.map(row).join("") + "</div>";
 }
 
