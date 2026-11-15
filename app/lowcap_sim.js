@@ -90,6 +90,17 @@ function lowFeatures(X, L) {
   I.agel = Float64Array.from(X.t, (t) => t - L.t0);                    // дней с начала истории монеты (CMC)
 }
 
+// фандинг монет стандартного стенда — из found/agent4e_coinfund.json (агент 4E: Binance, сумма за день, %), по имени монеты
+let CF4E = null;
+function standFund(X) {
+  if (!CF4E) CF4E = JSON.parse(fs.readFileSync(path.join(__dirname, 'found', 'agent4e_coinfund.json'), 'utf8'));
+  const a = CF4E.c[X.name]; if (!a) return;
+  const n = X.n, f = new Float64Array(n); for (let i = 0; i < n; i++) { const k = X.t[i] - CF4E.t0; f[i] = k >= 0 && k < a.length && a[k] != null ? a[k] : NaN; }
+  const cf7 = new Float64Array(n), cf30 = new Float64Array(n);
+  for (let i = 0; i < n; i++) { let s7 = 0, k7 = 0, s30 = 0, k30 = 0; for (let j = Math.max(0, i - 29); j <= i; j++) if (!isNaN(f[j])) { s30 += f[j]; k30++; if (j > i - 7) { s7 += f[j]; k7++; } } cf7[i] = k7 >= 5 ? s7 : NaN; cf30[i] = k30 >= 20 ? s30 : NaN; }
+  X.ind.cf = f; X.ind.cf7 = cf7; X.ind.cf30 = cf30;
+}
+
 // флаги-индикаторы постоянные по монете
 const constInd = (X, k, v) => { const a = new Float64Array(X.n); a.fill(v); X.ind[k] = a; };
 function tday(X) { if (!X.ind.tday) X.ind.tday = Float64Array.from(X.t); }
@@ -109,7 +120,7 @@ function load(list = ['lsel', 'lchk', 'sel', 'ex', 'rnd', 'n100']) {
   for (const g in G) for (const X of G[g]) {
     X.grp = g; tday(X);
     if (X.low) { capFeatures(X, X.low.sup, X.low.t0); lowFeatures(X, X.low); constInd(X, 'islc', 1); }
-    else { const st = STAND[STAND_KEY(X, g)]; if (st) { capFeatures(X, st.sup, st.t0); lowFeatures(X, st); } else { for (const k of ['mc', 'mcm', 'mcsh', 'mcsh90', 'mcm90']) { const a = new Float64Array(X.n); a.fill(NaN); X.ind[k] = a; } } constInd(X, 'islc', 0); }
+    else { const st = STAND[STAND_KEY(X, g)]; if (st) { capFeatures(X, st.sup, st.t0); lowFeatures(X, st); standFund(X); } else { for (const k of ['mc', 'mcm', 'mcsh', 'mcsh90', 'mcm90']) { const a = new Float64Array(X.n); a.fill(NaN); X.ind[k] = a; } } constInd(X, 'islc', 0); }
   }
   return (G0 = G);
 }

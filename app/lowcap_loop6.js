@@ -51,3 +51,18 @@ for (const f of [0.1, 0.3]) for (const s of [0.1, 0.2]) show(`V + памп на 
 for (const s of [0.1, 0.2]) show(`V + памп на плечах (OI ×2 за 30 дн, up90 > 100) → ${s * 100}%`, L.addRule(SV, { act: -s, conds: [LC, c('coic30', '>', 100), c('up90', '>', 100)] }, iF + 1));
 for (const d of [40, 50]) show(`V + лоукап: паника → взнос, пока OI монеты не вынесен (coidd30 > −${d})`, L.pre(SV, L.isPanic, [LC, c('coidd30', '>', -d)], 1, { grp: 0 }));
 for (const d of [40, 50]) show(`V + лоукап: вынос OI (coidd30 < −${d}) и монета −20% за 14 дн → купить 10% резерва (в начале)`, L.addRule(SV, { act: 1.1, conds: [LC, c('coidd30', '<', -d), c('r14', '<', -20)] }, 0));
+// (C) устойчивость лучших форм: правило разрешено только до / только после 2025-06; плато фандинга и оборота
+console.log('\n(C) Только до / только после 2025-06 (добавка к V)');
+const add = (S, cd, s, pos) => L.addRule(S, { act: -s, conds: cd }, pos);
+const FV = [LC, c('cf7', '>', 0.1), c('up90', '>', 100), c('turn', '>', 30)], OV = [LC, c('coic30', '>', 100), c('up90', '>', 100)];
+for (const [nm, cd] of [['памп на фандинге 20%', FV], ['памп на плечах 10%', OV]]) { const s = nm.includes('20') ? 0.2 : 0.1;
+  show(`${nm} | только до`, add(SV, L.onlyBefore(cd, '2025-06-01'), s, iF + 1)); show(`${nm} | только после`, add(SV, L.onlyAfter(cd, '2025-06-01'), s, iF + 1)); }
+show('паника → взнос, пока OI не вынесен (−50) | только до', L.pre(SV, L.isPanic, L.onlyBefore([LC, c('coidd30', '>', -50)], '2025-06-01'), 1, { grp: 0 }));
+show('паника → взнос, пока OI не вынесен (−50) | только после', L.pre(SV, L.isPanic, L.onlyAfter([LC, c('coidd30', '>', -50)], '2025-06-01'), 1, { grp: 0 }));
+console.log('\n(C) Плато «памп на фандинге» (добавка к V): cf7 × оборот × доля');
+for (const f of [0.05, 0.1, 0.2]) for (const t of [0, 30, 50]) for (const s of [0.1, 0.2, 0.3]) show(`cf7 > ${f}, оборот > ${t}%, up90 > 100 → ${s * 100}%`, add(SV, [LC, c('cf7', '>', f), c('up90', '>', 100), ...(t ? [c('turn', '>', t)] : [])], s, iF + 1));
+for (const u of [50, 200]) show(`cf7 > 0.1, оборот > 30%, up90 > ${u} → 20%`, add(SV, [LC, c('cf7', '>', 0.1), c('up90', '>', u), c('turn', '>', 30)], 0.2, iF + 1));
+show('то же без флага лоукапа (все монеты)', add(SV, [c('cf7', '>', 0.1), c('up90', '>', 100), c('turn', '>', 30)], 0.2, iF + 1));
+console.log('\n(C) Край по фандингу (строгая стенда ломается на 2-й половине ARIA при cf7 ≤ 0,2)');
+for (const f of [0.25, 0.3, 0.4, 0.5]) for (const s of [0.1, 0.2, 0.3]) show(`cf7 > ${f}, оборот > 30%, up90 > 100 → ${s * 100}%`, add(SV, [LC, c('cf7', '>', f), c('up90', '>', 100), c('turn', '>', 30)], s, iF + 1));
+for (const [nm, cd] of [['cf7 > 0,3 20% | только до', L.onlyBefore([LC, c('cf7', '>', 0.3), c('up90', '>', 100), c('turn', '>', 30)], '2025-06-01')], ['cf7 > 0,3 20% | только после', L.onlyAfter([LC, c('cf7', '>', 0.3), c('up90', '>', 100), c('turn', '>', 30)], '2025-06-01')]]) show(nm, add(SV, cd, 0.2, iF + 1));
