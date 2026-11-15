@@ -62,7 +62,7 @@ for (const nm of WANT) {
   const pend = new Array(X.n).fill(0);
   for (let j = 0; j < X.n; j++) { const on = u[j] > 1.07 && I.othd[j] < 25; if (on) { if (j - last > 10) st = j; last = j; } if (st >= 0 && !on && j - last === 10) pend[j] = 1; }
   for (let i = 1; i < X.n; i++) { const j = i - 1, k = upk(j); pf[i] = (I.age[j] > 540 && u[j] <= 1.2 && k >= 0.98 ? 1 : 0) | (k < 0.965 ? 2 : 0) | (pend[j] ? 4 : 0); }
-  out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq, pf: pf.join('') });
+  out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq, pf: pf.join(''), k: Array.from(X.ind.corr180, (v) => (isFinite(v) ? Math.round(v * 100) : null)) });
   const r0 = run(X, S); console.log(nm, X.seg, X.n, 'дней, правил', rt.length, 'итог $' + Math.round(r0.eq[X.n - 1]));
 }
 fs.writeFileSync(process.argv[2], JSON.stringify(out));
