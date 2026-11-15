@@ -29,3 +29,9 @@ const ep = []; for (const t of ds) { if (ep.length && t - ep[ep.length - 1].b < 
 console.log('\nдни «BTC +20% за 30 дн и жадность > 80» (эпизоды): ' + ep.map((e) => `${L.day(e.a)}…${L.day(e.b)} (${e.n})`).join(', '));
 fs.writeFileSync(process.argv[2] || '/dev/null', JSON.stringify({ OUT, ep: ep.map((e) => [L.day(e.a), L.day(e.b), e.n]) }, null, 1));
 if (process.argv[3]) fs.writeFileSync(process.argv[3], JSON.stringify(CANDS));
+// вклад отдельных эпизодов: A80 разрешено только внутри одного эпизода жары (±5 дней)
+if (process.env.IMP4_EP) {
+  for (const [bn, S0] of Object.entries(BASES)) { const b = K.ev(G, S0, false);
+    for (const e of ep) { const S = { ...S0, rules: S0.rules.flatMap((r) => (isRev(r) ? [{ act: 1, conds: [...r.conds, c('fng', '>', 80), c('t', '>', e.a - 5), c('t', '<', e.b + 5)] }, r] : [r])) };
+      const r = K.ev(G, S, false); console.log(`${bn} A80 только ${L.day(e.a)}…${L.day(e.b)}: ${K.d(r, b) >= 0 ? '+' : ''}${K.d(r, b).toFixed(3)} ${K.passes(r, b) ? '✔' : '·'} | ${r.sel.med.toFixed(0)}/${r.ex.med.toFixed(0)}/${r.rnd.med.toFixed(0)} | 100н ${r.n100.med.toFixed(0)} ${r.n100.hpos}`); } }
+}
