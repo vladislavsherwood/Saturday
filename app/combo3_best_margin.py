@@ -19,7 +19,7 @@ def sch(m, sh, WT):
 
 
 def slim(R):
-    return {k: {"ok": v["ok"], "job": {q: v["job"][q] for q in ("strategy", "m", "sh", "WT")}, "row": v["row"]} for k, v in R.items()}
+    return {k: {"ok": v["ok"], "job": {q: v["job"].get(q, [1.0] if q == "WT" else None) for q in ("strategy", "m", "sh", "WT")}, "row": v["row"]} for k, v in R.items()}
 
 
 MAIN = dict(lp=1.3, sr=1.0, t1grp="off"); CAUT = dict(lp=1.25, sr=1.0, t1grp="off"); VAR = dict(lp=1.35, sr=1.0, t1grp="off")
