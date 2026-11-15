@@ -58,3 +58,43 @@ function prepX(G, x, D) {
 }
 module.exports.prepX = prepX;
 module.exports.prepEp = prepEp;
+// ---------- круг 5: правила с условиями на СОСТОЯНИЕ монеты (копия agent_sim.edge без шорта) ----------
+// Псевдо-индикаторы (только прошлое, на день решения, по закрытию вчерашнего дня):
+//   $rs  — доля резерва в капитале монеты: cash / (cash + units · цена), 0…1;
+//   $age — дней с последнего дня, когда резерв был < 5% капитала (резерв «весь вложен»); до первого такого дня — дней с начала.
+const FEE = 0.001, UNIT = 10;
+function compileS(X, rules) {
+  return rules.filter((r) => r.conds.every((cd) => cd.ind[0] === '$' || X.ind[cd.ind])).map((r) => ({ act: r.act, cs: r.conds.map((cd) => [cd.ind[0] === '$' ? cd.ind : X.ind[cd.ind], cd.op === '<', cd.v]) }));
+}
+function edgeS(X, S, lag, part = 'full', rec = false) {
+  let a0 = 0, b = X.n; if (part === 'h1') b = Math.floor(X.n / 2); if (part === 'h2') a0 = Math.floor(X.n / 2);
+  const c = X.c, R = compileS(X, S.rules);
+  let cash = 0, units = 0, du = 0, last0 = a0; const tr = rec ? [] : null; const st = { $rs: 0, $age: 0 };
+  for (let i = a0; i < b; i++) {
+    const p = c[i], j = i - 1 - lag; du += (UNIT * (1 - FEE)) / p;
+    const pj = j >= 0 ? c[j] : p, cap = cash + units * pj; st.$rs = cap > 0 ? cash / cap : 0;
+    if (st.$rs < 0.05) last0 = i; st.$age = i - last0;
+    let q = -2;
+    if (j >= 0) { q = -1; for (let k = 0; k < R.length; k++) { const cs = R[k].cs; let ok = true; for (let m = 0; m < cs.length; m++) { const a = cs[m][0], v = typeof a === 'string' ? st[a] : a[j]; if (!(cs[m][1] ? v < cs[m][2] : v > cs[m][2])) { ok = false; break; } } if (ok) { q = k; break; } } }
+    const before = cash, a = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
+    cash += UNIT;
+    if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } }
+    else if (a > 0) { const amt = Math.min(cash, UNIT + (a - 1) * before); units += (amt * (1 - FEE)) / p; cash -= amt; if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q }); }
+  }
+  const dca = du * c[b - 1], fin = units * c[b - 1] + cash;
+  return { e: (fin / dca - 1) * 100, tr };
+}
+const ES = (X, S, part) => Math.min(edgeS(X, S, 0, part).e, edgeS(X, S, 1, part).e);
+function evS(G, S, list = Object.keys(G)) {
+  const o = {};
+  for (const g of list) { const full = G[g].map((X) => ES(X, S, 'full')), halves = G[g].flatMap((X) => [ES(X, S, 'h1'), ES(X, S, 'h2')]); o[g] = { ...K.stat(full, halves), e: full }; }
+  return o;
+}
+// «выше 90-дн. будущего минимума» и «в зоне +15% от дна цикла» для покупок резерва (как agent_sim.metrics; будущее — только для оценки)
+function buyMetric(A, S) {
+  let tot = 0, ab = 0, z = 0;
+  for (const X of A) { const M = K.metrics ? null : null; const c = X.c, n = X.n; const { tr } = edgeS(X, S, 0, 'full', true);
+    for (const t of tr) if (t.s > 0) { let mf = Infinity, mw = Infinity; for (let k = t.i; k <= Math.min(n - 1, t.i + 90); k++) mf = Math.min(mf, c[k]); for (let k = Math.max(0, t.i - 180); k <= Math.min(n - 1, t.i + 180); k++) mw = Math.min(mw, c[k]); tot += t.amt; ab += t.amt * (t.p / mf - 1); if (t.p <= 1.15 * mw) z += t.amt; } }
+  return { above: (100 * ab) / tot, zone: (100 * z) / tot };
+}
+Object.assign(module.exports, { edgeS, ES, evS, buyMetric });

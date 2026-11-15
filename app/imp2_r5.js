@@ -15,3 +15,13 @@ for (const [bn, B] of [['combo-best', I.BASE], ['combo2-best', C2]]) {
   }
 }
 fs.writeFileSync(process.argv[2] || '/dev/null', JSON.stringify(out, null, 1));
+const CB = JSON.parse(fs.readFileSync(__dirname + '/found/combo-best.json', 'utf8'));
+fs.writeFileSync(__dirname + '/found/imp2-best.json', JSON.stringify({
+  name: 'imp2: правила без изменений + резерв в стейблах с доходом (4,5% годовых)',
+  base: CB.base, rules: CB.rules, reserve_yield_year: 0.045,
+  rules_human: ['Правила и размеры — как в combo-best.json (F + C1.25 + C6); поверх combo2-best.json работает так же.',
+    'Резерв (выручка продаж и неистраченные взносы) держать в стейблах с доходом (сберегательный счёт/займ USDC, фонд денежного рынка) — 3–6% годовых; размеры продаж и покупок не менять.',
+    'Не возвращать резерв по времени простоя, по доле резерва в счёте или на новом максимуме BTC; резерв монет не объединять (кроме осознанного выбора для портфеля старых крупных монет).'],
+  indicators: { yld: 'доход на положительный резерв, годовых; начисляется ежедневно (yld / 365)' },
+  results: out, note: 'Подробности — app/research/imp2_journal.md; портфель и маржа — found/imp2-best-margin.json.' }, null, 1));
+console.log('сохранено: app/found/imp2-best.json');

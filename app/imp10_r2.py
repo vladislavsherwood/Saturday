@@ -95,6 +95,17 @@ def pick(F, t, rule, rng, n=N, K=None):
         return top(cand[age[cand] >= 365], rel)
     if rule == "TOP15_YOUNG":       # молодые (< 1 года) среди 15… крупные по капитализации
         return top(cand[age[cand] < 365], cap)
+    if rule.startswith("RND_TOP") and rule[7:].isdigit():
+        c2 = top(cand, cap, int(rule[7:])); return rng.choice(c2, size=min(n, len(c2)), replace=False)
+    if rule == "RND_TOP30_AGE1":
+        c2 = top(cand[age[cand] >= 365], cap, 30); return rng.choice(c2, size=min(n, len(c2)), replace=False)
+    if rule == "MID8":               # без 8 самых крупных: следующие по капитализации (места 9…)
+        c2 = top(cand, cap, 30); return c2[8:8 + n]
+    if rule == "TOP30_MOMVOL":       # сумма рангов силы к BTC и волатильности среди 30 крупных (возраст ≥ 1 года)
+        c2 = top(cand[age[cand] >= 365], cap, 30); c2 = c2[np.isfinite(rel[c2]) & np.isfinite(sig[c2])]
+        sc = np.argsort(np.argsort(rel[c2])) + np.argsort(np.argsort(sig[c2])); return c2[np.argsort(-sc)[:n]]
+    if rule == "TOP50_MOM":
+        return top(top(cand[age[cand] >= 365], cap, 50), rel)
     raise ValueError(rule)
 
 
@@ -137,6 +148,8 @@ if __name__ == "__main__":
     print(f"вселенная: {len(U.coins)} монет [{time.time() - t0:.0f} с]", flush=True)
     rules = ["RND", "RND_AGE1", "RND_TOP30", "CAP", "CAP_AGE1", "CAP_AGE2", "LIQ", "LIQ_AGE1", "TOP30_MOM", "TOP30_WEAK", "TOP30_VOLHI", "TOP30_VOLLO",
              "TOP30_RELPOS", "MOM_ALL", "TOP15_YOUNG"]
+    if len(sys.argv) > 3:
+        rules = sys.argv[3].split(",")
     R = run(U, F, rules)
-    json.dump(R, open(os.path.join(SP, f"imp10_r2_{N}{part}.json"), "w"))
+    json.dump(R, open(os.path.join(SP, f"imp10_r2_{N}{part}{len(sys.argv) > 3 and 'x' or ''}.json"), "w"))
     print(f"[{time.time() - t0:.0f} с]")

@@ -55,8 +55,8 @@ const lm = (v) => Math.log1p(K.med(v) / 100);
 module.exports = { K, BEST, BASE, UNITS, MODS, drop, isC, isC6, has, edgeW, EW, yIdx, load, lm };
 // упрощённые варианты круга 1. S2: без #6-8 (паника + fng<52 — копия #11-13) и #10 (разворот + фандинг — то же, что #18), охрана #9 переставлена
 // за блок паники #11-13 (в основе она и так никогда не перебивала панику: #3-8 покрывали все дни паники со страхом и usdtd < 7,6),
-// без мёртвых условий (#14-15 fng<52 при fng<40; #25 ago_qt>0.5; #5 — копия #8 после перестановки); rmUsdtd (по умолчанию) — ещё и без usdtd<7,6 в охране #9
-function simplify(S0 = BASE, { dropIdx = [5, 6, 7, 8, 10], rmUsdtd = true } = {}) {
+// без мёртвых условий (#14-15 fng<52 при fng<40; #25 ago_qt>0.5); #5 оставлен: по монетам он мёртв, но в схеме маржи su_sized неподтверждённая паника берёт размер подтверждённой (без #5 — 100% вместо 50% и ликвидации на B и P2); rmUsdtd (по умолчанию) — ещё и без usdtd<7,6 в охране #9
+function simplify(S0 = BASE, { dropIdx = [6, 7, 8, 10], rmUsdtd = true } = {}) {
   const rm = { 14: ['fng<52'], 15: ['fng<52'], 25: ['ago_qt>0.5'] }; if (rmUsdtd) rm[9] = ['usdtd'];
   const R = S0.rules.map((r, i) => (!rm[i] ? r : { ...r, conds: r.conds.filter((x) => !rm[i].some((k) => k === x.ind || k === x.ind + x.op + x.v)) }));
   const keep = R.map((r, i) => [r, i]).filter(([, i]) => !dropIdx.includes(i));
@@ -65,3 +65,22 @@ function simplify(S0 = BASE, { dropIdx = [5, 6, 7, 8, 10], rmUsdtd = true } = {}
   return { ...S0, rules: keep.map(([r]) => r) };
 }
 module.exports.simplify = simplify;
+// то же упрощение по смыслу правил (для любой сборки поверх combo-best, например combo2-best): убрать правила-копии «паника + fng<52 + usdtd<7,6»
+// (#6-8 основы) и «разворот + фандинг → 100%» (#10), охрану (act 1, btcr30 > 20) поставить за последнее правило «usdt > 1,07 и othd < 25»
+// без fng, убрать usdtd из охраны, fng<52 из правил с fng<40, ago_qt>0,5 из возврата
+function simplifyC(S0) {
+  const k = (r) => r.conds.map((x) => x.ind + x.op + x.v).join(' ');
+  const dead = (r) => (r.act > 1 && k(r).startsWith('usdt>1.07 othd<25 fng<52 usdtd<7.6')) || (r.act === 2 && k(r) === 'btcr30>20 fund30>2');
+  const R = S0.rules.filter((r) => !dead(r)).map((r) => {
+    let cs = r.conds;
+    if (cs.some((x) => x.ind === 'fng' && x.op === '<' && x.v === 40)) cs = cs.filter((x) => !(x.ind === 'fng' && x.op === '<' && x.v === 52));
+    if (cs.some((x) => x.ind === 'ago_qt')) cs = cs.filter((x) => !(x.ind === 'ago_qt' && x.op === '>'));
+    if (r.act === 1 && cs.some((x) => x.ind === 'btcr30')) cs = cs.filter((x) => x.ind !== 'usdtd');
+    return { ...r, conds: cs };
+  });
+  const g = R.findIndex((r) => r.act === 1 && r.conds.some((x) => x.ind === 'btcr30')), [guard] = R.splice(g, 1);
+  let last = -1; R.forEach((r, i) => { if (r.act > 1 && k(r).startsWith('usdt>1.07 othd<25') && !r.conds.some((x) => x.ind === 'fng')) last = i; });
+  R.splice(last + 1, 0, guard);
+  return { ...S0, rules: R };
+}
+module.exports.simplifyC = simplifyC;
