@@ -116,6 +116,11 @@
   .rule .rh b { font-size: 16px; font-weight: 750; } .rule .rh span { font-size: 13px; font-weight: 700; color: var(--mute); white-space: nowrap; }
   .rule.on .rh span { color: var(--accent); } .rule.on.sell .rh span { color: var(--sell); }
   .rule p { margin: 8px 0 0; color: var(--mute); font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .rule .chip { display: inline-block; margin: 6px 0 2px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 750; }
+  .rule .chip.buy { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .rule .chip.sell { color: var(--sell); background: color-mix(in srgb, var(--sell) 16%, transparent); }
+  .rule .chip.hold { color: var(--mute); background: var(--line); }
+  .rule .rh span { white-space: normal; text-align: right; }
   .g { margin-top: 10px; }
   .g .gl { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 650; color: var(--mute); }
   .g .gl em { font-style: normal; color: var(--text); font-weight: 750; } .g .gl em.ok { color: var(--accent); }
@@ -243,7 +248,8 @@ async function drawPnl() {
     const t0 = y(Math.max(r.o, r.c)), h0 = Math.max(2, Math.abs(y(r.o) - y(r.c))); g.beginPath(); g.roundRect ? g.roundRect(x - bw / 2, t0, bw, h0, 1.5) : g.rect(x - bw / 2, t0, bw, h0); g.fill();
   });
   const dt = (d) => new Date(d * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
-  g.fillStyle = col("--mute"); g.fillText(dt(rows[0].d), L + step * (n - rows.length), H - 3); const e = dt(rows[rows.length - 1].d); g.fillText(e, W - R - g.measureText(e).width, H - 3);
+  g.fillStyle = col("--mute"); const s0 = dt(rows[0].d), e = dt(rows[rows.length - 1].d), x0 = L + step * (n - rows.length), xe = W - R - g.measureText(e).width;
+  if (rows.length > 1 && x0 + g.measureText(s0).width + 8 < xe) g.fillText(s0, x0, H - 3); g.fillText(e, xe, H - 3);
   const tip = (ev) => { const bx = cv.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - bx.left, k = Math.floor((px - L) / step) - (n - rows.length);
     const r = rows[Math.max(0, Math.min(rows.length - 1, k))]; $("pnlTip").textContent = `${dt(r.d)}: П/У ${fmt(r.c)} (мин ${fmt(r.l)}, макс ${fmt(r.h)}) · портфель $${big(r.v)}`; };
   cv.onmousemove = tip; cv.ontouchstart = tip; cv.ontouchmove = tip; cv.onmouseleave = () => ($("pnlTip").textContent = "");
@@ -343,9 +349,11 @@ function market(i) {
   if (!i.state) return "";
   return `<h3>Рынок сейчас</h3>` + i.state.map((r, n) => {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
-    const tag = on ? "сейчас · " + esc(r.what) : all ? "выполнено, но раньше сработало другое" : left === r.conds.length ? esc(r.what) : `осталось ${left} из ${r.conds.length}`;
-    return `<div class="rule ${on ? "on" : ""} ${r.kind}" onclick="this.querySelector('p').hidden = !this.querySelector('p').hidden">
-      <div class="rh"><b>${esc(r.title)}</b><span>${tag}</span></div>${r.conds.map(gauge).join("")}<p ${on ? "" : "hidden"}>${esc(r.why)}</p></div>`;
+    const tag = on ? "сработало сейчас" : all ? "выполнено, но раньше сработало другое" : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
+    const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
+    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? `■ ${esc(w)}` : `▲ Купить: ${esc(r.what)}`;
+    return `<div class="rule ${on ? "on" : ""} ${kind}" onclick="this.querySelector('p').hidden = !this.querySelector('p').hidden">
+      <div class="rh"><b>${esc(r.title)}</b><span>${tag}</span></div><div class="chip ${kind}">${act}</div>${r.conds.map(gauge).join("")}<p ${on ? "" : "hidden"}>${esc(r.why)}</p></div>`;
   }).join("") + `<div class="note">Правила проверяются сверху вниз, срабатывает первое выполненное. Серая точка — где показатель был неделю назад.</div>`;
 }
 function actionCard(i) {
