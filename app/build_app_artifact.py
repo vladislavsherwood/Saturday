@@ -7,6 +7,7 @@
 """
 import json
 import os
+import numpy as np
 import re
 import sys
 
@@ -31,6 +32,22 @@ def main(out):
         h["strategies"] = [s for s in h["strategies"] if s["code"] in KEEP]
         coins[symbol] = {"name": name, "kind": kind, "h": h}
         print(f"{symbol}: {len(h['t'])} дней по {h['as_of']}, стратегий {len(h['strategies'])}")
+    # combo4 (итоговая): план с отложенной паникой из app_combo4 — та же логика, что проверена в бэктестах и марже
+    import app_combo4 as C4
+    R = C4.compute([(s, c["kind"]) for s, c in coins.items()])
+    cache = {}
+    for s, c in coins.items():
+        if s not in R:
+            continue
+        B, k = R[s]["B"], R[s]["k"]
+        def ind(name, i, B=B, k=k):
+            if not name or i is None or i < 0: return None
+            if name not in cache: cache[name] = B.series(name)
+            v = cache[name][i, k]
+            return None if not np.isfinite(v) else float(v)
+        st = C4.strategy(s, c["h"], R[s], ind)
+        c["h"]["strategies"].insert(0, st)
+        print(f"{s}: combo4 сегодня {st['plan_today']:+.3f} — {st['action']} | {st['label']}")
     snap = {"as_of": max(c["h"]["as_of"] for c in coins.values()), "coins": coins}
     page = open(os.path.join(HERE, "web", "index.html"), encoding="utf-8").read()
     css = re.search(r"<style>(.*?)</style>", page, re.S).group(1)

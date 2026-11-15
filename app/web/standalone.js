@@ -6,7 +6,7 @@ let col = null, sampler = null;
 const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
 const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
-const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
+const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo4") ? "combo4" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
 async function boot() {
   try {
@@ -29,6 +29,12 @@ async function boot() {
   if (mem.mig !== "main2") {
     for (const t of mem.tickers) if (t.strategy === "quiet" && coin(t.symbol).h.strategies.some((x) => x.code === "main")) t.strategy = "main";
     mem.mig = "main2";
+    try { await saveCfg(); } catch (e) {}
+  }
+  // один раз (ноябрь 2026, по просьбе пользователя): все монеты переходят на итоговую стратегию combo4
+  if (mem.mig !== "combo4") {
+    for (const t of mem.tickers) if (coin(t.symbol).h.strategies.some((x) => x.code === "combo4")) t.strategy = "combo4";
+    mem.mig = "combo4";
     try { await saveCfg(); } catch (e) {}
   }
 }
