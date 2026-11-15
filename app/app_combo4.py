@@ -103,7 +103,7 @@ def compute(coins):
     usdt, othd, C = B.series("usdt"), B.series("othd"), B.C
     isP = np.array([r["act"] > 1 and has(r, "usdt") for r in S["rules"]] + [False])
     import combo3_margin as C3M
-    SM, LM = C3M.scheme6({"base": 1, "rules": S4["rules"]}, lp=1.5, sr=1.0, t1grp="off")
+    SM, LM = C3M.scheme6({"base": 1, "rules": S4["rules"]}, lp=1.45, lr=1.45, sr=1.0, t1grp="off")   # базовое плечо ×1,45 (решение пользователя), дно ×2
     AM, GM, RIM = B.plan(SM)
     isPM = np.array([r["act"] > 1 and has(r, "usdt") for r in SM["rules"]] + [False])
     F = np.array([fam(r) for r in S["rules"]] + [-1])
