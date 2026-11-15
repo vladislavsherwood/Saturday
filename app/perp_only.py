@@ -28,7 +28,7 @@ for name, coins in GR:
     for lab, lev, perp in MODES:
         S, L = C3M.scheme6(ST, sr=1.0, t1grp="off", **({"lp": lev} if lev else {"lev": False})); A, G = P.mats(S, all_lag=0)
         WT = (0.5, 0.5) if lev else (1.0,)
-        k = I6.cfg(P, WT=WT, SPL=C3M.SPLIT if lev else [0] * 8, **(dict(hlx=True, hl=2, perp_all=True, fund=0.10 / 365) if perp else {}))
+        k = I6.cfg(P, WT=WT, SPL=C3M.SPLIT if lev else [0] * 8, mino=float(os.environ.get("MINO", 0)), minb=float(os.environ.get("MINB", 0)), **(dict(hlx=True, hl=2, perp_all=True, fund=0.10 / 365) if perp else {}))
         f = lambda s, sv: sim6(P.B.C[sl], P.B.LO[sl], P.B.HI[sl], A[sl], G[sl], np.zeros(P.B.C[sl].shape), np.ones(P.B.C[sl].shape), int(s), P.B.levmat(L), sv,  # noqa: E731
                                0.15 / 365, 0.11 / 365, k["WT"], k["SPL"], k["FEES"], k["FEEP"], k["PERP"], k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"], k["LD"], k["XC"], 0.0)
         o = [f(s, 1.0) for s in starts]; x = np.array([q[1] for q in o]) * 100
