@@ -27,11 +27,12 @@ function dec(s, kind) {
   for (let i = 0; i < o.length; i++) { if (kind === 'lg') { const v = b.readUInt16LE(2 * i); o[i] = v === 0 ? NaN : 10 ** (v / 1000 - 3); } else { const v = b.readInt16LE(2 * i); o[i] = v === -32768 ? NaN : v / 1e4; } }
   return o;
 }
+const dec8 = (s, lo, n, step = 0.03) => { const o = new Float64Array(n); o.fill(NaN); if (!s) return o; const b = Buffer.from(s, 'base64'); for (let i = 0; i < b.length; i++) o[i] = b[i] === 0 ? NaN : 10 ** ((b[i] - 1) * step + lo); return o; };
 const weekly = (s, n) => { const w = dec(s, 'lg'), o = new Float64Array(n); for (let i = 0; i < n; i++) o[i] = w[Math.min(Math.floor(i / 7), w.length - 1)]; return o; };
 const LOW = {};
-for (const [k, x] of Object.entries(LD.coins)) LOW[k] = { ...x, t0: DAY(x.first), c: dec(x.c, 'f4'), v: dec(x.v, 'lg'), hv: dec(x.hv, 'lg'), f: dec(x.f, 'fu'), oi: dec(x.oi, 'lg'), sup: weekly(x.sup, x.n) };
+for (const [k, x] of Object.entries(LD.coins)) LOW[k] = { ...x, t0: DAY(x.first), c: dec(x.c, 'f4'), v: dec8(x.v, x.v_lo, x.n), hv: dec8(x.hv, x.hv_lo, x.n), f: dec(x.f, 'fu'), oi: dec8(x.oi, x.oi_lo, x.n), sup: weekly(x.sup, x.n) };
 const STAND = {};
-for (const [k, x] of Object.entries(LD.stand || {})) STAND[k] = { t0: DAY(x.first), sup: weekly(x.sup, x.n) };
+for (const [k, x] of Object.entries(LD.stand || {})) { const nan = new Float64Array(x.n).fill(NaN); STAND[k] = { t0: DAY(x.first), sup: weekly(x.sup, x.n), v: dec8(x.v, x.v_lo, x.n), hv: nan, f: nan, oi: nan }; }
 
 // ---------- окна (только прошлое) ----------
 const roll = (a, w, f) => { const n = a.length, o = new Float64Array(n); for (let i = 0; i < n; i++) { let s = [], k = 0; for (let j = Math.max(0, i - w + 1); j <= i; j++) if (!isNaN(a[j])) s.push(a[j]); o[i] = s.length >= Math.ceil(w * 0.6) ? f(s) : NaN; } return o; };
@@ -108,7 +109,7 @@ function load(list = ['lsel', 'lchk', 'sel', 'ex', 'rnd', 'n100']) {
   for (const g in G) for (const X of G[g]) {
     X.grp = g; tday(X);
     if (X.low) { capFeatures(X, X.low.sup, X.low.t0); lowFeatures(X, X.low); constInd(X, 'islc', 1); }
-    else { const st = STAND[STAND_KEY(X, g)]; if (st) capFeatures(X, st.sup, st.t0); else { for (const k of ['mc', 'mcm', 'mcsh', 'mcsh90', 'mcm90']) { const a = new Float64Array(X.n); a.fill(NaN); X.ind[k] = a; } } constInd(X, 'islc', 0); }
+    else { const st = STAND[STAND_KEY(X, g)]; if (st) { capFeatures(X, st.sup, st.t0); lowFeatures(X, st); } else { for (const k of ['mc', 'mcm', 'mcsh', 'mcsh90', 'mcm90']) { const a = new Float64Array(X.n); a.fill(NaN); X.ind[k] = a; } } constInd(X, 'islc', 0); }
   }
   return (G0 = G);
 }
