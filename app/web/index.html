@@ -135,6 +135,7 @@
   .rule .rh b { font-size: 16px; font-weight: 750; } .rule .rh span { font-size: 13px; font-weight: 700; color: var(--mute); white-space: nowrap; }
   .rule.on .rh span { color: var(--accent); } .rule.on.sell .rh span { color: var(--sell); }
   .rule p { margin: 8px 0 0; color: var(--mute); font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .act .steps { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.4; color: var(--mute); } .act .steps li { margin: 3px 0; } .act .steps strong { color: var(--text); font-weight: 750; font-size: inherit; }
   .rule .chip { display: inline-block; margin: 6px 0 2px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 750; }
   .rule .chip.buy { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
   .rule .chip.sell { color: var(--sell); background: color-mix(in srgb, var(--sell) 16%, transparent); }
@@ -306,6 +307,7 @@ function phrase(i) {
     if (i.nothing_to_sell) return `<i class="s">продавать нечего</i> · взнос в резерв`;
     if (i.mode === "perp" && a >= 0 && i.amount > 0) return `<i>открыть лонг${i.borrowed > 0 ? `, плечом $${big(i.borrowed)}` : ""}</i>${a > 1 ? " · " + esc(why) : ""}`;
     if (i.margin && a >= 0 && i.borrowed > 0 && a <= 1) return `обычный взнос · <i>$${big(i.borrowed)} в долг</i>`;
+    if (/^копим/.test(i.action || "") && a <= 1) return `обычный взнос · <i>копим резерв до разворота USDT</i>`;
     if (a < 0) return `<i class="s">продать ${Math.round(-a * 100)}%</i> · ${esc(why)}`;
     if (a > 1) return `<i>взнос + ${a >= 2 ? "весь резерв" : Math.round((a - 1) * 100) + "% резерва"}</i> · ${esc(why)}`;
     return "обычный взнос";
@@ -393,7 +395,7 @@ function market(i) {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
     const tag = on ? "сработало сейчас" : all ? "выполнено, но раньше сработало другое" : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
     const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
-    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? `■ ${esc(w)}` : `▲ Купить: ${esc(r.what)}`;
+    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? `■ ${esc(w)}` : /копится/.test(r.what) ? `⏸ ${esc(w)}` : `▲ Купить: ${esc(r.what)}`;
     return `<div class="rule ${on ? "on" : ""} ${kind}" onclick="this.querySelector('p').hidden = !this.querySelector('p').hidden">
       <div class="rh"><b>${esc(r.title)}</b><span>${tag}</span></div><div class="chip ${kind}">${act}</div>${r.conds.map(gauge).join("")}<p ${on ? "" : "hidden"}>${esc(r.why)}</p></div>`;
   }).join("") + `<div class="note">Правила проверяются сверху вниз, срабатывает первое выполненное. Серая точка — где показатель был неделю назад.</div>`;
@@ -403,12 +405,15 @@ function actionCard(i) {
   const a = i.plan_today, kind = a < 0 ? "sell" : a > 1 ? "buy" : "", r = i.state && i.rule >= 0 ? i.state[i.rule] : null;
   const perp = i.mode === "perp";
   const head = i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
+  const owed = (i.label || "").match(/отложено (\d+)% резерва/), copit = /^копим/.test(i.action || ""), release = /^разворот USDT/.test(i.action || "");
   const sub = i.nothing_to_sell ? "Сигнал на продажу, но позиции пока нет. Сегодняшний взнос остаётся в резерве." : r ? r.why : "Сигналов нет — обычный ежедневный взнос.";
+  const steps = copit ? `<ol class="steps"><li><strong>Сегодня:</strong> только обычный взнос.</li><li><strong>Копим:</strong> покупку из резерва${owed ? ` (сейчас ≈${owed[1]}% резерва)` : ""} не делаем, она откладывается.</li><li><strong>Потом:</strong> когда доля USDT развернётся вниз (на 3,5% от своего 10-дневного пика), приложение скажет купить отложенное вдвойне.</li></ol>`
+    : release ? `<ol class="steps"><li><strong>Сегодня:</strong> доля USDT развернулась вниз — покупаем отложенное ×2 сверх взноса.</li></ol>` : "";
   const mg = i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
     : perp ? (i.amount > 0 && i.borrowed > 0 ? `Перп, плечо: из $${big(i.amount)} залог $${big(i.amount - i.borrowed)} своих, $${big(i.borrowed)} — плечом.` : i.amount > 0 ? `Перп без плеча: залог $${big(i.amount)}.` : "")
     : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "") : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
-  return `<div class="act ${kind}"><b>${head}</b><p>${esc(sub)}</p>${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}</div>`;
+  return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}</div>`;
 }
 function position(i) {
   const cells = [["В активе", "$" + big(i.holding || 0)], ["Количество", i.qty ? qty(i.qty) : "—"], ["Средняя цена", i.avg_price ? "$" + qty(i.avg_price) : "—"]];
