@@ -29,7 +29,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = POL, hk = null) {
     if (a < 0) { const amt = Math.min(1, -a) * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); sold = amt; if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) {
       let want, pan = false, rel = 0;
-      if (pol && pol.buy && q >= 0 && R[q].p && Math.abs(a - R[q].act) < 1e-12) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
+      if (pol && pol.buy && q >= 0 && R[q].p && a > 1) { /* доля паники могла быть изменена крючком — откладывается изменённая доля */ const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
       else { want = UNIT + (a - 1) * before; pan = q >= 0 && R[q].p; }
       if (pol && pol.release && st.owed > 0 && j >= 0) { const k = pol.release({ X, j, before, st }); if (k > 0) { rel = Math.min(1, k) * st.owed; st.owed -= rel; } }
       if (pol && pol.extra && j >= 0) { const k = pol.extra({ X, j, before, st }); if (k > 0) rel += Math.min(1, k) * before; }
