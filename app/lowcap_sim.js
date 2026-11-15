@@ -136,7 +136,7 @@ function cmpLow(r, b, g) {
 const sg = (v, k = 3) => (v >= 0 ? '+' : '') + v.toFixed(k);
 function line(tag, r, b) {
   const s = [];
-  for (const g of ['lsel', 'lchk']) if (r[g]) { const o = cmpLow(r, b, g); s.push(`${g === 'lsel' ? 'ЛОтбор' : 'ЛПров'} ${o.R.med.toFixed(0)}/${o.R.pos}/${o.R.hpos}/${o.R.hworst.toFixed(0)} ср.лог ${sg(o.dlog)} мед ${sg(o.dmed)} ${o.u}/${o.d}${o.strict ? '✔' : '·'}`); }
+  for (const g of process.env.LOWCAP_SHOW_CHK ? ['lsel', 'lchk'] : ['lsel']) if (r[g]) { const o = cmpLow(r, b, g); s.push(`${g === 'lsel' ? 'ЛОтбор' : 'ЛПров'} ${o.R.med.toFixed(0)}/${o.R.pos}/${o.R.hpos}/${o.R.hworst.toFixed(0)} ср.лог ${sg(o.dlog)} мед ${sg(o.dmed)} ${o.u}/${o.d}${o.strict ? '✔' : '·'}`); }
   if (r.sel) { const o = cmpStd(r, b); s.push(`стенд ${sg(o.inc)}${o.pass ? '✔' : '·' + o.why} [${['sel', 'ex', 'rnd', 'n100'].filter((g) => o.R[g]).map((g) => `${o.R[g].med.toFixed(0)}/${o.R[g].pos}/${o.R[g].hpos}/${o.R[g].hworst.toFixed(0)}`).join(' ')}]` + (r.n100 ? ` 100н ${bw(r, b, 'n100').join('/')}` : '')); }
   return `${tag}\n   ${s.join('\n   ')}`;
 }
