@@ -63,6 +63,8 @@ const load = () => G0 || (G0 = Z.load());
 const GR = ['sel', 'ex', 'rnd'];
 let BS = null, Bc = null;
 function base(G) { if (!BS) { Bc = Z.evc(G, Z.build(OPT), [...GR, 'n100']); BS = Z.sum(Bc); } return { b: Bc, bs: BS }; }
+// «мягкая» строгая: те же пункты, но худшая монета/половина с допуском 0,15 п.п. (только для суждения о плато)
+function soft(R, B, s, tol = 0.15) { let n = 0; for (const g of GR) { const x = R[g][s], y = B[g][s]; if (!x) continue; if (x.pos < y.pos) n++; if (x.hpos < y.hpos) n++; if (x.hworst < y.hworst - tol) n++; if (g !== 'rnd' && x.worst < y.worst - tol) n++; } return n; }
 // оценка варианта к combo2: доход (сумма лог-медиан) всего и сегментов, строгая всего и по сегментам
 function run(G, p = {}, list = GR) {
   const { bs } = base(G); const S = build(G, p);
@@ -70,13 +72,14 @@ function run(G, p = {}, list = GR) {
   const d = {}, f = {};
   for (const s of Z.SEGS) { d[s] = +(Z.inc(R, s) - Z.inc(bs, s)).toFixed(4); f[s] = Z.strict(R, bs, s); }
   const nf = Object.values(f).reduce((t, a) => t + a.length, 0);
-  return { p, d, f, nf, ok: nf === 0, R, r, med: Object.fromEntries(list.map((g) => [g, +R[g].all.med.toFixed(1)])) };
+  let ns = 0; for (const s of Z.SEGS) ns += soft(R, bs, s);
+  return { p, d, f, nf, ns, ok: nf === 0, R, r, med: Object.fromEntries(list.map((g) => [g, +R[g].all.med.toFixed(1)])) };
 }
-const line = (x) => `d=${x.d.all.toFixed(4)} крп ${x.d.big.toFixed(4)} альт ${x.d.alt.toFixed(4)} мем ${x.d.meme.toFixed(4)} ${x.ok ? '✔' : '·' + x.nf + ' ' + Object.entries(x.f).filter(([, a]) => a.length).map(([s, a]) => s + ':' + a.slice(0, 2).join(',')).join(' ')} | ${GR.map((g) => x.med[g]).join('/')}`;
+const line = (x) => `d=${x.d.all.toFixed(4)} крп ${x.d.big.toFixed(4)} альт ${x.d.alt.toFixed(4)} мем ${x.d.meme.toFixed(4)} ${x.ok ? '✔' : '·' + x.nf + (x.ns ? '' : '(мягк✔)') + ' ' + Object.entries(x.f).filter(([, a]) => a.length).map(([s, a]) => s + ':' + a.slice(0, 2).join(',')).join(' ')} | ${GR.map((g) => x.med[g]).join('/')}`;
 // перебор одного параметра (или пары) вокруг P; печать и запись
 function sweep(G, name, vals, P = {}) {
   const out = [];
-  for (const v of vals) { const x = run(G, { ...P, [name]: v }); out.push({ v, d: x.d, nf: x.nf, ok: x.ok, f: x.f, med: x.med }); console.log(`${name}=${String(v).padEnd(7)} ${line(x)}`); }
+  for (const v of vals) { const x = run(G, { ...P, [name]: v }); out.push({ v, d: x.d, nf: x.nf, ns: x.ns, ok: x.ok, f: x.f, med: x.med }); console.log(`${name}=${String(v).padEnd(7)} ${line(x)}`); }
   return out;
 }
 const rng = (a, b, s) => { const o = []; for (let v = a; v <= b + 1e-9; v += s) o.push(+v.toFixed(4)); return o; };

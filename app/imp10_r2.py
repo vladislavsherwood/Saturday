@@ -7,7 +7,7 @@ import numpy as np, pandas as pd
 from imp10_port import Uni, YCID, S_BEST, nolev, DCA, IDX, STARTS, simw, mcap, STABLE, SP
 import glob, os
 
-N = int(sys.argv[1]) if len(sys.argv) > 1 else 8
+N = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8
 WRAP = {"WBTC", "STETH", "WETH", "WBETH", "CBBTC", "WEETH", "RETH", "BTCB", "LBTC", "SOLVBTC", "PAXG", "XAUT", "JITOSOL", "MSOL", "BETH", "FRAX", "LUSD", "GUSD", "USDP",
         "USDD", "USD0", "USDX", "SUSDE", "USDY", "BUIDL", "USDTB", "RLUSD", "USD1", "USDF", "XSGD", "EURS", "TBTC", "RENBTC", "HBTC", "WBNB", "CUSDC", "CDAI"}
 
