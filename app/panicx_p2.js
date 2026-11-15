@@ -4,12 +4,13 @@
      k: доля сразу; kf/sp — если usdt вырос за 7 дней больше чем на sp (usdt7 > 1 + sp), доля kf (сильнее рост — больше откладываем)
      выдача: r1 — доля долга на первом развороте (upk10 < rv), остаток — по second ('deep' upk10 < rv2, 'liq' oidd30 < −28, 'cap' fng < 10, 'fear' fngd7 > fv, 'oi' oic7 > 0, 'none')
              или в конце эпизода. Флаг «первый разворот» сбрасывается, когда usdt снова у пика (upk10 ≥ t).
-   Индикаторы (только прошлое): upk10 = usdt / max usdt за 10 дн; usdt7 = usdt / usdt 7 дн назад; epn — сколько эпизодов паники началось раньше текущего. */
+   Индикаторы (только прошлое): upk10 = usdt / max usdt за 10 дн (pk — окно 5/7/14/20: upkN); usdt7 = usdt / usdt 7 дн назад; epn — сколько эпизодов паники началось раньше текущего. */
 const P = require('./panicx_sim.js'), Z = P.Z;
 const G = P.load();
 for (const g in G) for (const X of G[g]) {
   const I = X.ind, u = I.usdt, n = X.n;
   if (!I.upk10) { const a = new Float64Array(n); for (let i = 0; i < n; i++) { let m = -Infinity; for (let k = Math.max(0, i - 9); k <= i; k++) if (u[k] > m) m = u[k]; a[i] = u[i] / m; } I.upk10 = a; }
+  for (const N of [5, 7, 14, 20]) { const a = new Float64Array(n); for (let i = 0; i < n; i++) { let m = -Infinity; for (let k = Math.max(0, i - N + 1); k <= i; k++) if (u[k] > m) m = u[k]; a[i] = u[i] / m; } I['upk' + N] = a; }
   const a7 = new Float64Array(n).fill(NaN); for (let i = 7; i < n; i++) a7[i] = u[i] / u[i - 7]; I.usdt7 = a7;
   const ep = new Float64Array(n); let cnt = 0; for (let i = 0; i < n; i++) { if (I.pday[i] === 1) cnt++; ep[i] = Math.max(0, cnt - 1); } I.epn = ep;
 }
@@ -40,16 +41,17 @@ function Pol2(opt = {}) {
     buy: ({ X, j, share }) => {
       const I = X.ind;
       if (I.usdt[j] > o.su) return share;
-      if (!gateOf(o, I, j) || !(I.upk10[j] >= o.t)) return share;
+      if (!gateOf(o, I, j) || !(I[o.pk || 'upk10'][j] >= o.t)) return share;
       if (o.sp != null && I.usdt7[j] > 1 + o.sp) return share * o.kf;
       return share * o.k;
     },
     release: ({ X, j, st }) => {
       const I = X.ind;
       if (I.pend[j]) return 1;
-      if (I.upk10[j] >= o.t) st.hit = false;
+      const U = I[o.pk || 'upk10'];
+      if (U[j] >= o.t) st.hit = false;
       if (o.r1 < 1 && second(o, I, j)) return 1;
-      if (I.upk10[j] < o.rv) { if (o.r1 >= 1) return 1; if (!st.hit) { st.hit = true; return o.r1; } }
+      if (U[j] < o.rv) { if (o.r1 >= 1) return 1; if (!st.hit) { st.hit = true; return o.r1; } }
       return 0;
     },
   };
