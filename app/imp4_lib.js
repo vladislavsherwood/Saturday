@@ -33,7 +33,11 @@ function market(G) {
   const B = new Map(); for (let i = 1; i < btcX.n; i++) B.set(btcX.t[i], btcX.c[i] / btcX.c[i - 1] - 1);
   const T = [...by.keys()].sort((a, b) => a - b), M = new Map();
   for (const t of T) { const v = by.get(t); if (v.length < 8) continue; M.set(t, { alt: K.med(v), n: v.length, btc: B.get(t) }); }
-  return { M, btcX };
+  // xret(t, w): медиана по монетам их собственной доходности от t−w до t (обе цены есть)
+  const CO = []; for (const g in G) for (const X of G[g]) if (X.name !== 'BTC' && !/USD|CHF|DAI/.test(X.name)) CO.push(X);
+  const cache = new Map();
+  const xret = (t, w) => { const key = t * 1000 + w; if (cache.has(key)) return cache.get(key); const v = []; for (const X of CO) { const i = t - X.t[0], j = i - w; if (j < 0 || i >= X.n || X.t[i] !== t || X.t[j] !== t - w) continue; const r = X.c[i] / X.c[j] - 1; if (isFinite(r)) v.push(r); } const o = v.length >= 8 ? K.med(v) : NaN; cache.set(key, o); return o; };
+  return { M, btcX, xret };
 }
 module.exports = { K, BASE, S0, path, market, day, tOf, compile, decide, FEE, UNIT };
 // ZEC (нет в группах): рыночные индикаторы — с BTC той же даты, свои — c, h, l, hi90, up90, rel180 (как в lab.js/agent_sim/combo_inject)
