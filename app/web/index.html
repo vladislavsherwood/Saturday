@@ -166,7 +166,7 @@
   <button class="fab alt" id="scanFab" aria-label="Сделка со скриншота"><svg viewBox="0 0 24 24"><path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg></button>
   <button class="fab" id="fab" aria-label="Добавить актив"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
 </div>
-<input type="file" id="file" accept="image/*" hidden>
+<input type="file" id="file" accept="image/*" multiple hidden>
 
 <div class="veil" id="veil"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -396,21 +396,36 @@ function shrink(file) {          // уменьшаем снимок до 1600 п
     img.src = url;
   });
 }
-$("file").addEventListener("change", async (e) => {
-  const f = e.target.files[0]; if (!f) return;
-  openSheet('<div class="spin"></div><div class="hint">Читаю скриншот…</div>');
+// можно выбрать сразу несколько скриншотов: все читаются (по два одновременно), затем сделки показываются по очереди
+let queue = [], qTotal = 0;
+async function readShot(f) {
   try {
     const url = await shrink(f), r = await api("/api/scan", { method: "POST", body: JSON.stringify({ image: url.split(",")[1], media_type: "image/jpeg" }) });
-    if (!r.found) { toast(r.note || "На скриншоте не нашлось сделки"); return tradeForm({ ...draft, shot: url, note: r.note, warn: true }); }
-    tradeForm({ symbol: draft.symbol || r.symbol, asset: r.asset, side: r.side, amount: r.amount_usd, qty: r.quantity, price: r.price, fee: r.fee_usd, day: r.date, note: r.note, computed: r.computed || [], shot: url, scanned: true,
-      warn: !!(r.currency && !/^USD[TC]?$/i.test(r.currency) && r.amount_usd == null) });
-  } catch (err) { toast(err.message); tradeForm({ ...draft }); }
+    if (!r.found) return { ...draft, shot: url, note: r.note || "На скриншоте не нашлось сделки", warn: true };
+    return { symbol: draft.symbol || r.symbol, asset: r.asset, side: r.side, amount: r.amount_usd, qty: r.quantity, price: r.price, fee: r.fee_usd, day: r.date, note: r.note, computed: r.computed || [], shot: url, scanned: true,
+      warn: !!(r.currency && !/^USD[TC]?$/i.test(r.currency) && r.amount_usd == null) };
+  } catch (err) { return { ...draft, note: (f.name ? f.name + ": " : "") + err.message, warn: true }; }
+}
+$("file").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; if (!files.length) return;
+  const base = { ...draft }, out = new Array(files.length); let done = 0, next = 0;
+  const show = () => openSheet(`<div class="spin"></div><div class="hint">${files.length > 1 ? `Читаю скриншоты: ${done} из ${files.length}…` : "Читаю скриншот…"}</div>`);
+  show();
+  const worker = async () => { while (next < files.length) { const i = next++; draft = { ...base }; out[i] = await readShot(files[i]); done++; show(); } };
+  await Promise.all([worker(), worker()]);
+  draft = base; queue = out; qTotal = out.length; nextShot();
 });
+function nextShot() {
+  if (!queue.length) { qTotal = 0; return; }
+  const d = queue.shift(); if (d.warn && !d.scanned && d.note) toast(d.note);
+  tradeForm(d);
+}
 function tradeForm(d) {
   draft = { side: "buy", day: state.day, ...d, side: d.side || "buy", day: d.day || state.day };
   const coins = state.items.map((i) => i.symbol), v = (x) => (x == null ? "" : x), mark = (k) => (draft.computed || []).includes(k) ? " · посчитано" : "";
   const unknown = draft.scanned && !draft.symbol;
-  openSheet(`<div class="title">${draft.scanned ? "Проверьте сделку" : "Новая сделка"}</div>
+  const pos = qTotal > 1 ? ` <span style="font-size:15px;font-weight:600;color:var(--mute);white-space:nowrap">${qTotal - queue.length} из ${qTotal}</span>` : "";
+  openSheet(`<div class="title">${draft.scanned ? "Проверьте сделку" : "Новая сделка"}${pos}</div>
     ${draft.shot ? `<img class="shot" src="${draft.shot}" alt="Скриншот сделки">` : ""}
     ${draft.note ? `<div class="note ${draft.warn ? "warn" : ""}">${esc(draft.note)}</div>` : ""}
     ${unknown ? `<div class="note warn">На скриншоте ${esc(draft.asset || "актив")}, которого нет в вашем списке. Выберите тикер ниже или сначала добавьте его.</div>` : ""}
@@ -420,7 +435,7 @@ function tradeForm(d) {
     <div class="field"><span>Количество${mark("quantity")}</span><input id="fQty" type="number" inputmode="decimal" value="${v(draft.qty)}" placeholder="из суммы и цены"></div>
     <div class="field"><span>Цена, $${mark("price")}</span><input id="fPrice" type="number" inputmode="decimal" value="${v(draft.price)}" placeholder="из суммы и количества"></div>
     <div class="field"><span>Дата</span><input id="fDay" type="date" value="${esc(draft.day)}" max="${state.day}"></div>
-    <div class="row2"><button class="btn" onclick="closeSheet()">Отмена</button><button class="btn main" id="fSave">Записать</button></div>
+    <div class="row2"><button class="btn" onclick="${queue.length ? "nextShot()" : "qTotal = 0; closeSheet()"}">${queue.length ? "Пропустить" : "Отмена"}</button><button class="btn main" id="fSave">Записать</button></div>
     ${draft.scanned ? '<div class="note">В журнал попадёт только то, что в полях выше — поправьте, если что-то прочитано неверно.</div>' : ""}`);
   $("fCoins").addEventListener("click", (e) => { const b = e.target.closest("[data-c]"); if (!b) return; draft.symbol = b.dataset.c; $("fCoins").querySelectorAll(".pill").forEach((x) => x.classList.toggle("on", x === b)); });
   $("fSide").addEventListener("click", (e) => { const b = e.target.closest("[data-s]"); if (!b) return; draft.side = b.dataset.s; $("fSide").querySelectorAll(".pill").forEach((x) => x.classList.toggle("on", x === b)); });
@@ -434,7 +449,8 @@ async function saveTrade() {
   $("fSave").disabled = true;
   try {
     await api("/api/trades", { method: "POST", body: JSON.stringify({ symbol: draft.symbol, side: draft.side, amount, qty: q, price, fee: draft.fee || 0, day: $("fDay").value || state.day, source: draft.scanned ? "scan" : "manual" }) });
-    haptic("ok"); const sym = draft.symbol; await load(); toast("Сделка записана", true); openTicker(sym);
+    haptic("ok"); const sym = draft.symbol; await load(); toast("Сделка записана", true);
+    if (queue.length) nextShot(); else { qTotal = 0; openTicker(sym); }
   } catch (e) { toast(e.message); $("fSave").disabled = false; }
 }
 
