@@ -8,7 +8,7 @@ const Z = require('./combo2_sim.js');
 const G = Z.load(['sel', 'ex', 'rnd', 'mine']);
 const WANT = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA', 'DOGE', 'LINK', 'HYPE', 'PUMP', 'PEPE', 'PENGU', 'ENA', 'ZEC', 'VVV', 'MYX', 'USELESS'];
 const rd = (f) => JSON.parse(fs.readFileSync(__dirname + '/found/' + f, 'utf8'));
-const STRATS = [{ id: 'combo3', name: 'combo3 (итоговая)', S: rd('combo3-best.json') }];
+const STRATS = [{ id: 'combo4', name: 'combo4 (итоговая)', S: rd('combo3-best.json') }]; // combo4 = правила combo3 без tune1 + отложенная паника (симуляция в странице)
 const FEE = 0.001, U = 10;
 function label(r) {
   const h = (k) => r.conds.some((c) => c.ind === k), v = (k) => (r.conds.find((c) => c.ind === k) || {}).v;
@@ -55,7 +55,14 @@ for (const nm of WANT) {
   // таблица правил монеты: [доля, подпись]; rq[i] — правило, которое исполняется в день i (решено по дню i−1)
   const rt = [], key = {}, rq = new Array(X.n).fill(-1);
   for (let i = 1; i < X.n; i++) { const q = dec(i - 1); if (q < 0) continue; const r = R[q].r, k = r.act + '|' + label(r); if (key[k] == null) { key[k] = rt.length; rt.push([+r.act.toFixed(6), label(r)]); } rq[i] = key[k]; }
-  out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq });
+  // отложенная паника (combo4): флаги дня исполнения i по данным дня i−1 — 1: отложить (возраст > 540, usdt ≤ 1,2, upk10 ≥ 0,98),
+  // 2: разворот usdt (upk10 < 0,965) — выдать долг ×2, 4: конец эпизода паники (10 дней без паники) — выдать долг без надбавки
+  const I = X.ind, u = I.usdt, pf = new Array(X.n).fill(0); let last = -1e9, st = -1;
+  const upk = (j) => { let m = -Infinity; for (let k = Math.max(0, j - 9); k <= j; k++) if (u[k] > m) m = u[k]; return u[j] / m; };
+  const pend = new Array(X.n).fill(0);
+  for (let j = 0; j < X.n; j++) { const on = u[j] > 1.07 && I.othd[j] < 25; if (on) { if (j - last > 10) st = j; last = j; } if (st >= 0 && !on && j - last === 10) pend[j] = 1; }
+  for (let i = 1; i < X.n; i++) { const j = i - 1, k = upk(j); pf[i] = (I.age[j] > 540 && u[j] <= 1.2 && k >= 0.98 ? 1 : 0) | (k < 0.965 ? 2 : 0) | (pend[j] ? 4 : 0); }
+  out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq, pf: pf.join('') });
   const r0 = run(X, S); console.log(nm, X.seg, X.n, 'дней, правил', rt.length, 'итог $' + Math.round(r0.eq[X.n - 1]));
 }
 fs.writeFileSync(process.argv[2], JSON.stringify(out));

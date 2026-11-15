@@ -63,7 +63,7 @@
 <div class="wrap">
   <header>
     <h1>Сделки стратегии по монетам</h1>
-    <p class="lead">Итоговая стратегия (combo3) на графике цены, шкала логарифмическая. Кружок с заливкой — покупка из резерва, кольцо — продажа. Цвет — правило, которое вызвало сделку. Размер — доля счёта, которую составила сделка в тот момент. Взнос $10 в день с выбранной даты старта, решение по вчерашнему закрытию, комиссия 0,1%. Стратегия и DCA пересчитываются заново от даты старта. Обычные ежедневные взносы не показаны.</p>
+    <p class="lead">Итоговая стратегия (combo4: combo3 + отложенная паника) на графике цены, шкала логарифмическая. Кружок с заливкой — покупка из резерва, кольцо — продажа. Цвет — правило, которое вызвало сделку. Размер — доля счёта, которую составила сделка в тот момент. Взнос $10 в день с выбранной даты старта, решение по вчерашнему закрытию, комиссия 0,1%. Стратегия и DCA пересчитываются заново от даты старта. Паника в стейблах, пока доля USDT растёт, откладывает свою покупку и тратит её вдвойне на развороте USDT — это отдельный цвет «выдача отложенной паники». Обычные ежедневные взносы не показаны.</p>
   </header>
 
   <div class="bar" id="coins" role="group" aria-label="Монета"></div>
@@ -100,7 +100,7 @@
 const D = /*DATA*/null;
 const U = D.unit, FEE = D.fee;
 // правило → цвет; покупки — заливка, продажи — кольцо, поэтому цвета покупок и продаж могут повторяться
-const BUY = [['капитуляция', '--c1'], ['волна ликвидаций', '--c2'], ['отложенная покупка', '--c3'], ['паника в стейблах', '--c4'], ['разворот биткоина', '--c5'], ['возврат после вершины', '--c6']];
+const BUY = [['капитуляция', '--c1'], ['волна ликвидаций', '--c2'], ['отложенная покупка', '--c3'], ['паника в стейблах', '--c4'], ['разворот биткоина', '--c5'], ['возврат после вершины', '--c6'], ['выдача отложенной паники', '--c8']];
 const SELL = [['страх', '--c1'], ['сильный страх', '--c7'], ['тихая вершина', '--c2'], ['широкая тихая вершина', '--c5'], ['альтсезон', '--c3'], ['памп в медвежьем рынке', '--c6'], ['перегретый фандинг', '--c8']];
 const COLOR = Object.fromEntries([...BUY.map(([k, c]) => ['b:' + k, c]), ...SELL.map(([k, c]) => ['s:' + k, c])]);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -127,12 +127,21 @@ function startIdx(C) {
 const memo = {};
 function sim(C, a) {
   const k = C.name + '|' + a; if (memo[k]) return memo[k];
-  let cash = 0, units = 0, du = 0; const tr = [], eq = [], dq = [];
+  // combo4: паника в стейблах на росте usdt (флаг 1) не покупает сверх взноса — доля копится в долг; на развороте usdt (флаг 2) долг тратится ×2,
+  // в конце эпизода (флаг 4) — без надбавки. Выдача — только в день покупки или взноса.
+  let cash = 0, units = 0, du = 0, owed = 0; const tr = [], eq = [], dq = [];
   for (let i = a; i < C.t.length; i++) {
-    const p = C.c[i], q = i > a ? C.rq[i] : -1, act = q >= 0 ? C.rt[q][0] : 1, before = cash;
+    const p = C.c[i], q = i > a ? C.rq[i] : -1, act = q >= 0 ? C.rt[q][0] : 1, before = cash, f = i > a ? +C.pf[i] : 0;
     cash += U; du += U * (1 - FEE) / p;
     if (act < 0) { const amt = -act * units * p; if (amt > 0.01) { const eb = cash + units * p; units -= amt / p; cash += amt * (1 - FEE); tr.push([i, -1, amt, C.rt[q][1], amt / eb]); } }
-    else if (act > 0) { const amt = Math.min(cash, U + (act - 1) * before), eb = cash + units * p; units += amt * (1 - FEE) / p; cash -= amt; if (amt > U * 1.5) tr.push([i, 1, amt - U, C.rt[q][1], (amt - U) / eb]); }
+    else if (act > 0) {
+      let want = U + (act - 1) * before, rel = 0;
+      if (q >= 0 && C.rt[q][1] === 'паника в стейблах' && f & 1) { owed = Math.min(before, owed + (act - 1) * before); want = U; }
+      if (owed > 0 && f & 4) { rel = owed; owed = 0; } else if (owed > 0 && f & 2) { rel = 2 * owed; owed = 0; }
+      const amt = Math.min(cash, want + rel), eb = cash + units * p; units += amt * (1 - FEE) / p; cash -= amt;
+      if (amt > U * 1.5) tr.push([i, 1, amt - U, rel > 0 ? 'выдача отложенной паники' : C.rt[q][1], (amt - U) / eb]);
+    }
+    if (f & 4) owed = 0;
     eq.push(cash + units * p); dq.push(du * p);
   }
   return (memo[k] = { tr, eq, dq, cash, last: eq[eq.length - 1], inv: U * (C.t.length - a) });
