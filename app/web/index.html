@@ -58,6 +58,11 @@
   .hist .hr:first-child { border-top: 0; } .hist .hh span { color: var(--mute); font-size: 11.5px; font-weight: 700; }
   .hist .hr span:not(:first-child) { text-align: right; } .hist small { display: block; color: var(--mute); font-size: 11px; font-weight: 600; } .hist span { font-weight: 650; }
   .hist .up b { color: var(--accent); } .hist .down b { color: var(--sell); }
+  .hist .hx { cursor: pointer; } .hist .hx-a { font-style: normal; color: var(--mute); font-size: 11px; display: inline-block; transition: transform 0.2s; } .hist .hx.open .hx-a { transform: rotate(180deg); }
+  .hx-box { padding: 6px 0 10px; } .hx-box canvas { width: 100%; display: block; } .hx-box canvas + canvas { margin-top: 4px; }
+  .hx-tip { min-height: 16px; font-size: 11.5px; font-weight: 650; color: var(--text); margin-top: 4px; }
+  .hx-leg { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--mute); margin-top: 4px; } .hx-leg i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  .hx-leg i.ring { background: none !important; border: 2px solid; width: 7px; height: 7px; } .hx-leg em { font-style: normal; opacity: 0.7; }
   .pie { display: flex; gap: 14px; align-items: center; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
   .pie svg { flex: 0 0 auto; } .pie .pie-c { font-size: 10px; fill: var(--mute); font-weight: 650; } .pie .pie-v { font-size: 13px; fill: var(--text); font-weight: 800; }
   .pie-l { flex: 1; min-width: 0; display: grid; gap: 4px; font-size: 12.5px; }
@@ -449,12 +454,58 @@ function openTicker(symbol) {
     <h3>Ежедневный взнос</h3><div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}" onchange="saveUnit('${s}')"><em>в день</em></div>`);
   trades(symbol); strategies(symbol); histBox(symbol);
 }
+// график сделок стратегии за выбранный период (как в артефакте «Сделки стратегии по монетам»): цена (лог), покупки — круг, продажи — кольцо,
+// цвет — правило, размер — доля счёта; ниже — стоимость счёта стратегии и DCA (пунктир)
+const FAMN = { a: "капитуляция", b: "отложенная покупка", c: "волна ликвидаций", d: "паника в стейблах", e: "охрана", f: "разворот биткоина", g: "сильный страх", h: "страх", i: "перегретый фандинг",
+  j: "тихая вершина", k: "широкая тихая вершина", l: "возврат после вершины", m: "памп в медвежьем рынке", n: "альтсезон", o: "эйфория в стейблах", p: "выдача отложенной паники" };
+const FAMC = { a: 0, c: 1, b: 2, d: 3, f: 4, l: 5, p: 7, h: 0, g: 6, j: 1, k: 4, n: 2, m: 5, i: 7, o: 3 };
+const TC_L = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"], TC_D = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#0ca30c", "#9085e9", "#e66767"];
+async function toggleHist(row, symbol, y) {
+  const nx = row.nextElementSibling; if (nx && nx.classList.contains("hx-box")) { nx.remove(); row.classList.remove("open"); return; }
+  row.classList.add("open"); const box = document.createElement("div"); box.className = "hx-box"; box.innerHTML = '<div class="hint">Строю график…</div>'; row.after(box);
+  try { drawTrades(box, await api(`/api/histd/${encodeURIComponent(symbol)}/${y}`)); } catch (e) { box.innerHTML = `<div class="note warn">${esc(e.message)}</div>`; }
+}
+function drawTrades(box, D) {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches, PAL = dark ? TC_D : TC_L, css = getComputedStyle(document.documentElement), col = (v) => css.getPropertyValue(v).trim();
+  const used = {}; for (const x of D.tr) used[x[3]] = (used[x[3]] || 0) + 1;
+  box.innerHTML = `<canvas class="hx-p" height="200" role="img" aria-label="Цена и сделки стратегии"></canvas><canvas class="hx-e" height="90" role="img" aria-label="Стоимость счёта стратегии и DCA"></canvas>
+    <div class="hx-tip"></div><div class="hx-leg">${Object.keys(used).filter((k) => FAMN[k]).sort((a, b) => used[b] - used[a]).map((k) => { const sell = D.tr.some((x) => x[3] === k && x[1] < 0);
+      return `<span><i class="${sell ? "ring" : ""}" style="${sell ? "border-color" : "background"}:${PAL[FAMC[k]] || col("--mute")}"></i>${FAMN[k]} <em>${used[k]}</em></span>`; }).join("")}<span><i style="background:${col("--text")};height:2px;border-radius:0"></i>стратегия</span><span><i style="border-top:2px dashed ${col("--mute")};height:0;border-radius:0;background:none"></i>DCA</span></div>`;
+  const [cp, ce] = box.querySelectorAll("canvas"), W = cp.clientWidth, dpr = devicePixelRatio || 1, n = D.c.length, L = 44, R = 6;
+  const X = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), dt = (i) => new Date(D.t[i] * 864e5).toLocaleDateString("ru-RU", { month: "short", year: "2-digit", timeZone: "UTC" });
+  const prep = (cv, H) => { cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = "10.5px system-ui, sans-serif"; return g; };
+  const fmt = (v) => v >= 1000 ? Math.round(v).toLocaleString("ru-RU") : v >= 1 ? num(v) : Number(v.toPrecision(2)).toString();
+  // цена
+  let g = prep(cp, 200), lo = Math.min(...D.c), hi = Math.max(...D.c); const ly = (v) => 8 + (Math.log(hi / v) / Math.log(hi / lo || 2)) * (200 - 26);
+  g.strokeStyle = col("--line"); g.fillStyle = col("--mute");
+  for (const v of [hi, Math.sqrt(hi * lo), lo]) { g.beginPath(); g.moveTo(L, ly(v)); g.lineTo(W - R, ly(v)); g.stroke(); g.fillText("$" + fmt(v), 0, ly(v) + 3); }
+  g.fillText(dt(0), L, 196); const de = dt(n - 1); g.fillText(de, W - R - g.measureText(de).width, 196);
+  g.strokeStyle = col("--text"); g.lineWidth = 1.2; g.beginPath(); D.c.forEach((v, i) => (i ? g.lineTo(X(i), ly(v)) : g.moveTo(X(i), ly(v)))); g.stroke();
+  const rmax = Math.max(6, Math.min(14, W / 40));
+  for (const [i, sd, amt, f, sh] of D.tr.slice().sort((a, b) => b[4] - a[4])) {
+    if (sh < 0.01) continue; const r = Math.max(2.5, rmax * Math.sqrt(Math.min(1, sh))), c = PAL[FAMC[f]] || col("--mute");
+    g.beginPath(); g.arc(X(i), ly(D.c[i]), r, 0, Math.PI * 2);
+    if (sd > 0) { g.fillStyle = c; g.globalAlpha = 0.85; g.fill(); g.globalAlpha = 1; g.strokeStyle = col("--surface"); g.lineWidth = 1; g.stroke(); } else { g.strokeStyle = c; g.lineWidth = 2; g.stroke(); }
+  }
+  // стоимость счёта
+  g = prep(ce, 90); const all = D.eq.concat(D.dq).filter((v) => v > 0), elo = Math.max(1, Math.min(...all)), ehi = Math.max(...all), ey = (v) => 6 + (Math.log(ehi / Math.max(v, elo)) / Math.log(ehi / elo || 2)) * (90 - 18);
+  g.fillStyle = col("--mute"); g.fillText("$" + fmt(ehi), 0, ey(ehi) + 8); g.fillText("$" + fmt(elo), 0, ey(elo));
+  g.setLineDash([4, 3]); g.strokeStyle = col("--mute"); g.lineWidth = 1.2; g.beginPath(); D.dq.forEach((v, i) => (i ? g.lineTo(X(i), ey(v)) : g.moveTo(X(i), ey(v)))); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = col("--text"); g.lineWidth = 1.6; g.beginPath(); D.eq.forEach((v, i) => (i ? g.lineTo(X(i), ey(v)) : g.moveTo(X(i), ey(v)))); g.stroke();
+  // подсказка: ближайшая сделка или день
+  const tip = box.querySelector(".hx-tip");
+  const show = (ev) => { const bx = cp.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - bx.left, i = Math.max(0, Math.min(n - 1, Math.round(((px - L) / (W - L - R)) * (n - 1))));
+    let best = null; for (const x of D.tr) if (Math.abs(x[0] - i) <= Math.max(2, n / 120) && (!best || x[4] > best[4])) best = x;
+    const day = new Date(D.t[best ? best[0] : i] * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    tip.textContent = best ? `${day}: ${best[1] > 0 ? "покупка" : "продажа"} $${big(best[2])} — ${FAMN[best[3]] || "сигнал"} (${num(best[4] * 100)}% счёта), цена $${fmt(D.c[best[0]])}` : `${day}: цена $${fmt(D.c[i])} · счёт $${big(D.eq[i])} · DCA $${big(D.dq[i])}`; };
+  cp.onmousemove = show; cp.ontouchstart = show; cp.ontouchmove = show; ce.onmousemove = show; ce.ontouchmove = show;
+}
 async function histBox(symbol) {
   const box = $("hist"); if (!box) return;
   try {
     const r = await api("/api/hist/" + encodeURIComponent(symbol)), pc = (a, b) => (b > 0 ? (a / b - 1) * 100 : 0), sg = (x) => (x >= 0 ? "+" : "−") + (Math.abs(x) >= 10 ? Math.round(Math.abs(x)).toLocaleString("ru-RU") : num(Math.abs(x))) + "%";
     box.innerHTML = `<div class="hist"><div class="hr hh"><span>Старт</span><span>Вложено</span><span>Стратегия</span><span>DCA</span></div>${r.rows.map((x) => { const s = pc(x.val, x.inv), d = pc(x.dca, x.inv);
-      return `<div class="hr"><span>${x.lab}<small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
+      return `<div class="hr hx" onclick="toggleHist(this, '${esc(symbol)}', ${x.y || 0})"><span>${x.lab} <i class="hx-a">▾</i><small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
         <span class="num ${s >= d ? "up" : "down"}"><b>$${big(x.val)}</b><small>${sg(s)}</small></span><span class="num">$${big(x.dca)}<small>${sg(d)}</small></span></div>`; }).join("")}</div>
       <div class="note">Взнос $${num(r.unit)} в день, стратегия ${esc(r.strategy)} без плеча. Старты каждые 30 дней за 3 года: лучше DCA в ${r.beat} из ${r.starts}, в минусе ${r.loss}. Это прошлое, не обещание.</div>`;
   } catch (e) { box.innerHTML = ""; }

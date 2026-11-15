@@ -137,6 +137,7 @@ def strategy(sym, h, R, ind):
     pos = {int((d - pd.Timestamp("1970-01-01")).days): i for i, d in enumerate(R["idx"])}
     ix = [pos.get(int(t)) for t in h["t"]]
     plan = [float(R["plan"][i]) if i is not None and np.isfinite(R["plan"][i]) else 1.0 for i in ix]
+    fams = "".join("." if i is None else "p" if int(R["defer"][i]) == 2 else ("." if int(R["fam"][i]) < 0 else chr(97 + int(R["fam"][i]))) for i in ix)
     li = ix[-1]
     if li is None: raise ValueError(f"{sym}: последнего дня приложения нет в индексе combo4")
     a = plan[-1]; f = int(R["fam"][li]) if li is not None else -1; d = int(R["defer"][li]) if li is not None else 0
@@ -151,7 +152,7 @@ def strategy(sym, h, R, ind):
     if R["owed"][li] > 0: label += f" · отложено {R['owed'][li] * 100:.0f}% резерва"
     st = state(ind, li, R)
     mm = R["m"]
-    return {"m": mm, "code": "combo4", "name": "combo4 (итоговая)", "about": "Итоговая стратегия: 55 правил combo3 (дно, ликвидации, паника, разворот, продажи на страхе и вершинах) + отложенная паника: пока доля USDT растёт, паника не покупает, а копит; на развороте USDT покупает отложенное вдвойне.",
+    return {"fam": fams, "m": mm, "code": "combo4", "name": "combo4 (итоговая)", "about": "Итоговая стратегия: 55 правил combo3 (дно, ликвидации, паника, разворот, продажи на страхе и вершинах) + отложенная паника: пока доля USDT растёт, паника не покупает, а копит; на развороте USDT покупает отложенное вдвойне.",
             "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
             "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
 
