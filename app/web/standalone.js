@@ -20,7 +20,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -37,9 +37,17 @@ async function boot() {
     mem.mig = "combo4";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя): добавить USELESS в список монет — с той же суммой, что у большинства монет
+  if (!mem.mig2 && coin("USELESS36828-USD") && !mem.tickers.some((t) => t.symbol === "USELESS36828-USD")) {
+    const cnt = {}; for (const t of mem.tickers) cnt[t.unit] = (cnt[t.unit] || 0) + 1;
+    const unit = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+    mem.tickers.push({ ...fresh("USELESS36828-USD"), unit: unit && unit !== "null" ? +unit : null });
+    mem.mig2 = "useless";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }

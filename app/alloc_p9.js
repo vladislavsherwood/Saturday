@@ -2,7 +2,7 @@
    плюс устойчивость — старт каждые 30 дней за последние 3 года (до конца данных): медиана прибыли, доля стартов в минусе, худший старт, доля лучше DCA.
    Логика — как в артефакте (план из таблицы правил + отложенная паника для всех монет). Запуск: node alloc_p9.js <viz_data.json> */
 const D = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
-const FEE = 0.001, COINS = ['BTC', 'ETH', 'SOL', 'HYPE', 'PUMP', 'DOGE', 'PEPE', 'ENA', 'ZEC'];
+const FEE = 0.001, COINS = (process.env.COINS || 'BTC,ETH,SOL,HYPE,PUMP,DOGE,PEPE,ENA,ZEC').split(',');
 function sim(C, a, U) {
   let cash = 0, units = 0, du = 0, owed = 0, inv = 0;
   for (let i = a; i < C.t.length; i++) {
