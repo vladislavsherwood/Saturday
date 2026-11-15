@@ -8,11 +8,7 @@ const Z = require('./combo2_sim.js');
 const G = Z.load(['sel', 'ex', 'rnd', 'mine']);
 const WANT = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA', 'DOGE', 'LINK', 'HYPE', 'PUMP', 'PEPE', 'PENGU', 'ENA', 'ZEC', 'VVV', 'MYX', 'USELESS'];
 const rd = (f) => JSON.parse(fs.readFileSync(__dirname + '/found/' + f, 'utf8'));
-const STRATS = [
-  { id: 'combo2', name: 'combo2 (лучшая)', S: rd('combo2-best.json') },
-  { id: 'w25', name: 'W25', S: rd('agent2-best.json') },
-  { id: 'main', name: 'K3 + отложенная (основа)', S: rd('main-crypto.json') },
-];
+const STRATS = [{ id: 'combo2', name: 'combo2 (лучшая)', S: rd('combo2-best.json') }];
 const FEE = 0.001, U = 10;
 function label(r) {
   const h = (k) => r.conds.some((c) => c.ind === k), v = (k) => (r.conds.find((c) => c.ind === k) || {}).v;
@@ -31,7 +27,7 @@ function label(r) {
   if (h('oth90')) return 'широкая тихая вершина';
   if (h('up90')) return 'памп в медвежьем рынке';
   if (h('fund30')) return 'перегретый фандинг';
-  if (h('fng')) return 'продажа на страхе';
+  if (h('fng')) return r.conds.some((c) => c.ind === 'fng' && c.v <= 40) ? 'сильный страх' : 'страх';
   return 'продажа';
 }
 function run(X, S) {

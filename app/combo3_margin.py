@@ -5,7 +5,7 @@
 Схема с параметрами (tune5 scheme5 + imp6 размазывание): дно sb резерва ×lb; паника доли ×sp (не больше резерва), плечо lp, без плеча, пока с максимума
 BTC < D дней (A4); разворот sr резерва ×lr; отложенная sd без плеча; шорт BTC доля sh (жадность > 75 до дна или разворота); WT — доли сигнала по дням
 (50/50 — половина в день исполнения, половина на следующий; группы дно, паника, продажи — как imp6). t1grp — группа правила «OI < −26 → 15%»:
-0 — 15% без плеча (своё), 1 — как дно (25% ×2).
+0 — 15% без плеча (своё), 1 — как дно (25% ×2), "1x15" — 15% с плечом дна, "off" — в схеме маржи правила нет.
 Запуск: python3 app/combo3_margin.py <стратегии.json> <задания.json> <выход.json>"""
 import os, sys, json, time
 import numpy as np
@@ -32,9 +32,15 @@ def scheme6(S0, sb=0.25, lb=2.0, sp=2.0, lp=1.35, D=60, sr=1.0, lr=1.5, sd=0.5, 
         for r in S0["rules"]:
             if is_t1(r):
                 r["grp"] = 0
+    if t1grp == "off":
+        S0["rules"] = [r for r in S0["rules"] if not is_t1(r)]
     if not lev:
         return grouped(S0), [1.0] * 8
     S = su_sized(sized(S0, sb, sp, sr, sd), "K1"); L = list(LEV2); L[1] = lb; L[3] = lr
+    if t1grp == "1x15":       # как дно (плечо дна), но доля 15%
+        for r in S["rules"]:
+            if is_t1(r):
+                r["act"] = 1.15
     if D:
         S = split(S, c("btcdays", "<", D), 5, 1.0); L[5] = 1.0
     L[2] = lp; L[7] = lp
