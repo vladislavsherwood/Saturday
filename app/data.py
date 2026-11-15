@@ -90,7 +90,7 @@ def history(symbol):
 
 _ohlc = {}
 # монеты, у которых Yahoo округляет цену: свечи с Binance (публичный data-api, без ключа); дни до листинга на Binance — Yahoo
-BINANCE_PRICES = {"PEPE24478-USD": "PEPEUSDT"}
+BINANCE_PRICES = {"PEPE24478-USD": "PEPEUSDT", "SHIB-USD": "SHIBUSDT", "BONK-USD": "BONKUSDT", "FLOKI-USD": "FLOKIUSDT"}
 
 
 def binance_daily(pair):

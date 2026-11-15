@@ -1,0 +1,151 @@
+[
+ {
+  "coin": "SHIB",
+  "n": [
+   1832,
+   1832
+  ],
+  "uniqAll": [
+   49,
+   1195
+  ],
+  "uniq200": [
+   4,
+   129
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 26,
+  "nanNew": []
+ },
+ {
+  "coin": "PEPE",
+  "n": [
+   1273,
+   1273
+  ],
+  "uniqAll": [
+   26,
+   765
+  ],
+  "uniq200": [
+   4,
+   131
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 26,
+  "nanNew": [
+   "st5",
+   "st15",
+   "sl15",
+   "sh15"
+  ]
+ },
+ {
+  "coin": "BONK",
+  "n": [
+   1219,
+   1219
+  ],
+  "uniqAll": [
+   52,
+   883
+  ],
+  "uniq200": [
+   7,
+   147
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 26,
+  "nanNew": []
+ },
+ {
+  "coin": "WIF",
+  "n": [
+   1040,
+   1040
+  ],
+  "uniqAll": [
+   1036,
+   1036
+  ],
+  "uniq200": [
+   200,
+   200
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 0,
+  "nanNew": []
+ },
+ {
+  "coin": "FLOKI",
+  "n": [
+   1740,
+   1740
+  ],
+  "uniqAll": [
+   245,
+   1244
+  ],
+  "uniq200": [
+   18,
+   177
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 26,
+  "nanNew": []
+ },
+ {
+  "coin": "FARTCOIN",
+  "n": [
+   731,
+   731
+  ],
+  "uniqAll": [
+   729,
+   729
+  ],
+  "uniq200": [
+   200,
+   200
+  ],
+  "cols": [
+   89,
+   89
+  ],
+  "sameCols": true,
+  "missing": [],
+  "extra": [],
+  "changed": 0,
+  "nanNew": []
+ }
+]
