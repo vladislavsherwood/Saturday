@@ -95,7 +95,11 @@ def sim6(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
             # продажа
             if qs > 0 and u[k] > 0:
                 q = min(qs, u[k])
-                if True:   # продажи любого размера: минимум сделки — только на покупку (открытие)
+                if MINO > 0:   # продажа: шаг количества 0,01 монеты (в единицах симулятора — 0,01 × MK), округление вниз; меньше шага — не продаётся
+                    stp = 0.01 * MK[k]
+                    if q < u[k] * 0.999:
+                        q = np.floor(q / stp) * stp
+                if q > 0:
                     fr = q / u[k]
                     if hl and not PERP[k]:
                         spu = u[k] - pu[k]
