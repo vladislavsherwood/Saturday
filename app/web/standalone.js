@@ -20,7 +20,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -51,17 +51,26 @@ async function boot() {
     mem.mig3 = "xmr-lit";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя, 15.11.2026): суммы по монетам из research/alloc_report.md и старт инвестиций с 15 ноября — резерв с нуля
+  if (mem.mig4 !== "alloc-2026-11-15") {
+    const U = { "ETH-USD": 3, "SOL-USD": 3, "BTC-USD": 2, "XMR-USD": 2, "DOGE-USD": 2, "PEPE24478-USD": 2, "ENA-USD": 2, "ZEC-USD": 2,
+      "HYPE32196-USD": 1, "PUMP36507-USD": 1, "USELESS36828-USD": 1, "LIT39125-USD": 1 };
+    for (const t of mem.tickers) { if (U[t.symbol] != null) t.unit = U[t.symbol]; t.since = "2026-11-15"; }
+    mem.mig4 = "alloc-2026-11-15";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }
 async function dropTrades(ids) { mem.trades = mem.trades.filter((t) => !ids.includes(t.id)); if (col) for (const id of ids) await col.doc("t" + id).delete(); else await saveCfg(); }
 
-function ledger(symbol) {
-  const o = { bought: 0, sold: 0, qty: 0, cost: 0, today: 0, n: 0 }, day = todayStr();
+function ledger(symbol, since) {
+  const o = { bought: 0, sold: 0, qty: 0, cost: 0, today: 0, n: 0, boughtSince: 0, soldSince: 0 }, day = todayStr();
   for (const r of mem.trades.filter((t) => t.symbol === symbol).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.id - b.id))) {
+    if (since && r.day >= since) { if (r.side === "sell") o.soldSince += r.amount; else o.boughtSince += r.amount; }   // резерв — только с даты старта монеты
     if (r.side === "sell") { o.sold += r.amount; if (o.qty > 0) o.cost *= Math.max(0, 1 - r.qty / o.qty); o.qty = Math.max(0, o.qty - r.qty); }
     else { o.bought += r.amount; o.cost += r.amount; o.qty += r.qty; }
     o.n++; if (r.day === day) o.today += r.side === "sell" ? -r.amount : r.amount;
@@ -72,7 +81,7 @@ const r2 = (x) => Math.round(x * 100) / 100;
 function today() {
   const day = todayStr(), names = {};
   const items = mem.tickers.map((t) => {
-    const k = coin(t.symbol), h = k.h, st = h.strategies.find((x) => x.code === t.strategy) || h.strategies[0], bk = ledger(t.symbol), unit = t.unit || mem.unit;
+    const k = coin(t.symbol), h = k.h, st = h.strategies.find((x) => x.code === t.strategy) || h.strategies[0], bk = ledger(t.symbol, t.since), unit = t.unit || mem.unit;
     h.strategies.forEach((x) => (names[x.code] = { name: x.name, about: x.about }));
     const i = { symbol: t.symbol, name: t.name, kind: t.kind, strategy: st.code, strategy_name: st.name, unit, custom_unit: t.unit, allowed: h.strategies.map((x) => x.code),
       done: bk.today ? Math.abs(bk.today) : 0, done_side: bk.today < 0 ? "sell" : "buy", invested: bk.bought - bk.sold, trades: bk.n,
@@ -80,7 +89,7 @@ function today() {
     const qty = Math.max(0, bk.qty);
     Object.assign(i, { qty, holding: r2(qty * h.price), avg_price: qty > 1e-12 ? bk.cost / qty : null, cost: r2(bk.cost), profit: r2(qty * h.price + bk.sold - bk.bought), amount: r2(unit * st.today) });
     if (i.reserve_mode) {
-      const days = Math.round((Date.parse(day) - Date.parse(t.since || day)) / 864e5) + 1, reserve = Math.max(0, unit * days - bk.bought + bk.sold), a = st.plan_today, before = Math.max(0, reserve - unit);
+      const days = Math.round((Date.parse(day) - Date.parse(t.since || day)) / 864e5) + 1, reserve = Math.max(0, unit * days - bk.boughtSince + bk.soldSince), a = st.plan_today, before = Math.max(0, reserve - unit);
       const amount = a < 0 ? a * qty * h.price : a > 0 ? Math.min(reserve, unit + (a - 1) * before) : 0;
       Object.assign(i, { reserve: r2(reserve), amount: r2(amount) });
       if (a < 0 && Math.abs(amount) < 0.005) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
