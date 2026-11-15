@@ -10,7 +10,9 @@ import combo3_margin as C3M  # noqa: E402
 import imp6_common as I6  # noqa: E402
 from combo3_msim import sim6 as _sim6  # noqa: E402
 from minbuy_msim import sim6 as _sim6b  # noqa: E402
-sim6 = _sim6b if os.environ.get("SELLANY") else _sim6
+from bybit_msim import sim6 as _sim6c  # noqa: E402
+UNITS = {"USELESS36828-USD": 1.0, "XMR-USD": 2.0, "ZEC-USD": 2.0}   # взнос пользователя, $ в день
+sim6 = _sim6c if os.environ.get("BYBIT") else _sim6b if os.environ.get("SELLANY") else _sim6
 from perp_margin import fill, ST  # noqa: E402
 
 PX.POL.update(on=True, k=0.0, m=2.0, A=0)
@@ -31,8 +33,10 @@ for name, coins in GR:
         S, L = C3M.scheme6(ST, sr=1.0, t1grp="off", **({"lp": lev} if lev else {"lev": False})); A, G = P.mats(S, all_lag=0)
         WT = (0.5, 0.5) if lev else (1.0,)
         k = I6.cfg(P, WT=WT, SPL=C3M.SPLIT if lev else [0] * 8, mino=float(os.environ.get("MINO", 0)), minb=float(os.environ.get("MINB", 0)), **(dict(hlx=True, hl=2, perp_all=True, fund=0.10 / 365) if perp else {}))
+        MK = np.array([2.0 / UNITS.get(s, 2.0) for s, _ in coins])
+        ex = (MK,) if os.environ.get("BYBIT") else ()
         f = lambda s, sv: sim6(P.B.C[sl], P.B.LO[sl], P.B.HI[sl], A[sl], G[sl], np.zeros(P.B.C[sl].shape), np.ones(P.B.C[sl].shape), int(s), P.B.levmat(L), sv,  # noqa: E731
-                               0.15 / 365, 0.11 / 365, k["WT"], k["SPL"], k["FEES"], k["FEEP"], k["PERP"], k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"], k["LD"], k["XC"], 0.0)
+                               0.15 / 365, 0.11 / 365, k["WT"], k["SPL"], k["FEES"], k["FEEP"], k["PERP"], k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"], k["LD"], k["XC"], 0.0, *ex)
         o = [f(s, 1.0) for s in starts]; x = np.array([q[1] for q in o]) * 100
         l20 = sum(int(f(s, 0.8)[0] > 0) for s in starts); l30 = sum(int(f(s, 0.7)[0] > 0) for s in starts)
         print(f"   {lab:22s} медиана {np.median(x):+.0f}% | худший {x.min():+.0f}% | ликв {sum(int(q[0] > 0) for q in o)} | −20%: {l20} | −30%: {l30}", flush=True)
