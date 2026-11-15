@@ -172,6 +172,22 @@ function pnlHistory() {
   }
   return out;
 }
+// историческая доходность стратегии монеты (план из сборки, спот без плеча) против обычного DCA: последний год, 2, 3 года и вся история
+function histPerf(symbol) {
+  const t = mem.tickers.find((x) => x.symbol === symbol), h = coin(symbol).h, st = h.strategies.find((x) => x.code === (t && t.strategy)) || h.strategies[0], n = h.c.length, unit = (t && t.unit) || mem.unit;
+  const run = (a) => { let cash = 0, units = 0, du = 0, inv = 0;
+    for (let i = a; i < n; i++) { const p = h.c[i], x = st.plan ? (i > a ? st.plan[i - 1] : 1) : 1, before = cash; cash += unit; inv += unit; du += unit * 0.999 / p;
+      if (x < 0) { const amt = -x * units * p; units -= amt / p; cash += amt * 0.999; } else { const amt = Math.min(cash, unit + (x - 1) * before); units += amt * 0.999 / p; cash -= amt; } }
+    const pe = h.c[n - 1]; return { inv: r2(inv), val: r2(cash + units * pe), dca: r2(du * pe) }; };
+  const out = [];
+  for (const [lab, y] of [["1 год", 1], ["2 года", 2], ["3 года", 3], ["вся история", 0]]) {
+    const a = y ? n - 365 * y : 0; if (y && a < 0) continue;
+    const r = run(Math.max(0, a)); out.push({ lab, from: new Date(h.t[Math.max(0, a)] * 864e5).toISOString().slice(0, 10), ...r });
+  }
+  // устойчивость: старт каждые 30 дней за 3 года — в скольких стратегия лучше DCA и в минусе
+  const sts = []; for (let a = Math.max(0, n - 365 * 3); a <= n - 60; a += 30) sts.push(run(a));
+  return { unit, rows: out, starts: sts.length, beat: sts.filter((r) => r.val > r.dca).length, loss: sts.filter((r) => r.val < r.inv).length, strategy: st.name };
+}
 const fail = (text) => { throw new Error(text); };
 async function addTrade(b) {
   if (!["buy", "sell"].includes(b.side) || !(b.amount > 0)) fail("Нужна сторона сделки и сумма больше нуля");
@@ -224,6 +240,7 @@ async function api(path, opts = {}) {
   if (seg[0] === "tickers" && m === "DELETE") { mem.tickers = mem.tickers.filter((t) => t.symbol !== seg[1]); await saveCfg(); return { ok: true }; }
   if (seg[0] === "unit") { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); mem.unit = b.unit; await saveCfg(); return { ok: true }; }
   if (seg[0] === "pnl" && m === "GET") return pnlHistory();
+  if (seg[0] === "hist" && m === "GET") return histPerf(decodeURIComponent(seg[1]));
   if (seg[0] === "done" && m === "POST") { if (!b.price || !b.amount) fail("Нет суммы или цены"); const it = today().items.find((x) => x.symbol === b.symbol) || {}; return addTrade({ symbol: b.symbol, side: b.amount < 0 ? "sell" : "buy", amount: Math.abs(b.amount), price: b.price, source: "plan", borrowed: b.amount > 0 ? it.borrowed || 0 : 0, repaid: b.amount < 0 ? it.repaid || 0 : 0 }); }
   if (seg[0] === "done" && m === "DELETE") { await dropTrades(mem.trades.filter((t) => t.symbol === seg[1] && t.day === todayStr()).map((t) => t.id)); return { ok: true }; }
   if (seg[0] === "trades" && m === "GET") return mem.trades.filter((t) => t.symbol === arg.get("symbol")).sort((a, b2) => (a.day < b2.day ? 1 : a.day > b2.day ? -1 : b2.id - a.id));

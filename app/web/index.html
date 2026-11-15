@@ -53,6 +53,11 @@
   .pf-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); } .pf-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
   .pf-leg b { color: var(--text); font-weight: 700; }
   .pf-chart { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; } .pf-ct small + small { min-height: 15px; margin-top: 2px; color: var(--text); font-weight: 600; }
+  .hist { background: var(--soft); border-radius: 16px; padding: 6px 12px; }
+  .hist .hr { display: grid; grid-template-columns: 1.25fr 0.9fr 1fr 0.9fr; gap: 6px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; align-items: start; }
+  .hist .hr:first-child { border-top: 0; } .hist .hh span { color: var(--mute); font-size: 11.5px; font-weight: 700; }
+  .hist .hr span:not(:first-child) { text-align: right; } .hist small { display: block; color: var(--mute); font-size: 11px; font-weight: 600; } .hist span { font-weight: 650; }
+  .hist .up b { color: var(--accent); } .hist .down b { color: var(--sell); }
   .pie { display: flex; gap: 14px; align-items: center; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
   .pie svg { flex: 0 0 auto; } .pie .pie-c { font-size: 10px; fill: var(--mute); font-weight: 650; } .pie .pie-v { font-size: 13px; fill: var(--text); font-weight: 800; }
   .pie-l { flex: 1; min-width: 0; display: grid; gap: 4px; font-size: 12.5px; }
@@ -437,12 +442,22 @@ function openTicker(symbol) {
   const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
   openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price} · ${esc(i.strategy_name)}</div></div>
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
-    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + market(i) + position(i)}
+    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
     <h3>Стратегии на истории</h3><div id="strats"><div class="hint">Считаю историю…</div></div>
     ${i.has_margin ? `<h3>Где покупаю</h3><div class="pills" id="fMode">${[["spot", "Спот"], ["margin", "Маржа на споте"], ["perp", "Перпы"]].map(([k, n]) => `<button class="pill ${i.mode === k ? "on" : ""}" onclick="saveMode('${s}', '${k}')">${n}</button>`).join("")}</div>
     <div class="note">${i.mode === "perp" ? "Перпы (Bybit): вся позиция — лонг-перп, залог — ваш USDT на том же счёте. Плечо по схеме ×1,5 на сигналах. Открытие — от большего из $5 и 0,01 монеты: мелкие взносы копятся. Продажа — шагом 0,01 монеты. Держите все монеты-перпы на одном счёте." : i.mode === "margin" ? "Маржа на споте: дно 25% резерва с плечом ×2, паника — доли ×2 с плечом ×1,5, разворот — весь резерв с плечом ×1,5; сделки дна, паники и продаж — половина сегодня, половина завтра; продажи сначала гасят долг." : "Спот: только свои деньги, без плеча."}</div>` : ""}
     <h3>Ежедневный взнос</h3><div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}" onchange="saveUnit('${s}')"><em>в день</em></div>`);
-  trades(symbol); strategies(symbol);
+  trades(symbol); strategies(symbol); histBox(symbol);
+}
+async function histBox(symbol) {
+  const box = $("hist"); if (!box) return;
+  try {
+    const r = await api("/api/hist/" + encodeURIComponent(symbol)), pc = (a, b) => (b > 0 ? (a / b - 1) * 100 : 0), sg = (x) => (x >= 0 ? "+" : "−") + (Math.abs(x) >= 10 ? Math.round(Math.abs(x)).toLocaleString("ru-RU") : num(Math.abs(x))) + "%";
+    box.innerHTML = `<div class="hist"><div class="hr hh"><span>Старт</span><span>Вложено</span><span>Стратегия</span><span>DCA</span></div>${r.rows.map((x) => { const s = pc(x.val, x.inv), d = pc(x.dca, x.inv);
+      return `<div class="hr"><span>${x.lab}<small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
+        <span class="num ${s >= d ? "up" : "down"}"><b>$${big(x.val)}</b><small>${sg(s)}</small></span><span class="num">$${big(x.dca)}<small>${sg(d)}</small></span></div>`; }).join("")}</div>
+      <div class="note">Взнос $${num(r.unit)} в день, стратегия ${esc(r.strategy)} без плеча. Старты каждые 30 дней за 3 года: лучше DCA в ${r.beat} из ${r.starts}, в минусе ${r.loss}. Это прошлое, не обещание.</div>`;
+  } catch (e) { box.innerHTML = ""; }
 }
 async function strategies(symbol) {
   const i = state.items.find((x) => x.symbol === symbol);
