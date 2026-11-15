@@ -63,13 +63,14 @@
 <div class="wrap">
   <header>
     <h1>Сделки стратегии по монетам</h1>
-    <p class="lead">Итоговая стратегия (combo3) на графике цены, шкала логарифмическая. Кружок с заливкой — покупка из резерва, кольцо — продажа. Цвет — правило, которое вызвало сделку. Размер — доля счёта, которую составила сделка в тот момент. Взнос $10 в день с первого дня истории монеты, решение по вчерашнему закрытию, комиссия 0,1%. Обычные ежедневные взносы не показаны.</p>
+    <p class="lead">Итоговая стратегия (combo3) на графике цены, шкала логарифмическая. Кружок с заливкой — покупка из резерва, кольцо — продажа. Цвет — правило, которое вызвало сделку. Размер — доля счёта, которую составила сделка в тот момент. Взнос $10 в день с выбранной даты старта, решение по вчерашнему закрытию, комиссия 0,1%. Стратегия и DCA пересчитываются заново от даты старта. Обычные ежедневные взносы не показаны.</p>
   </header>
 
   <div class="bar" id="coins" role="group" aria-label="Монета"></div>
   <div class="bar">
-    <span class="lbl">Период</span>
-    <span id="periods" class="bar" role="group" aria-label="Период"></span>
+    <span class="lbl">Старт</span>
+    <span id="periods" class="bar" role="group" aria-label="Дата старта"></span>
+    <input type="date" id="start" aria-label="Своя дата старта" style="font:500 13px var(--sans);background:var(--chip);color:var(--ink);border:0;border-radius:999px;padding:5px 10px">
     <span class="sep"></span>
     <label class="small" for="minsz">Скрыть сделки меньше</label>
     <input type="range" id="minsz" min="0" max="20" step="1" value="2">
@@ -92,12 +93,12 @@
     <div class="cv"><canvas id="eq" height="200" aria-label="Стоимость счёта стратегии и DCA"></canvas></div>
   </section>
 
-  <p class="note">Итоги — на всю историю монеты, независимо от выбранного периода. Огромные суммы у монет с долгой историей — эффект сложного процента за много лет при старте почти от нуля; для сравнения смотрите проценты к DCA. Это бэктест на истории, а не обещание доходности.</p>
+  <p class="note">Итоги считаются от выбранной даты старта до последнего дня данных. Огромные суммы при раннем старте — эффект сложного процента за много лет; для сравнения смотрите проценты к DCA. Это бэктест на истории, а не обещание доходности.</p>
 </div>
 
 <script>
 const D = /*DATA*/null;
-const SID = D.strategies[0].id;
+const U = D.unit, FEE = D.fee;
 // правило → цвет; покупки — заливка, продажи — кольцо, поэтому цвета покупок и продаж могут повторяться
 const BUY = [['капитуляция', '--c1'], ['волна ликвидаций', '--c2'], ['отложенная покупка', '--c3'], ['паника в стейблах', '--c4'], ['разворот биткоина', '--c5'], ['возврат после вершины', '--c6']];
 const SELL = [['страх', '--c1'], ['сильный страх', '--c7'], ['тихая вершина', '--c2'], ['широкая тихая вершина', '--c5'], ['альтсезон', '--c3'], ['памп в медвежьем рынке', '--c6'], ['перегретый фандинг', '--c8']];
@@ -105,7 +106,7 @@ const COLOR = Object.fromEntries([...BUY.map(([k, c]) => ['b:' + k, c]), ...SELL
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const GROUPS = [['Крупные', ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA']], ['Альты', ['LINK', 'HYPE', 'ENA', 'ZEC', 'VVV', 'MYX']], ['Мемы и лоукап', ['DOGE', 'PEPE', 'PUMP', 'PENGU', 'USELESS']]];
 const SEG = { big: 'крупная', alt: 'альт', meme: 'мем', stable: 'стейбл' };
-let st = { coin: 'BTC', period: 0, minsz: 2, off: {} };
+let st = { coin: 'BTC', period: 0, start: '', minsz: 2, off: {} };
 try { const s = JSON.parse(localStorage.getItem('viz-rules') || 'null'); if (s && D.coins.some((c) => c.name === s.coin)) st = { ...st, ...s }; } catch (e) {}
 const save = () => { try { localStorage.setItem('viz-rules', JSON.stringify(st)); } catch (e) {} };
 const coin = () => D.coins.find((c) => c.name === st.coin);
@@ -114,7 +115,28 @@ const fmtD = (t) => day(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 
 const money = (v) => (v >= 1e6 ? '$' + (v / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' млн' : v >= 1e4 ? '$' + Math.round(v / 1e3).toLocaleString('ru-RU') + ' тыс.' : '$' + Math.round(v).toLocaleString('ru-RU'));
 const price = (p) => (p >= 100 ? p.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) : p >= 1 ? p.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : p.toPrecision(3));
 const key = (tr) => (tr[1] > 0 ? 'b:' : 's:') + tr[3];
-const startIdx = (C) => (st.period ? Math.max(0, C.t.length - st.period) : 0);
+const isoDay = (iso) => Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5);
+const toIso = (t) => day(t).toISOString().slice(0, 10);
+function startIdx(C) {
+  const n = C.t.length; let a = 0;
+  if (st.start) { const d = isoDay(st.start); a = C.t.findIndex((x) => x >= d); if (a < 0) a = n - 2; }
+  else if (st.period) a = Math.max(0, n - st.period);
+  return Math.min(Math.max(0, a), n - 2);
+}
+// стратегия от даты старта: правило дня берётся из таблицы, счёт считается заново
+const memo = {};
+function sim(C, a) {
+  const k = C.name + '|' + a; if (memo[k]) return memo[k];
+  let cash = 0, units = 0, du = 0; const tr = [], eq = [], dq = [];
+  for (let i = a; i < C.t.length; i++) {
+    const p = C.c[i], q = i > a ? C.rq[i] : -1, act = q >= 0 ? C.rt[q][0] : 1, before = cash;
+    cash += U; du += U * (1 - FEE) / p;
+    if (act < 0) { const amt = -act * units * p; if (amt > 0.01) { const eb = cash + units * p; units -= amt / p; cash += amt * (1 - FEE); tr.push([i, -1, amt, C.rt[q][1], amt / eb]); } }
+    else if (act > 0) { const amt = Math.min(cash, U + (act - 1) * before), eb = cash + units * p; units += amt * (1 - FEE) / p; cash -= amt; if (amt > U * 1.5) tr.push([i, 1, amt - U, C.rt[q][1], (amt - U) / eb]); }
+    eq.push(cash + units * p); dq.push(du * p);
+  }
+  return (memo[k] = { tr, eq, dq, cash, last: eq[eq.length - 1], inv: U * (C.t.length - a) });
+}
 
 function chips() {
   const cw = document.getElementById('coins'); cw.innerHTML = '';
@@ -128,12 +150,15 @@ function chips() {
   const pw = document.getElementById('periods'); pw.innerHTML = '';
   [[0, 'вся история'], [1095, '3 года'], [365, '1 год'], [180, 'полгода']].forEach(([d, t]) => {
     const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.setAttribute('aria-pressed', String(st.period === d));
-    b.onclick = () => { st.period = d; save(); chips(); draw(); }; pw.appendChild(b);
+    b.setAttribute('aria-pressed', String(!st.start && st.period === d));
+    b.onclick = () => { st.period = d; st.start = ''; save(); chips(); draw(); }; pw.appendChild(b);
   });
+  const C0 = coin(), si = document.getElementById('start');
+  si.min = toIso(C0.t[0]); si.max = toIso(C0.t[C0.t.length - 2]); si.value = toIso(C0.t[startIdx(C0)]);
   document.getElementById('minsz').value = st.minsz;
   document.getElementById('minszv').textContent = st.minsz ? st.minsz + '% счёта' : 'показывать все';
   const C = coin(), a = startIdx(C), cnt = {};
-  for (const tr of C.s[SID].tr) if (tr[0] >= a && tr[4] >= st.minsz / 100) cnt[key(tr)] = (cnt[key(tr)] || 0) + 1;
+  for (const tr of sim(C, a).tr) if (tr[4] >= st.minsz / 100) cnt[key(tr)] = (cnt[key(tr)] || 0) + 1;
   for (const [id, list, side, title] of [['rbuy', BUY, 'b', 'Покупки'], ['rsell', SELL, 's', 'Продажи']]) {
     const w = document.getElementById(id); w.innerHTML = `<span class="lbl">${title}</span>`;
     for (const [nm, col] of list) {
@@ -144,6 +169,7 @@ function chips() {
     }
   }
 }
+document.getElementById('start').onchange = (e) => { if (e.target.value) { st.start = e.target.value; save(); chips(); draw(); } };
 document.getElementById('minsz').oninput = (e) => { st.minsz = +e.target.value; save(); chips(); draw(); };
 
 let hits = [];
@@ -179,7 +205,7 @@ function draw() {
   ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.beginPath();
   for (let i = a; i < n; i++) { const x = X(i), y = Y(C.c[i]); i === a ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke();
   hits = []; const rmax = isPhone ? 13 : 18, cut = st.minsz / 100;
-  const all = C.s[SID].tr.filter((tr) => tr[0] >= a && tr[4] >= cut && !st.off[key(tr)] && COLOR[key(tr)]).sort((p, q) => q[4] - p[4]);
+  const all = sim(C, a).tr.filter((tr) => tr[4] >= cut && !st.off[key(tr)] && COLOR[key(tr)]).sort((p, q) => q[4] - p[4]);
   for (const tr of all) {
     const [i, side] = tr, x = X(i), y = Y(C.c[i]), r = Math.max(2.5, rmax * Math.sqrt(Math.min(1, tr[4]))), col = css(COLOR[key(tr)]);
     ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -191,22 +217,22 @@ function draw() {
   stats(C, a); equity(C, a);
 }
 function stats(C, a) {
-  const S = C.s[SID], dqEnd = C.dq[C.dq.length - 1], inv = C.inv, box = document.getElementById('stats');
+  const S = sim(C, a), dqEnd = S.dq[S.dq.length - 1], inv = S.inv, box = document.getElementById('stats');
   const vs = (S.last / dqEnd - 1) * 100, pr = (S.last / inv - 1) * 100, dpr = (dqEnd / inv - 1) * 100;
-  const trs = S.tr.filter((t) => t[0] >= a), b = trs.filter((t) => t[1] > 0).length;
+  const trs = S.tr, b = trs.filter((t) => t[1] > 0).length;
   const pc = (v) => `<span class="${v >= 0 ? 'up' : 'dn'}">${v >= 0 ? '+' : ''}${Math.round(v).toLocaleString('ru-RU')}%</span>`;
-  box.innerHTML = `<div class="st"><div class="nm">${D.strategies[0].name}</div><div class="big">${money(S.last)}</div>
-      <div class="sub">к вложенному ${pc(pr)} · к DCA ${pc(vs)}</div><div class="sub">в резерве сейчас ${money(S.cashLast)} (${Math.round((S.cashLast / Math.max(1, S.last)) * 100)}%)</div></div>
+  box.innerHTML = `<div class="st"><div class="nm">${D.strategy}</div><div class="big">${money(S.last)}</div>
+      <div class="sub">к вложенному ${pc(pr)} · к DCA ${pc(vs)}</div><div class="sub">в резерве сейчас ${money(S.cash)} (${Math.round((S.cash / Math.max(1, S.last)) * 100)}%)</div></div>
     <div class="st"><div class="nm">Обычный DCA</div><div class="big">${money(dqEnd)}</div><div class="sub">к вложенному ${pc(dpr)}</div><div class="sub">$10 каждый день, без продаж</div></div>
-    <div class="st"><div class="nm">Вложено</div><div class="big">${money(inv)}</div><div class="sub">$10 × ${C.t.length.toLocaleString('ru-RU')} дней</div><div class="sub">в выбранном периоде: покупок из резерва ${b}, продаж ${trs.length - b}</div></div>`;
+    <div class="st"><div class="nm">Вложено</div><div class="big">${money(inv)}</div><div class="sub">$10 × ${(C.t.length - a).toLocaleString('ru-RU')} дней с ${fmtD(C.t[a])}</div><div class="sub">покупок из резерва ${b}, продаж ${trs.length - b}</div></div>`;
 }
 function equity(C, a) {
   const { ctx, w, h } = setup(document.getElementById('eq'), window.innerWidth < 560 ? 160 : 200);
-  const L = window.innerWidth < 560 ? 46 : 62, R = 10, T = 8, B = 22, i0 = Math.floor(a / C.step);
-  const series = [{ v: C.dq, col: css('--dca'), dash: [4, 4] }, { v: C.s[SID].eq, col: css('--ink') }];
+  const L = window.innerWidth < 560 ? 46 : 62, R = 10, T = 8, B = 22, i0 = 0, S = sim(C, a);
+  const series = [{ v: S.dq, col: css('--dca'), dash: [4, 4] }, { v: S.eq, col: css('--ink') }];
   let lo = Infinity, hi = 0; for (const s of series) for (let i = i0; i < s.v.length; i++) if (s.v[i] > 0) { lo = Math.min(lo, s.v[i]); hi = Math.max(hi, s.v[i]); }
   lo = Math.max(lo, 1) * 0.9; hi *= 1.1;
-  const m = C.dq.length, X = (i) => L + ((i - i0) / Math.max(1, m - 1 - i0)) * (w - L - R), Y = (v) => T + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - T - B);
+  const m = S.dq.length, X = (i) => L + ((i - i0) / Math.max(1, m - 1 - i0)) * (w - L - R), Y = (v) => T + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - T - B);
   ctx.clearRect(0, 0, w, h); ctx.font = '11px ' + css('--mono'); ctx.fillStyle = css('--ink-3'); ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
   for (const v of ticksLog(lo, hi)) { const y = Y(v); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(money(v).replace(' тыс.', 'k').replace(' млн', 'M'), L - 6, y + 4); }
   for (const s of series) { ctx.strokeStyle = s.col; ctx.lineWidth = 2; ctx.setLineDash(s.dash || []); ctx.beginPath(); let f = true;

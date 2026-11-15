@@ -44,21 +44,19 @@ function run(X, S) {
   }
   return { tr, eq, dq, cash, units };
 }
-const out = { unit: U, strategies: STRATS.map((s) => ({ id: s.id, name: s.name })), coins: [] };
+const out = { unit: U, fee: FEE, strategy: STRATS[0].name, coins: [] };
 const all = Object.values(G).flat();
 for (const nm of WANT) {
   const X = all.find((x) => x.name === nm);
   if (!X) { console.log('нет', nm); continue; }
-  const step = Math.max(1, Math.ceil(X.n / 900));
-  const pick = (a) => a.filter((_, i) => i % step === 0 || i === X.n - 1).map((v) => Math.round(v));
-  const coin = { name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), s: {}, step, inv: U * X.n };
-  for (const st of STRATS) {
-    const r = run(X, st.S);
-    coin.s[st.id] = { tr: r.tr, eq: pick(r.eq), last: Math.round(r.eq[X.n - 1]), cashLast: Math.round(r.cash) };
-    if (!coin.dq) coin.dq = pick(r.dq);
-  }
-  out.coins.push(coin);
-  console.log(nm, X.seg, X.n, 'дней;', STRATS.map((s) => `${s.id} ${coin.s[s.id].tr.length} сделок, итог $${coin.s[s.id].last}`).join(' | '), `DCA $${coin.dq[coin.dq.length - 1]}`);
+  const S = STRATS[0].S, rules = S.rules.filter((r) => r.conds.every((cd) => X.ind[cd.ind]));
+  const R = rules.map((r) => ({ r, cs: r.conds.map((cd) => [X.ind[cd.ind], cd.op === '<', cd.v]) }));
+  const dec = (j) => { for (let q = 0; q < R.length; q++) { let ok = true; for (const [a, lt, v] of R[q].cs) { const x = a[j]; if (!(lt ? x < v : x > v)) { ok = false; break; } } if (ok) return q; } return -1; };
+  // таблица правил монеты: [доля, подпись]; rq[i] — правило, которое исполняется в день i (решено по дню i−1)
+  const rt = [], key = {}, rq = new Array(X.n).fill(-1);
+  for (let i = 1; i < X.n; i++) { const q = dec(i - 1); if (q < 0) continue; const r = R[q].r, k = r.act + '|' + label(r); if (key[k] == null) { key[k] = rt.length; rt.push([+r.act.toFixed(6), label(r)]); } rq[i] = key[k]; }
+  out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq });
+  const r0 = run(X, S); console.log(nm, X.seg, X.n, 'дней, правил', rt.length, 'итог $' + Math.round(r0.eq[X.n - 1]));
 }
 fs.writeFileSync(process.argv[2], JSON.stringify(out));
 console.log(process.argv[2], Math.round(fs.statSync(process.argv[2]).size / 1024), 'КБ');
