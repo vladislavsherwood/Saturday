@@ -53,6 +53,11 @@
   .pf-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); } .pf-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
   .pf-leg b { color: var(--text); font-weight: 700; }
   .pf-chart { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; } .pf-ct small + small { min-height: 15px; margin-top: 2px; color: var(--text); font-weight: 600; }
+  .pie { display: flex; gap: 14px; align-items: center; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .pie svg { flex: 0 0 auto; } .pie .pie-c { font-size: 10px; fill: var(--mute); font-weight: 650; } .pie .pie-v { font-size: 13px; fill: var(--text); font-weight: 800; }
+  .pie-l { flex: 1; min-width: 0; display: grid; gap: 4px; font-size: 12.5px; }
+  .pie-l div { display: grid; grid-template-columns: 10px 1fr auto 44px; gap: 6px; align-items: center; } .pie-l i { width: 10px; height: 10px; border-radius: 3px; }
+  .pie-l span { color: var(--text); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pie-l b { font-weight: 700; color: var(--text); } .pie-l em { font-style: normal; color: var(--mute); text-align: right; }
   #pnlC { width: 100%; display: block; margin-top: 6px; touch-action: pan-y; }
 
   /* список активов */
@@ -224,6 +229,23 @@ async function load() {
   catch (e) { $("hero").innerHTML = "—"; $("list").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; }
 }
 
+// кольцевая диаграмма активов: стоимость монет сейчас; 7 крупнейших — свой цвет (палитра dataviz, светлая/тёмная), остальные — «Другие»
+const PIE_L = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6"], PIE_D = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9"];
+function pieHtml() {
+  const it = state.items.filter((i) => (i.holding || 0) > 0.005).map((i) => ({ n: short(i.symbol), v: i.holding })).sort((a, b) => b.v - a.v);
+  if (!it.length) return "";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches, P = dark ? PIE_D : PIE_L, top = it.slice(0, 7), rest = it.slice(7).reduce((x, i) => x + i.v, 0);
+  const seg = top.map((i, k) => ({ ...i, c: P[k] })); if (rest > 0.005) seg.push({ n: "Другие", v: rest, c: "var(--mute)" });
+  const tot = seg.reduce((x, s) => x + s.v, 0), R = 52, r = 34, cx = 60, cy = 60; let a0 = -Math.PI / 2;
+  const arc = (s) => { const a1 = a0 + (s.v / tot) * Math.PI * 2, lg = a1 - a0 > Math.PI ? 1 : 0, p = (a, rr) => `${cx + rr * Math.cos(a)} ${cy + rr * Math.sin(a)}`;
+    const d = seg.length === 1 ? `M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx - 0.01} ${cy - R} L ${cx - 0.01} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
+      : `M ${p(a0, R)} A ${R} ${R} 0 ${lg} 1 ${p(a1, R)} L ${p(a1, r)} A ${r} ${r} 0 ${lg} 0 ${p(a0, r)} Z`; a0 = a1;
+    return `<path d="${d}" fill="${s.c}" stroke="var(--surface)" stroke-width="2"><title>${esc(s.n)}: $${big(s.v)} (${num((s.v / tot) * 100)}%)</title></path>`; };
+  return `<div class="pie"><svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Доли монет в активах">${seg.map(arc).join("")}
+      <text x="60" y="57" text-anchor="middle" class="pie-c">активы</text><text x="60" y="73" text-anchor="middle" class="pie-v">$${big(tot)}</text></svg>
+    <div class="pie-l">${seg.map((s) => `<div><i style="background:${s.c}"></i><span>${esc(s.n)}</span><b class="num">$${big(s.v)}</b><em class="num">${num((s.v / tot) * 100)}%</em></div>`).join("")}</div></div>`;
+}
+
 // свечной график П/У портфеля по дням: зелёная свеча — день закрылся выше открытия, оранжевая — ниже; пунктир — ноль
 let pnlRows = [];
 async function drawPnl() {
@@ -299,6 +321,7 @@ function render() {
         <div class="pf-pl ${tone}"><small>П/У за всё время</small><b class="num">${sg}$${big(Math.abs(pl))}</b><span class="num">${sg}${num(Math.abs(pp))}% · вложено $${big(state.invested_total || 0)}</span></div></div>
       <div class="pf-bar">${parts.map((p) => `<i style="flex:${p[1] / tot};background:${p[2]}"></i>`).join("")}</div>
       <div class="pf-leg">${parts.map((p) => `<span><i style="background:${p[2]}"></i>${p[0]} <b class="num">$${big(p[1])}</b></span>`).join("")}${state.debt > 0.005 ? `<span><i style="background:var(--sell)"></i>Долг / плечо <b class="num">$${big(state.debt)}</b></span>` : ""}</div>
+      ${pieHtml()}
       <div class="pf-chart"><div class="pf-ct"><small>П/У по дням</small><small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля по дням" role="img"></canvas></div>
     </div>`;
   drawPnl();
