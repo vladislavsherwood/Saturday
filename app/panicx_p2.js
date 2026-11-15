@@ -56,6 +56,8 @@ function Pol2(opt = {}) {
     },
   };
 }
+// выдача долга с надбавкой: на развороте тратится долг × m (надбавка (m − 1) × долг — из резерва, в пределах резерва); в конце эпизода — без надбавки
+function Boost(m, o = {}) { const b = Pol2(o); return { buy: b.buy, release: (ctx) => { const k = b.release(ctx); if (k > 0 && !ctx.X.ind.pend[ctx.j]) ctx.st.rl = k * ctx.st.owed; return k; }, extra: ({ before, st }) => { if (!st.rl) return 0; const e = ((m - 1) * st.rl) / Math.max(before, 1e-9); st.rl = 0; return e; } }; }
 const why = (r) => { const { BS } = P.baseline(); return Z.SEGS.map((s) => { const w = Z.strict(r.RS, BS, s); return w.length ? `${s}: ${w.join(',')}` : ''; }).filter(Boolean).join(' | '); };
 // к combo3 без tune1 (C3) — отдельно запомненная сумма
 let C3S = null; const c3 = () => { if (!C3S) C3S = Z.sum(P.evc(P.base, null)); return C3S; };
@@ -67,4 +69,4 @@ function run(nm, pol, S = P.base) {
 }
 function init() { P.setBaseline(P.base, Pol2()); const { BS, BM } = P.baseline(); console.log(`основа panicx-best ${['sel', 'ex', 'rnd'].map((g) => P.f(BS[g].all)).join(' | ')} | паника ${BM.fall.toFixed(1)}%/${BM.days}д/${BM.big.toFixed(0)}% монеты ${BM.fallC.toFixed(1)}%/${BM.daysC.toFixed(0)}д`); }
 const summary = (a = rows) => { const ds = a.map((x) => x.d).sort((x, y) => x - y); return `вариантов ${a.length}, ✔ к panicx ${a.filter((x) => x.ok).length}, ✔ к C3 ${a.filter((x) => x.ok3).length}; доход к panicx мин ${ds[0].toFixed(3)} мед ${ds[ds.length >> 1].toFixed(3)} макс ${ds[ds.length - 1].toFixed(3)}`; };
-module.exports = { P, Z, G, Pol2, BEST1, run, rows, init, summary, why, c3 };
+module.exports = { P, Z, G, Pol2, Boost, BEST1, run, rows, init, summary, why, c3 };
