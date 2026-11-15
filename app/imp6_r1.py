@@ -26,4 +26,4 @@ for f, idx in FAM.items():
 for f, idx in FAM.items():
     run(f"только {f} −1", rules=idx, lag=-1)
 run("всё +2 дня", all=2, sh_lag=2)
-json.dump(out, open("/tmp/claude-0/-home-user-Saturday/15711ac5-c34f-5060-9e22-6f2cb5b0f75f/scratchpad/imp6/r1.json", "w"), ensure_ascii=False)
+json.dump(out, open(os.path.join(HERE, "..", "app", "imp6_r1.json") if False else "/dev/null", "w"), ensure_ascii=False)
