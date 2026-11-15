@@ -8,7 +8,7 @@ const Z = require('./combo2_sim.js');
 const G = Z.load(['sel', 'ex', 'rnd', 'mine']);
 const WANT = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'TRX', 'ADA', 'DOGE', 'LINK', 'HYPE', 'PUMP', 'PEPE', 'PENGU', 'ENA', 'ZEC', 'VVV', 'MYX', 'USELESS'];
 const rd = (f) => JSON.parse(fs.readFileSync(__dirname + '/found/' + f, 'utf8'));
-const STRATS = [{ id: 'combo4', name: 'combo4 (итоговая)', S: rd('combo3-best.json') }]; // combo4 = правила combo3 без tune1 + отложенная паника (симуляция в странице)
+const STRATS = [{ id: 'combo4', name: 'combo4 (итоговая)', S: rd('combo4-best.json') }]; // combo4 = правила combo3 без tune1 + эйфория в стейблах + отложенная паника (симуляция в странице)
 const FEE = 0.001, U = 10;
 function label(r) {
   const h = (k) => r.conds.some((c) => c.ind === k), v = (k) => (r.conds.find((c) => c.ind === k) || {}).v;
@@ -22,6 +22,7 @@ function label(r) {
     if (h('btcr30')) return 'разворот биткоина';
     return 'покупка';
   }
+  if (h('usdt') && h('beta180')) return 'эйфория в стейблах';
   if (h('qt')) return 'тихая вершина';
   if (h('isalt') && h('oth90') && h('fng')) return 'альтсезон';
   if (h('oth90')) return 'широкая тихая вершина';

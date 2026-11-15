@@ -10,6 +10,21 @@ import combo3_margin as C3M  # noqa: E402
 import imp6_common as I6  # noqa: E402
 from combo_margin import SETS  # noqa: E402
 
+import pandas as pd  # noqa: E402
+import agent4d_margin as _A4D  # noqa: E402
+_ind0 = _A4D.Book.ind
+
+
+def _ind_age(self, k):  # индикатор age (дней с начала истории монеты), как в быстром оценщике — нужен правилу «эйфория в стейблах»
+    I = _ind0(self, k)
+    if "age" not in I:
+        close = self.I[k][0]; I["age"] = pd.Series(np.arange(len(close), dtype=float), index=close.index)
+    return I
+
+
+if getattr(_A4D.Book.ind, "__name__", "") != "_ind_age":
+    _A4D.Book.ind = _ind_age
+
 POL = {"on": False, "A": 540, "t": 0.98, "k": 0.25, "rv": 0.965, "su": 1.2, "m": 1.0}  # m — надбавка при выдаче на развороте (panicx2: k 0, m 2)
 GAP = 10
 
