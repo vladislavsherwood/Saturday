@@ -63,6 +63,19 @@ def history(symbol):
     df["v"] = pd.Series(d.get("v") or [0] * len(idx), index=idx, dtype=float).fillna(0)      # объём торгов за день
     df = df[df["c"] > 0]
     df = df[~df.index.duplicated(keep="last")]
+    binance_price = None
+    if symbol in BINANCE_PRICES:                             # Yahoo округляет цену (PEPE до 1e-6) — свечи берём с Binance
+        try:
+            b = binance_daily(BINANCE_PRICES[symbol])
+            common = df.index.intersection(b.index)
+            for k in ("o", "h", "l", "c"):
+                df.loc[common, k] = b.loc[common, k].values
+            new = b.index.difference(df.index)
+            if len(new):
+                df = pd.concat([df, b.loc[new, ["o", "h", "l", "c"]].assign(v=0.0)]).sort_index()
+            binance_price = float(b["c"].iloc[-1])
+        except Exception as e:  # noqa: BLE001  нет связи с Binance — остаёмся на Yahoo
+            print("Binance", symbol, "недоступен:", e)
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     df = df[df.index < today]                                # сегодняшний день ещё не закрыт
     for k in ("o", "h", "l"):                                # дыры в свечах закрываем ценой закрытия
@@ -71,11 +84,29 @@ def history(symbol):
     df["l"] = df[["o", "h", "l", "c"]].min(axis=1)
     _ohlc[symbol] = df
     s = df["c"]
-    price = d["price"] or (float(s.iloc[-1]) if len(s) else None)
+    price = binance_price or d["price"] or (float(s.iloc[-1]) if len(s) else None)
     return s, price, d["currency"]
 
 
 _ohlc = {}
+# монеты, у которых Yahoo округляет цену: свечи с Binance (публичный data-api, без ключа); дни до листинга на Binance — Yahoo
+BINANCE_PRICES = {"PEPE24478-USD": "PEPEUSDT"}
+
+
+def binance_daily(pair):
+    """Дневные свечи Binance (o, h, l, c), индекс — день UTC; последняя (незакрытая) свеча тоже есть — её отрезает history."""
+    def load():
+        out, start = [], 0
+        while True:
+            d = _get(f"https://data-api.binance.vision/api/v3/klines?symbol={pair}&interval=1d&startTime={start}&limit=1000")
+            out += [[k[0], float(k[1]), float(k[2]), float(k[3]), float(k[4])] for k in d]
+            if len(d) < 1000:
+                return out
+            start = d[-1][0] + 1
+    d = _cached(f"binance_{pair}_1d.json", 3600, load)
+    df = pd.DataFrame(d, columns=["t", "o", "h", "l", "c"])
+    df.index = pd.to_datetime(df["t"], unit="ms").dt.normalize()
+    return df[["o", "h", "l", "c"]]
 
 
 def ohlc(symbol):
