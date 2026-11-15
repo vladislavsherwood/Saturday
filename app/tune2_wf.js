@@ -7,12 +7,13 @@ const k = process.argv[2], vals = process.argv[3].split(',').map(Number), extra 
 const G = T.load(['sel', 'ex', 'rnd']), XS = [...G.sel, ...G.ex, ...G.rnd];
 const lmw = (S, y0, y1) => { const v = XS.map((X) => I.EW(X, S, y0, y1)).filter((x) => x != null); return { lm: I.lm(v), n: v.length }; };
 const S0 = T.build(T.P0);
+const P = (v) => (k === 'b' ? { ...extra, b1: v, b2: v, b3: v } : { ...extra, [k]: v }); // b — все три доли без выноса сразу
 const out = [];
 for (const Y of [2021, 2022, 2023, 2024]) {
-  const tr = vals.map((v) => ({ v, r: lmw(T.build({ ...extra, [k]: v }), null, Y) }));
+  const tr = vals.map((v) => ({ v, r: lmw(T.build(P(v)), null, Y) }));
   const best = tr.reduce((a, b) => (b.r.lm > a.r.lm + 1e-12 ? b : a));
-  const te = lmw(T.build({ ...extra, [k]: best.v }), Y, null), te0 = lmw(S0, Y, null);
-  const all = vals.map((v) => (lmw(T.build({ ...extra, [k]: v }), Y, null).lm - te0.lm).toFixed(3));
+  const te = lmw(T.build(P(best.v)), Y, null), te0 = lmw(S0, Y, null);
+  const all = vals.map((v) => (lmw(T.build(P(v)), Y, null).lm - te0.lm).toFixed(3));
   console.log(`Y=${Y}: до Y лучшее ${k}=${best.v} (лог-мед ${best.r.lm.toFixed(3)}, монет ${best.r.n}); после Y: ${te.lm.toFixed(3)} против combo2 ${te0.lm.toFixed(3)} → Δ ${(te.lm - te0.lm >= 0 ? '+' : '') + (te.lm - te0.lm).toFixed(3)} (монет ${te.n}); Δ после Y по всем значениям: ${vals.map((v, i) => v + ':' + all[i]).join(' ')}`);
   out.push({ Y, best: best.v, d: te.lm - te0.lm });
 }

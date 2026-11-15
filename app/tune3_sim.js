@@ -1,7 +1,7 @@
 /* tune3: шлифовка продаж на страхе и фандинге и множителей продаж поверх combo2 (быстрый оценщик combo2_sim.js).
    Параметры (по умолчанию = combo2): sf — сильный страх fng < 40, sfs — доля 30%; f — страх fng < 52 (только в правилах продажи), fs — 16%;
    ud — порог доли USDT в страх-продажах (7,6; uds — отдельно для сильного страха); fu — фандинг fund30 > 2, fus — 5%;
-   ck — отстающая ×1,25, cv — rel < −15, cw — окно 180; cm2k — отстающий мем ×2; bf — крупная на страхе ×1,25; bc/bv — corr180 > 0,65, vol180 < 90.
+   ck — отстающая ×1,25, cv — rel < −15, cw — окно 180; cm2k — отстающий мем ×2 (ckf / cm2kf — отдельно для продажи по фандингу); bf — крупная на страхе ×1,25; bc/bv — corr180 > 0,65, vol180 < 90.
    Использование: const T = require('./tune3_sim.js'); const G = T.load(); const S = T.build({ fs: 0.17 }) */
 const Z = require('./combo2_sim.js'); const { K, c } = Z;
 const D = { sf: 40, sfs: 0.3, f: 52, fs: 0.16, ud: 7.6, uds: null, fu: 2, fus: 0.05, ck: 1.25, cv: -15, cw: 180, cm2k: 2, bf: 1.25, bc: 0.65, bv: 90, bq: 1.5, a1k: 1.25 };
@@ -21,8 +21,9 @@ function rawRules(p) {
 function mods(p) {
   const ALL = ['fear', 'fund', 'qt', 'wide', 'pump'], rel = 'rel' + p.cw;
   const M = [];
-  M.push({ id: 'C', sets: [[c(rel, '<', p.cv)]], k: Object.fromEntries(ALL.map((q) => [q, p.ck])) });
-  M.push({ id: 'CM2', sets: [[c('meme', '>', 0.5)]], k: Object.fromEntries(ALL.map((q) => [q, p.cm2k / p.ck])), req: 'C', ex: ['A1'] });
+  const ckq = (q) => (q === 'fund' && p.ckf != null ? p.ckf : p.ck), cmq = (q) => (q === 'fund' && p.cm2kf != null ? p.cm2kf : p.cm2k);
+  M.push({ id: 'C', sets: [[c(rel, '<', p.cv)]], k: Object.fromEntries(ALL.map((q) => [q, ckq(q)])) });
+  M.push({ id: 'CM2', sets: [[c('meme', '>', 0.5)]], k: Object.fromEntries(ALL.map((q) => [q, cmq(q) / ckq(q)])), req: 'C', ex: ['A1'] });
   const beh = [c('corr180', '>', p.bc), c('vol180', '<', p.bv)];
   M.push({ id: 'B65', sets: [[c('isbig', '>', 0.5)], beh], k: { qt: p.bq, wide: p.bq, fear: p.bf } });
   M.push({ id: 'A1', sets: [[c('isalt', '>', 0.5)]], k: { wide: p.a1k }, ex: ['CM2'] });
