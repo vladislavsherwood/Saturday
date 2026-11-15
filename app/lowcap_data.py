@@ -285,6 +285,8 @@ def bnm_day(args):
 def bnm():
     from datetime import timedelta
     S = [q for q in jload(f"{RAW}/selected.json") if q["bn"]]
+    if os.environ.get("LOWCAP_REV"):        # второй поток загрузки — с конца списка
+        S = S[::-1]
     for q in S:
         p = f"{RAW}/bnm_{q['bn']}.json"
         have = jload(p, {})

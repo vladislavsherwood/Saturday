@@ -143,7 +143,8 @@ function line(tag, r, b) {
 function bw(r, b, g) { let u = 0, d = 0; r[g].forEach((x, i) => { if (x.f > b[g][i].f + 0.5) u++; else if (x.f < b[g][i].f - 0.5) d++; }); return [u, d]; }
 
 // ---------- правки правил ----------
-const BASE = JSON.parse(fs.readFileSync(path.join(__dirname, 'found', fs.existsSync(path.join(__dirname, 'found', 'combo2-best.json')) && !process.env.LOWCAP_COMBO1 ? 'combo2-best.json' : 'combo-best.json'), 'utf8'));
+// основа — combo-best.json; LOWCAP_BASE=combo2 — combo2-best.json (нужны индикаторы списков combo2: см. lowcap_combo2.js)
+const BASE = JSON.parse(fs.readFileSync(path.join(__dirname, 'found', process.env.LOWCAP_BASE === 'combo2' ? 'combo2-best.json' : 'combo-best.json'), 'utf8'));
 const S0 = { base: BASE.base, rules: BASE.rules };
 const pre = (St, sel, cond, act, extra = {}) => ({ ...St, rules: St.rules.flatMap((r, i) => (sel(r, i) ? [{ ...extra, act: typeof act === 'function' ? act(r) : act, conds: [...r.conds, ...cond] }, r] : [r])) });
 const addCond = (St, sel, cond) => ({ ...St, rules: St.rules.map((r, i) => (sel(r, i) ? { ...r, conds: [...r.conds, ...cond] } : r)) });

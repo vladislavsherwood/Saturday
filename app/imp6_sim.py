@@ -1,6 +1,6 @@
 """imp6: портфельный симулятор sim5 = agent4d_margin.sim4 + три вещи реального исполнения.
   * размазывание: доля сигнала (не обычного взноса) исполняется частями WT[0] сегодня, WT[1] завтра, WT[2] послезавтра
-    (по группам плеча SPL[g] = 1); продажа — доля от монет на день сигнала, покупка — доля суммы «(act − 1) · резерв» на день сигнала
+    (по группам плеча SPL[g] = 1; плечо отложенных частей ×LD: 0 — без плеча); продажа — доля от монет на день сигнала, покупка — доля суммы «(act − 1) · резерв» на день сигнала
     (с тем же плечом), отложенная часть ограничена резервом дня исполнения;
   * Hyperliquid: комиссия по монете (FEES — спот, FEEP — перп), перп-монеты (PERP: DOGE, PEPE — вся позиция на перпе),
     фандинг FUND в день на номинал перп-лонгов (плечевые ноги и перп-монеты) вместо процента по долгу, фандинг шорта SHR;
@@ -16,7 +16,7 @@ from agent_margin import ML, UNIT
 
 @njit(cache=True)
 def sim5(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
-         WT, SPL, FEES, FEEP, PERP, FUND, MINO, MINB, hl, MM, MMSH):
+         WT, SPL, FEES, FEEP, PERP, FUND, MINO, MINB, hl, MM, MMSH, LD):
     n, K = C.shape
     r = np.zeros(K); u = np.zeros(K); pu = np.zeros(K); debt = np.zeros(K); su = np.zeros(K); stg = np.zeros(K); dca = np.zeros(K)
     NS = 4
@@ -77,7 +77,7 @@ def sim5(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
                 if sp:
                     for j in range(1, nw):
                         x = extra * WT[j]
-                        QV[(t + j) % NS, k] += x; QB[(t + j) % NS, k] += max(0.0, (LEV[g, k] - 1) * lm * x)
+                        QV[(t + j) % NS, k] += x; QB[(t + j) % NS, k] += max(0.0, (LEV[g, k] - 1) * lm * x) * LD
                     extra *= WT[0]
             # продажа
             if qs > 0 and u[k] > 0:

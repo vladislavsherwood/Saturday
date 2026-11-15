@@ -77,7 +77,7 @@ HL_PERP = {"DOGE-USD", "PEPE24478-USD"}
 HL_MM = {"BTC-USD": 0.0125, "ETH-USD": 0.02, "SOL-USD": 0.025}
 
 
-def cfg(P, WT=(1.0,), SPL=(0,) * 8, hlx=False, fees=None, perp=None, fund=0.0003, mino=0.0, minb=0.0, hl=0, shr=0.15 / 365, perp_all=False):
+def cfg(P, WT=(1.0,), SPL=(0,) * 8, hlx=False, fees=None, perp=None, fund=0.0003, mino=0.0, minb=0.0, hl=0, shr=0.15 / 365, perp_all=False, ld=1.0):
     """Параметры sim5 для портфеля P. hlx=True — комиссии/перп-монеты/фандинг Hyperliquid (без минимума и без ликвидации HL, их — mino/hl)."""
     syms = [s for s, _ in P.B.coins]; K = len(syms)
     FEES = np.full(K, 0.001); FEEP = np.full(K, 0.001); PERP = np.zeros(K, dtype=np.bool_)
@@ -88,7 +88,7 @@ def cfg(P, WT=(1.0,), SPL=(0,) * 8, hlx=False, fees=None, perp=None, fund=0.0003
         PERP[:] = perp
     MM = np.array([HL_MM.get(s, 0.05) for s in syms])
     return dict(WT=np.array(WT, dtype=float), SPL=np.array(SPL, dtype=np.int64), FEES=FEES, FEEP=FEEP, PERP=PERP, FUND=fund,
-                MINO=mino, MINB=minb, hl=hl, MM=MM, MMSH=0.0125, shr=shr)
+                MINO=mino, MINB=minb, hl=hl, MM=MM, MMSH=0.0125, shr=shr, LD=ld)
 
 
 def run5(P, A, G, L, shw=0.0, sh_lag=0, rate=0.0003, stress=True, LEVM=None, starts=None, **kw):
@@ -99,7 +99,7 @@ def run5(P, A, G, L, shw=0.0, sh_lag=0, rate=0.0003, stress=True, LEVM=None, sta
     LM = np.ones(P.B.C.shape) if LEVM is None else LEVM
     Lm = P.B.levmat(L); st = STARTS if starts is None else starts
     f = lambda s, sv: sim5(P.B.C, P.B.LO, P.B.HI, A, G, W, LM, int(s), Lm, sv, shr, rate, k["WT"], k["SPL"], k["FEES"], k["FEEP"], k["PERP"],
-                           k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"])
+                           k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"], k["LD"])
     R = [f(s, 1.0) for s in st]
     x = np.array([q[1] for q in R]) * 100
     o = {"liq": int(sum(q[0] > 0 for q in R)), "med": float(np.median(x)), "p10": float(np.percentile(x, 10)), "lvl": float(min(q[2] for q in R)),
