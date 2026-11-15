@@ -8,7 +8,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pxm_margin as PX  # noqa: E402
 import combo3_margin as C3M  # noqa: E402
 import imp6_common as I6  # noqa: E402
-from combo3_msim import sim6  # noqa: E402
+from combo3_msim import sim6 as _sim6  # noqa: E402
+from minbuy_msim import sim6 as _sim6b  # noqa: E402
+sim6 = _sim6b if os.environ.get("SELLANY") else _sim6
 from perp_margin import fill, ST  # noqa: E402
 
 PX.POL.update(on=True, k=0.0, m=2.0, A=0)
