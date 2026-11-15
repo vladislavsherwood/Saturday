@@ -11,7 +11,7 @@ import agent4d_margin as AD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 S4 = json.load(open(os.path.join(HERE, "found", "combo4-best.json")))
-A_AGE, T_PK, RV, SU, MULT, GAP = 540, 0.98, 0.965, 1.2, 2.0, 10
+A_AGE, T_PK, RV, SU, MULT, GAP = 0, 0.98, 0.965, 1.2, 2.0, 10
 
 
 def has(r, k):

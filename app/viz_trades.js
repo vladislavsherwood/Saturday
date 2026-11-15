@@ -55,13 +55,13 @@ for (const nm of WANT) {
   // таблица правил монеты: [доля, подпись]; rq[i] — правило, которое исполняется в день i (решено по дню i−1)
   const rt = [], key = {}, rq = new Array(X.n).fill(-1);
   for (let i = 1; i < X.n; i++) { const q = dec(i - 1); if (q < 0) continue; const r = R[q].r, k = r.act + '|' + label(r); if (key[k] == null) { key[k] = rt.length; rt.push([+r.act.toFixed(6), label(r)]); } rq[i] = key[k]; }
-  // отложенная паника (combo4): флаги дня исполнения i по данным дня i−1 — 1: отложить (возраст > 540, usdt ≤ 1,2, upk10 ≥ 0,98),
+  // отложенная паника (combo4): флаги дня исполнения i по данным дня i−1 — 1: отложить (все монеты с ноября 2026 — порог возраста 0; было > 540; usdt ≤ 1,2, upk10 ≥ 0,98),
   // 2: разворот usdt (upk10 < 0,965) — выдать долг ×2, 4: конец эпизода паники (10 дней без паники) — выдать долг без надбавки
   const I = X.ind, u = I.usdt, pf = new Array(X.n).fill(0); let last = -1e9, st = -1;
   const upk = (j) => { let m = -Infinity; for (let k = Math.max(0, j - 9); k <= j; k++) if (u[k] > m) m = u[k]; return u[j] / m; };
   const pend = new Array(X.n).fill(0);
   for (let j = 0; j < X.n; j++) { const on = u[j] > 1.07 && I.othd[j] < 25; if (on) { if (j - last > 10) st = j; last = j; } if (st >= 0 && !on && j - last === 10) pend[j] = 1; }
-  for (let i = 1; i < X.n; i++) { const j = i - 1, k = upk(j); pf[i] = (I.age[j] > 540 && u[j] <= 1.2 && k >= 0.98 ? 1 : 0) | (k < 0.965 ? 2 : 0) | (pend[j] ? 4 : 0); }
+  for (let i = 1; i < X.n; i++) { const j = i - 1, k = upk(j); pf[i] = (I.age[j] > 0 && u[j] <= 1.2 && k >= 0.98 ? 1 : 0) | (k < 0.965 ? 2 : 0) | (pend[j] ? 4 : 0); }
   out.coins.push({ name: nm, seg: X.seg, t: Array.from(X.t, (v) => Math.round(v)), c: Array.from(X.c, (v) => +v.toPrecision(5)), rt, rq, pf: pf.join(''), k: Array.from(X.ind.beta180, (v) => (isFinite(v) ? Math.round(v * 100) : null)) }); // светофор: бета к BTC за 180 дней
   const r0 = run(X, S); console.log(nm, X.seg, X.n, 'дней, правил', rt.length, 'итог $' + Math.round(r0.eq[X.n - 1]));
 }
