@@ -6,6 +6,7 @@ let col = null, sampler = null;
 const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
 const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
+const modeOf = (t) => t.mode || (t.margin ? "margin" : "spot");   // режим исполнения монеты: спот / маржа на споте / перпы
 const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo4") ? "combo4" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
 async function boot() {
@@ -20,7 +21,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -59,9 +60,15 @@ async function boot() {
     mem.mig4 = "alloc-2026-11-15";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя): USELESS, XMR, ZEC — перпы на Bybit (спота там нет)
+  if (mem.mig5 !== "perp-3") {
+    for (const t of mem.tickers) if (["USELESS36828-USD", "XMR-USD", "ZEC-USD"].includes(t.symbol)) { t.mode = "perp"; t.margin = false; }
+    mem.mig5 = "perp-3";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }
@@ -70,7 +77,7 @@ async function dropTrades(ids) { mem.trades = mem.trades.filter((t) => !ids.incl
 function ledger(symbol, since) {
   const o = { bought: 0, sold: 0, qty: 0, cost: 0, today: 0, n: 0, boughtSince: 0, soldSince: 0, borrowedSince: 0, repaidSince: 0 }, day = todayStr();
   for (const r of mem.trades.filter((t) => t.symbol === symbol).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.id - b.id))) {
-    if (since && r.day >= since) { if (r.side === "sell") { o.soldSince += r.amount; o.repaidSince += r.repaid || 0; } else { o.boughtSince += r.amount; o.borrowedSince += r.borrowed || 0; } }   // резерв и долг — с даты старта монеты
+    if (since && r.day >= since) { if (r.side === "sell") { o.soldSince += r.amount; o.repaidSince += r.repaid || 0; } else { o.boughtSince += r.amount; o.borrowedSince += r.borrowed || 0; if (!o.lastBuy || r.day > o.lastBuy) o.lastBuy = r.day; } }   // резерв и долг — с даты старта монеты
     if (r.side === "sell") { o.sold += r.amount; if (o.qty > 0) o.cost *= Math.max(0, 1 - r.qty / o.qty); o.qty = Math.max(0, o.qty - r.qty); }
     else { o.bought += r.amount; o.cost += r.amount; o.qty += r.qty; }
     o.n++; if (r.day === day) o.today += r.side === "sell" ? -r.amount : r.amount;
@@ -92,13 +99,21 @@ function today() {
       // резерв = взносы − свои деньги в покупках + выручка без погашения долга; долг = занятое − погашенное
       const days = Math.round((Date.parse(day) - Date.parse(t.since || day)) / 864e5) + 1, debt = Math.max(0, bk.borrowedSince - bk.repaidSince);
       const reserve = Math.max(0, unit * days - (bk.boughtSince - bk.borrowedSince) + (bk.soldSince - bk.repaidSince)), before = Math.max(0, reserve - unit);
-      let a = st.plan_today, amount, borrowed = 0, repaid = 0;
-      if (t.margin && st.m) {   // маржа доступна: доли схемы с плечом, сделки дна/паники/продаж 50/50 на два дня
+      let a = st.plan_today, amount, borrowed = 0, repaid = 0, wait = null, minOpen = null, small = false;
+      const mode = modeOf(t);
+      if (mode !== "spot" && st.m) {   // маржа или перпы: доли схемы с плечом, сделки дна/паники/продаж 50/50 на два дня
         const m = st.m;
-        if (m.sf > 0) { a = -m.sf; amount = -m.sf * qty * h.price; repaid = m.sf * debt; }
+        if (mode === "perp") {   // перпы Bybit: открытие от max($5, 0,01 монеты), взнос копится до минимума; продажа — шагом 0,01 монеты
+          minOpen = Math.max(5, 0.01 * h.price);
+          const pd = bk.lastBuy ? Math.round((Date.parse(day) - Date.parse(bk.lastBuy)) / 864e5) : days, pending = Math.min(reserve, unit * Math.max(1, pd)), base = Math.max(0, reserve - pending);
+          if (m.sf > 0) { const sq = m.sf * qty >= qty * 0.999 ? qty : Math.floor((m.sf * qty) / 0.01 + 1e-9) * 0.01; a = -m.sf; amount = -sq * h.price; repaid = qty > 0 ? (sq / qty) * debt : 0; small = sq <= 0 && qty > 0; }
+          else { const want = pending + m.es * base, own = Math.min(reserve, want); borrowed = want > 0 ? (m.bu * pending + m.bs * base) * own / want : 0; a = 1 + m.es;
+            if (own + borrowed < minOpen) { wait = { have: r2(own + borrowed), need: r2(minOpen) }; amount = 0; borrowed = 0; } else amount = own + borrowed; }
+        } else if (m.sf > 0) { a = -m.sf; amount = -m.sf * qty * h.price; repaid = m.sf * debt; }
         else { const want = unit + m.es * before, own = Math.min(reserve, want); borrowed = want > 0 ? (m.bu * unit + m.bs * before) * own / want : 0; amount = own + borrowed; a = 1 + m.es; }
       } else amount = a < 0 ? a * qty * h.price : a > 0 ? Math.min(reserve, unit + (a - 1) * before) : 0;
-      Object.assign(i, { reserve: r2(reserve), amount: r2(amount), plan_today: a, margin: !!t.margin, has_margin: !!st.m, borrowed: r2(borrowed), repaid: r2(repaid), debt: r2(debt), lev: t.margin && st.m ? st.m.lev : 1 });
+      Object.assign(i, { reserve: r2(reserve), amount: r2(amount), plan_today: a, mode, margin: mode !== "spot" && !!st.m, has_margin: !!st.m, borrowed: r2(borrowed), repaid: r2(repaid), debt: r2(debt),
+        lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small });
       if (a < 0 && Math.abs(amount) < 0.005) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
     }
     return i;
@@ -148,7 +163,7 @@ async function api(path, opts = {}) {
   if (seg[0] === "history") return (coin(seg[1]) || fail("Нет данных по этому тикеру")).h;
   if (seg[0] === "search") { const s = (arg.get("q") || "").trim().toLowerCase(); return Object.entries(SNAP.coins).filter(([k, v]) => !s || k.toLowerCase().includes(s) || v.name.toLowerCase().includes(s)).map(([k, v]) => ({ symbol: k, name: v.name, kind: "CRYPTOCURRENCY" })); }
   if (seg[0] === "tickers" && m === "POST") { if (!coin(b.symbol)) fail("В этой версии доступны только встроенные монеты"); if (!mem.tickers.some((t) => t.symbol === b.symbol)) { mem.tickers.push(fresh(b.symbol)); await saveCfg(); } return { ok: true }; }
-  if (seg[0] === "tickers" && m === "PATCH") { const t = tick(seg[1]); if (b.strategy) t.strategy = b.strategy; if (b.margin != null) t.margin = !!b.margin; if (b.reset_unit) t.unit = null; else if (b.unit != null) { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); t.unit = b.unit; } await saveCfg(); return { ok: true }; }
+  if (seg[0] === "tickers" && m === "PATCH") { const t = tick(seg[1]); if (b.strategy) t.strategy = b.strategy; if (b.margin != null) t.margin = !!b.margin; if (b.mode) { t.mode = ["spot", "margin", "perp"].includes(b.mode) ? b.mode : "spot"; t.margin = t.mode === "margin"; } if (b.reset_unit) t.unit = null; else if (b.unit != null) { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); t.unit = b.unit; } await saveCfg(); return { ok: true }; }
   if (seg[0] === "tickers" && m === "DELETE") { mem.tickers = mem.tickers.filter((t) => t.symbol !== seg[1]); await saveCfg(); return { ok: true }; }
   if (seg[0] === "unit") { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); mem.unit = b.unit; await saveCfg(); return { ok: true }; }
   if (seg[0] === "done" && m === "POST") { if (!b.price || !b.amount) fail("Нет суммы или цены"); const it = today().items.find((x) => x.symbol === b.symbol) || {}; return addTrade({ symbol: b.symbol, side: b.amount < 0 ? "sell" : "buy", amount: Math.abs(b.amount), price: b.price, source: "plan", borrowed: b.amount > 0 ? it.borrowed || 0 : 0, repaid: b.amount < 0 ? it.repaid || 0 : 0 }); }
