@@ -11,19 +11,20 @@ const Z = require('./combo2_sim.js');
 const fs = require('fs');
 const { c } = Z;
 const CB = JSON.parse(fs.readFileSync(__dirname + '/found/combo2-best.json', 'utf8'));
-const P0 = { u: 1.07, w: 200, o: 25, fs: 40, fw: 52, ud: 7.6, oi: 8, us: 1.2, m: 1.5, a1: 25, a2: 50, a3: 50, b1: 10, b2: 10, b3: 10 };
+const P0 = { u: 1.07, w: 200, o: 25, fs: 40, fw: 52, ud: 7.6, oi: 8, us: 1.2, m: 1.5, a1: 25, a2: 50, a3: 50, b1: 10, b2: 10, b3: 10, cap: 1e9 };
 const MINE = [3, 4, 5, 6, 7, 8, 11, 12, 13];
 const r6 = (x) => +x.toFixed(6);
 function panic(p) {
   const U = p.w === 200 ? 'usdt' : 'usdt' + p.w, R = [];
   const head = [c(U, '>', p.u), c('othd', '<', p.o)];
   const lvl = [[[c('fng', '<', p.fs), c('usdtd', '<', p.ud)], p.a1, p.b1], [[c('fng', '<', p.fw), c('usdtd', '<', p.ud)], p.a2, p.b2], [[], p.a3, p.b3]];
-  for (const [f, a, b] of lvl) {
+  lvl.forEach(([f, a, b], li) => {
     const conf = [...head, ...f, c('oidd30', '<', -p.oi)];
-    R.push({ act: r6(1 + (a * p.m) / 100), conds: [...conf, c(U, '>', p.us)] });
+    const mm = p['m' + (li + 1)] ?? p.m; // m1/m2/m3 — множитель уровня (по умолчанию m); cap — потолок доли сильной паники, %
+    R.push({ act: r6(1 + Math.min(a * mm, p.cap) / 100), conds: [...conf, c(U, '>', p.us)] });
     R.push({ act: r6(1 + a / 100), conds: conf });
     if (b > 0) R.push({ act: r6(1 + b / 100), conds: [...head, ...f] });
-  }
+  });
   return R;
 }
 // правила: 0–2 как в combo2, затем паника (сильный страх, страх), затем #9, #10 как в combo2, затем паника без страха, затем остальное
