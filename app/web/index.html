@@ -301,7 +301,9 @@ function actionCard(i) {
   const a = i.plan_today, kind = a < 0 ? "sell" : a > 1 ? "buy" : "", r = i.state && i.rule >= 0 ? i.state[i.rule] : null;
   const head = i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `Продать ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `Купить на $${big(i.amount)}` : "Без сделки";
   const sub = i.nothing_to_sell ? "Сигнал на продажу, но позиции пока нет. Сегодняшний взнос остаётся в резерве." : r ? r.why : "Сигналов нет — обычный ежедневный взнос.";
-  return `<div class="act ${kind}"><b>${head}</b><p>${esc(sub)}</p></div>`;
+  const mg = i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "") : "";
+  const dl = i.margin && i.debt > 0 ? `<p>Долг по марже: $${big(i.debt)}</p>` : "";
+  return `<div class="act ${kind}"><b>${head}</b><p>${esc(sub)}</p>${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}</div>`;
 }
 function position(i) {
   const cells = [["В активе", "$" + big(i.holding || 0)], ["Количество", i.qty ? qty(i.qty) : "—"], ["Средняя цена", i.avg_price ? "$" + qty(i.avg_price) : "—"]];
@@ -346,6 +348,8 @@ function openTicker(symbol) {
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
     ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + market(i) + position(i)}
     <h3>Стратегии на истории</h3><div id="strats"><div class="hint">Считаю историю…</div></div>
+    ${i.has_margin ? `<h3>Маржа</h3><label class="field l" style="cursor:pointer"><input type="checkbox" id="mIn" ${i.margin ? "checked" : ""} onchange="saveMargin('${s}')" style="flex:0 0 auto;width:22px;height:22px;margin-right:12px"><span style="color:var(--text);font-weight:600;font-size:16px">Маржа на этой монете доступна</span></label>
+    <div class="note">Включено — суммы по маржинальной схеме: дно 25% резерва с плечом ×2, паника — доли ×2 с плечом ×1,5, разворот — весь резерв с плечом ×1,5; сделки дна, паники и продаж — половина сегодня, половина завтра; продажи сначала гасят долг. Выключено — только свои деньги.</div>` : ""}
     <h3>Ежедневный взнос</h3><div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}" onchange="saveUnit('${s}')"><em>в день</em></div>`);
   trades(symbol); strategies(symbol);
 }
@@ -367,6 +371,9 @@ async function setStrategy(symbol, strategy) {
   haptic("ok");
   try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify({ strategy }) }); await load(); openTicker(symbol); }
   catch (e) { toast(e.message); }
+}
+async function saveMargin(symbol) {
+  try { await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify({ margin: $("mIn").checked }) }); haptic(); await load(); openTicker(symbol); } catch (e) { toast(e.message); }
 }
 async function saveUnit(symbol) {
   const v = $("unitIn").value.trim();

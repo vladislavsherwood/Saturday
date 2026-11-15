@@ -48,6 +48,51 @@ def fam(r):
     return 7
 
 
+SPLIT = [1 if g in (1, 2, 5, 7, 4) else 0 for g in range(8)]   # группы, чьи сделки делятся 50/50 на два дня (как combo3_margin.SPLIT)
+
+
+def defer_plan(Ak, RIk, isP, Ck, u, upk, pend, first, last):
+    """Эффективный план монеты с отложенной паникой (доли резерва), флаги откладывания/выдачи и долг в долях резерва."""
+    n = len(Ak); plan = Ak.copy(); dflag = np.zeros(n, int); owed_sh = np.zeros(n)
+    r = 0.0; units = 0.0; owed = 0.0
+    for t in range(first, last + 1):
+        p = Ck[t + 1] if t + 1 <= last and np.isfinite(Ck[t + 1]) else Ck[t]
+        if not np.isfinite(p) or p <= 0: continue
+        before = r; r += 1.0; a = Ak[t]; ri = RIk[t]
+        if a < 0:
+            amt = -a * units * p; units -= amt / p; r += amt * 0.999
+        else:
+            extra = (a - 1) * before
+            if ri >= 0 and isP[ri] and (t - first) > A_AGE and upk[t] >= T_PK and not (u[t] > SU):
+                owed = min(before, owed + extra); extra = 0.0; dflag[t] = 1
+            rel = 0.0
+            if owed > 0 and (upk[t] < RV or pend[t]):
+                rel = owed * (MULT if upk[t] < RV else 1.0); owed = 0.0; dflag[t] = 2
+            amt = min(r, 1.0 + extra + rel); units += amt * 0.999 / p; r -= amt
+            if before > 1e-9 and a > 0: plan[t] = 1.0 + (amt - 1.0) / before
+        if pend[t]: owed = 0.0
+        owed_sh[t] = owed / r if r > 1e-9 else 0.0
+    return plan, dflag, owed_sh
+
+
+def margin_today(pm, Gk, LM, t):
+    """Сделка по марже на день исполнения после дня t (как combo3_msim.sim6): доля своих денег сверх взноса (es, от резерва накануне),
+    заём на взнос (bu, × взнос) и на долю (bs, × резерв накануне), доля продажи (sf, от позиции) — с учётом половины вчерашнего сигнала 50/50."""
+    L = lambda g: float(LM[int(g)])  # noqa: E731
+    a, g = float(pm[t]), int(Gk[t]); ap, gp = float(pm[t - 1]), int(Gk[t - 1])
+    sf = 0.0; es = 0.0; bu = 0.0; bs = 0.0
+    if a < 0: sf += -a * (0.5 if SPLIT[g] else 1.0)
+    if ap < 0 and SPLIT[gp]: sf += -ap * 0.5                      # вторая половина вчерашней продажи
+    if a >= 0:
+        bu = max(0.0, L(g) - 1)
+        if a > 1:
+            part = (a - 1) * (0.5 if SPLIT[g] else 1.0); es += part; bs += max(0.0, L(g) - 1) * part
+        if ap > 1 and SPLIT[gp]:                                  # вторая половина вчерашней покупки (в день продажи пропадает)
+            part = (ap - 1) * 0.5; es += part; bs += max(0.0, L(gp) - 1) * part
+    lev = max([L(g)] + ([L(gp)] if (ap > 1 and SPLIT[gp]) else []))
+    return {"es": round(es, 6), "bu": round(bu, 6), "bs": round(bs, 6), "sf": round(min(1.0, sf), 6), "lev": lev, "a": round(a, 6)}
+
+
 def compute(coins):
     """coins: [(symbol, kind)] → {symbol: {dates, plan, fam, defer, owed_share}} по дням IDX."""
     S = {"base": 1, "rules": [dict(r, grp=0) for r in S4["rules"]]}
@@ -57,6 +102,10 @@ def compute(coins):
     A, _, RI = B.plan(S)
     usdt, othd, C = B.series("usdt"), B.series("othd"), B.C
     isP = np.array([r["act"] > 1 and has(r, "usdt") for r in S["rules"]] + [False])
+    import combo3_margin as C3M
+    SM, LM = C3M.scheme6({"base": 1, "rules": S4["rules"]}, lp=1.5, sr=1.0, t1grp="off")
+    AM, GM, RIM = B.plan(SM)
+    isPM = np.array([r["act"] > 1 and has(r, "usdt") for r in SM["rules"]] + [False])
     F = np.array([fam(r) for r in S["rules"]] + [-1])
     out = {}
     n = C.shape[0]
@@ -73,26 +122,12 @@ def compute(coins):
         for i in range(n):
             if on[i]: lastp = i
             elif i - lastp == GAP: pend[i] = True
-        plan = A[:, k].copy(); fm = np.where(RI[:, k] >= 0, F[np.maximum(RI[:, k], 0)], -1); dflag = np.zeros(n, int)
-        r = 0.0; units = 0.0; owed = 0.0; owed_sh = np.zeros(n)
-        for t in range(first, last + 1):
-            p = C[t + 1, k] if t + 1 <= last and np.isfinite(C[t + 1, k]) else C[t, k]
-            if not np.isfinite(p) or p <= 0: continue
-            before = r; r += 1.0; a = A[t, k]; ri = RI[t, k]
-            if a < 0:
-                amt = -a * units * p; units -= amt / p; r += amt * 0.999
-            else:
-                extra = (a - 1) * before
-                if ri >= 0 and isP[ri] and (t - first) > A_AGE and upk[t] >= T_PK and not (u[t] > SU):
-                    owed = min(before, owed + extra); extra = 0.0; dflag[t] = 1
-                rel = 0.0
-                if owed > 0 and (upk[t] < RV or pend[t]):
-                    rel = owed * (MULT if upk[t] < RV else 1.0); owed = 0.0; dflag[t] = 2; fm[t] = 3
-                amt = min(r, 1.0 + extra + rel); units += amt * 0.999 / p; r -= amt
-                if before > 1e-9 and a > 0: plan[t] = 1.0 + (amt - 1.0) / before
-            if pend[t]: owed = 0.0
-            owed_sh[t] = owed / r if r > 1e-9 else 0.0
-        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k}
+        plan, dflag, owed_sh = defer_plan(A[:, k], RI[:, k], isP, C[:, k], u, upk, pend, first, last)
+        fm = np.where(RI[:, k] >= 0, F[np.maximum(RI[:, k], 0)], -1); fm[dflag == 2] = 3
+        # маржа (основная схема combo4: дно 25% ×2, паника доли ×2 с плечом ×1,5, разворот 100% ×1,5, отложенная 50%; сделки дна, паники и продаж 50/50 на два дня)
+        pm, dm, _ = defer_plan(AM[:, k], RIM[:, k], isPM, C[:, k], u, upk, pend, first, last)
+        m = margin_today(pm, GM[:, k], LM, last)
+        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k, "m": m}
     return out
 
 
@@ -115,7 +150,8 @@ def strategy(sym, h, R, ind):
     label = f"{light} бета к BTC {beta:.2f}".replace(".", ",") if beta is not None else ""
     if R["owed"][li] > 0: label += f" · отложено {R['owed'][li] * 100:.0f}% резерва"
     st = state(ind, li, R)
-    return {"code": "combo4", "name": "combo4 (итоговая)", "about": "Итоговая стратегия: 55 правил combo3 (дно, ликвидации, паника, разворот, продажи на страхе и вершинах) + отложенная паника: пока доля USDT растёт, паника не покупает, а копит; на развороте USDT покупает отложенное вдвойне.",
+    mm = R["m"]
+    return {"m": mm, "code": "combo4", "name": "combo4 (итоговая)", "about": "Итоговая стратегия: 55 правил combo3 (дно, ликвидации, паника, разворот, продажи на страхе и вершинах) + отложенная паника: пока доля USDT растёт, паника не покупает, а копит; на развороте USDT покупает отложенное вдвойне.",
             "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
             "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
 
