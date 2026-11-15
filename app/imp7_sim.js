@@ -102,3 +102,9 @@ function trades(X, S) {
   return tr.map((x) => ({ ...x, rule: R[x.q] }));
 }
 module.exports = { ...K, K, A2, S0, BASE, B0, groups, prep, addFlag, kind, scaleK, CYC, DAY, slice, cycSlices, cycEv, cycCmp, cycStr, sameSign, trades, regimeMap, c };
+// кандидат imp7: в медвежьем режиме BTC (ниже средней 200 и средняя 200 падает) правила разворота возвращают долю резерва ×k
+// (копия каждого правила разворота с условиями rb200 < x и rsl < s перед исходным)
+function bearRev(S = B0, k = 0.5, x = 1, s = 0) {
+  return { ...S, rules: S.rules.flatMap((r) => (r.act > 1 && kind(r) === 'rev' ? [{ act: +(1 + (r.act - 1) * k).toFixed(6), conds: [...r.conds, c('rb200', '<', x), c('rsl', '<', s)] }, r] : [r])) };
+}
+module.exports.bearRev = bearRev;

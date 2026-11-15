@@ -195,11 +195,13 @@ def select():
         q2 = dict(q, first=T[0], last=T[-1], n=len(T), mc_med=med(mc) if mc else None, mc_max=max(mc) if mc else None, mc_share=len(mc) / len(V),
                   vol_med=med(vol), ndist=len(set(round(v[3], 12) for v in V)))
         rows.append(q2)
-    # лоукап по данным: медианная капитализация за всю историю ≤ $1,5 млрд, максимум ≥ $30 млн, медианный объём ≥ $1 млн в день,
-    # история ≥ 365 дней к 2026-11-14 и есть капитализация хотя бы у половины дней; стейблкоины и обёртки — вон
+    # лоукап по данным: медианная капитализация за всю историю ≤ $1 млрд, максимум ≥ $30 млн, медианный объём ≥ $2 млн в день,
+    # история ≥ 420 дней (год после 20 дней разогрева, как у стенда) и есть капитализация хотя бы у половины дней; стейблкоины и обёртки — вон
     bad = ("stablecoin", "wrapped-tokens", "tokenized-gold", "asset-backed-stablecoin")
-    ok = [r for r in rows if r["first"] <= CUT and r["mc_med"] and r["mc_share"] >= 0.5 and r["mc_med"] <= 1.5e9 and r["mc_max"] >= 3e7
-          and r["vol_med"] >= 1e6 and not any(t in r["tags"] for t in bad)]
+    # ошибки данных: ELON — цены 2021 г. округлены (65 повторов закрытия подряд при цене ~1e-8), замены на Hyperliquid/Binance нет
+    rows = [r for r in rows if r["sym"] not in ("ELON",)]
+    ok = [r for r in rows if r["first"] <= CUT and r["n"] >= 420 and r["mc_med"] and r["mc_share"] >= 0.5 and r["mc_med"] <= 1e9 and r["mc_max"] >= 3e7
+          and r["vol_med"] >= 2e6 and not any(t in r["tags"] for t in bad)]
     ok.sort(key=lambda r: r["sym"])
     rnd = random.Random(20261114)
     names = [r["sym"] for r in ok]
@@ -212,7 +214,7 @@ def select():
     for r in sorted(ok, key=lambda r: r["first"]):
         print(f"{r['sym']:>10} {r['part']} {r['first']} n={r['n']} mc_med={r['mc_med'] / 1e6:.0f}M max={r['mc_max'] / 1e6:.0f}M vol={r['vol_med'] / 1e6:.1f}M hl={r['hl']} bn={r['bn']} ndist={r['ndist']}")
     rej = [r for r in rows if r not in ok]
-    print("не вошли:", " ".join(f"{r['sym']}({'молод' if r['first'] > CUT else 'кап' if (r['mc_med'] or 0) > 1.5e9 else 'мал' if (r['mc_max'] or 0) < 3e7 else 'объём' if r['vol_med'] < 1e6 else 'нет кап' if not r['mc_med'] or r['mc_share'] < 0.5 else 'тег'})" for r in rej))
+    print("не вошли:", " ".join(f"{r['sym']}({'молод' if r['first'] > CUT or r['n'] < 420 else 'кап' if (r['mc_med'] or 0) > 1e9 else 'мал' if (r['mc_max'] or 0) < 3e7 else 'объём' if r['vol_med'] < 2e6 else 'нет кап' if not r['mc_med'] or r['mc_share'] < 0.5 else 'тег'})" for r in rej))
 
 
 # ---------- Hyperliquid ----------
@@ -312,6 +314,62 @@ def bnf():
     print("bnf ok")
 
 
+# ---------- страницы стенда для лоукапов (build_builder.py file:…, по 10 монет) и выгрузка рядов для быстрого оценщика ----------
+PAGES_DIR = os.environ.get("LOWCAP_PAGES", os.path.join(os.path.dirname(RAW), "pages"))
+
+
+def pages():
+    import subprocess
+    S = jload(f"{RAW}/selected.json")
+    os.makedirs(PAGES_DIR, exist_ok=True)
+    names = []
+    for k in range(0, len(S), 10):
+        nm = f"lc{k // 10}"
+        lst = [{"cid": q["id"], "ticker": q["sym"], "name": q["name"], "skip": 20, "year": int(q["first"][:4])} for q in S[k:k + 10]]
+        jsave(f"{PAGES_DIR}/{nm}.list.json", lst)
+        if not os.path.exists(f"{PAGES_DIR}/{nm}.html"):
+            subprocess.run([sys.executable, os.path.join(HERE, "build_builder.py"), f"{PAGES_DIR}/{nm}.html", f"file:{PAGES_DIR}/{nm}.list.json"], check=True)
+        names.append(nm)
+    jsave(f"{PAGES_DIR}/pages.json", {nm: [q["sym"] for q in S[k * 10:k * 10 + 10]] for k, nm in enumerate(names)})
+    print("страницы:", " ".join(names))
+
+
+# ---------- капитализация монет стандартного стенда (для признака «лоукап» на отборе/экзамене/50 случайных/100 новых) ----------
+MAIN = ["SOL", "ETH", "BTC", "DOGE", "XRP", "BNB", "TON", "HYPE", "PUMP", "ADA", "LTC", "LINK", "AVAX", "TRX", "XLM", "DOT", "BCH",
+        "ETC", "XMR", "ATOM", "ALGO", "VET", "FIL", "NEAR", "AAVE", "SHIB", "PEPE", "BONK", "WIF", "FLOKI", "FARTCOIN"]
+
+
+def stand_ids():
+    L = []
+    for s_ in (1, 1001, 2001, 3001):
+        L += jload(f"{RAW}/cmc_list_{s_}.json")["data"]["cryptoCurrencyList"]
+    by = {}
+    for x in L:
+        by.setdefault(x["symbol"].upper(), []).append(x)
+    out = {}
+    for t in MAIN:
+        if t == "TON":
+            out[t] = {"id": 11419, "year": 2019}
+            continue
+        x = max(by[t], key=lambda q: q["quotes"][0]["marketCap"] or 0)
+        out[t] = {"id": x["id"], "year": max(2013, int(x["dateAdded"][:4]))}
+    for f in ("random50", "random100"):
+        for c in jload(os.path.join(HERE, "found", f + ".json")):
+            out[f + ":" + c["ticker"]] = {"id": c["cid"], "year": c["year"]}
+    return out
+
+
+def standmc():
+    ids = stand_ids()
+    Q = [{"id": v["id"], "added": f"{v['year'] + 1}-01-01"} for v in ids.values()]
+    with ThreadPoolExecutor(3) as ex:
+        for i, _ in enumerate(ex.map(cmc_one, Q)):
+            if i % 25 == 0:
+                print("standmc", i, len(Q), flush=True)
+    jsave(f"{RAW}/stand_ids.json", ids)
+    print("standmc ok", len(Q))
+
+
 # ---------- компактный файл ----------
 def sig(x, k=4):
     if x is None or x != x or x == 0:
@@ -320,15 +378,59 @@ def sig(x, k=4):
     return round(x, -int(floor(log10(abs(x)))) + (k - 1))
 
 
+def _enc(arr, kind):
+    """Упаковка ряда в base64: f4 — float32; lg — uint16 код (log10(x)+3)·1000 (0 = нет); fu — int16 фандинг ·1e4 % (−32768 = нет)."""
+    import base64
+    import math
+    import struct
+    if kind == "f4":
+        b = struct.pack(f"<{len(arr)}f", *[x if x is not None else float("nan") for x in arr])
+    elif kind == "lg":
+        b = struct.pack(f"<{len(arr)}H", *[0 if (x is None or x != x or x <= 0) else max(1, min(65535, round((math.log10(x) + 3) * 1000))) for x in arr])
+    else:
+        b = struct.pack(f"<{len(arr)}h", *[-32768 if (x is None or x != x) else max(-32767, min(32767, round(x * 1e4))) for x in arr])
+    return base64.b64encode(b).decode()
+
+
+def _dec(s, kind):
+    import base64
+    import struct
+    b = base64.b64decode(s)
+    if kind == "f4":
+        return list(struct.unpack(f"<{len(b) // 4}f", b))
+    if kind == "lg":
+        return [float("nan") if v == 0 else 10 ** (v / 1000 - 3) for v in struct.unpack(f"<{len(b) // 2}H", b)]
+    return [float("nan") if v == -32768 else v / 1e4 for v in struct.unpack(f"<{len(b) // 2}h", b)]
+
+
+def _supply(T, V, step=7):
+    """Предложение в обращении по неделям (каждый step-й день); дни без капитализации CMC — первым известным значением (оценка, флаг est)."""
+    sup = [v[5] / v[3] if v[5] and v[3] else None for v in V]
+    first = next((x for x in sup if x), None)
+    est = [x is None for x in sup]
+    last = first
+    full = []
+    for x in sup:
+        if x:
+            last = x
+        full.append(last)
+    wk = [full[k] for k in range(0, len(full), step)]
+    k0 = next((k for k, e in enumerate(est) if not e), len(est))   # дней с оценкой в начале
+    return wk, k0
+
+
 def build():
     S = jload(f"{RAW}/selected.json")
-    out = {"about": "Лоукапы агента ЛОУКАП: дни с first; c — закрытие $, h/l — к закрытию, v — объём $ (CMC), mc — капитализация $ (CMC, 0 = нет), "
-                    "sup — предложение в обращении, hv — объём перпа Hyperliquid $, f — фандинг Binance за день %, oi — OI Binance $ (каждый 2-й день, 0 = нет), "
-                    "ls — лонги/шорты счетов Binance. Разбиение part: sel — отбор, chk — проверка (по монетам, seed 20261114); время — до/после " + SPLIT_DATE,
-           "coins": {}}
+    out = {"about": "Лоукапы агента ЛОУКАП (CoinMarketCap, Hyperliquid, data.binance.vision). Ряды по дням с first (UTC), упакованы в base64: "
+                    "c — закрытие $ (float32); v — объём $ CMC, hv — объём перпа Hyperliquid $, oi — открытый интерес Binance $ (каждый 2-й день) — uint16 код (log10(x)+3)·1000, 0 = нет; "
+                    "f — фандинг Binance за день, % (int16 ·1e4, −32768 = нет); sup — предложение в обращении по неделям (каждый 7-й день, uint16 лог-код), "
+                    "капитализация = c · sup; sup_est — сколько первых дней без капитализации CMC (предложение взято первым известным, оценка). "
+                    "part: sel — отбор, chk — проверка (случайно по монетам, seed 20261114); время — до/после " + SPLIT_DATE + ". "
+                    "stand — предложение монет стандартного стенда по неделям (для признака «лоукап» на отборе/экзамене/50 случайных/100 новых).",
+           "split_date": SPLIT_DATE, "coins": {}, "stand": {}}
     for q in S:
         d = jload(f"{RAW}/cmc_{q['id']}.json")
-        T = [t for t, v in zip(d["t"], d["v"]) if t >= q["first"]]
+        T = [t for t in d["t"] if t >= q["first"]]
         V = [v for t, v in zip(d["t"], d["v"]) if t >= q["first"]]
         hl_ = {}
         if q["hl"]:
@@ -337,38 +439,51 @@ def build():
                 hl_[dd] = float(x["v"]) * float(x["c"])
         fu = jload(f"{RAW}/bnf_{q['bn']}.json", {}) if q["bn"] else {}
         om = jload(f"{RAW}/bnm_{q['bn']}.json", {}) if q["bn"] else {}
-        c = [v[3] for v in V]
+        wk, k0 = _supply(T, V)
         out["coins"][q["sym"]] = {
-            "id": q["id"], "name": q["name"], "part": q["part"], "first": T[0], "hl": q["hl"], "bn": q["bn"],
-            "meme": int("memes" in q["tags"]), "ai": int("ai-agents" in q["tags"] or "ai-memes" in q["tags"]),
-            "c": [sig(x, 5) for x in c],
-            "h": [round(v[1] / v[3], 3) if v[3] else 1 for v in V], "l": [round(v[2] / v[3], 3) if v[3] else 1 for v in V],
-            "v": [sig(v[4], 3) for v in V], "mc": [sig(v[5], 3) for v in V], "sup": [sig(v[6], 3) for v in V],
-            "hv": [sig(hl_.get(t), 3) for t in T], "f": [round(fu[t], 4) if t in fu else None for t in T],
-            "oi": [sig((om.get(t) or [None])[0], 3) for t in T], "ls": [round((om.get(t) or [None, None])[1] or 0, 3) for t in T],
+            "id": q["id"], "name": q["name"], "part": q["part"], "first": T[0], "n": len(T), "hl": q["hl"], "bn": q["bn"],
+            "meme": int("memes" in q["tags"]), "ai": int("ai-agents" in q["tags"] or "ai-memes" in q["tags"]), "sup_est": k0,
+            "c": _enc([v[3] for v in V], "f4"), "v": _enc([v[4] for v in V], "lg"), "sup": _enc(wk, "lg"),
+            "hv": _enc([hl_.get(t) for t in T], "lg"), "f": _enc([fu.get(t) for t in T], "fu"),
+            "oi": _enc([(om.get(t) or [None])[0] for t in T], "lg"),
         }
+    ids = jload(f"{RAW}/stand_ids.json", {})
+    for k, v in ids.items():
+        d = jload(f"{RAW}/cmc_{v['id']}.json")
+        if not d or not d["t"]:
+            continue
+        k1 = next((i for i, x in enumerate(d["v"]) if x[5]), None)
+        if k1 is None:
+            continue
+        T, V = d["t"][k1:], d["v"][k1:]
+        wk, k0 = _supply(T, V)
+        out["stand"][k] = {"id": v["id"], "first": T[0], "n": len(T), "sup": _enc(wk, "lg")}
     jsave(OUT, out)
-    print("записано", OUT, os.path.getsize(OUT) // 1024, "КБ,", len(out["coins"]), "монет")
+    print("записано", OUT, os.path.getsize(OUT) // 1024, "КБ,", len(out["coins"]), "лоукапов,", len(out["stand"]), "монет стенда")
 
 
 # ---------- загрузчик ----------
 def load(path=OUT):
+    """→ (D, meta, stand): D[sym] — DataFrame по дням: c, v, mcap, supply, hlv, fund, oi (NaN = нет); stand[ключ] — Series предложения по дням."""
     import pandas as pd
     j = jload(path)
-    D = {}
+    D, meta = {}, {}
     for k, x in j["coins"].items():
-        idx = pd.date_range(x["first"], periods=len(x["c"]), freq="D")
-        df = pd.DataFrame({"c": x["c"], "v": x["v"], "mcap": x["mc"], "supply": x["sup"], "hlv": x["hv"], "oi": x["oi"], "lsr": x["ls"]}, index=idx, dtype=float)
-        df["h"] = df["c"] * pd.Series(x["h"], index=idx)
-        df["l"] = df["c"] * pd.Series(x["l"], index=idx)
-        df["fund"] = pd.Series([v if v is not None else float("nan") for v in x["f"]], index=idx)
-        for col in ("v", "mcap", "supply", "hlv", "oi", "lsr"):
-            df[col] = df[col].where(df[col] > 0)
+        idx = pd.date_range(x["first"], periods=x["n"], freq="D")
+        sup = _dec(x["sup"], "lg")
+        sup_d = [sup[min(i // 7, len(sup) - 1)] for i in range(x["n"])]
+        df = pd.DataFrame({"c": _dec(x["c"], "f4"), "v": _dec(x["v"], "lg"), "supply": sup_d, "hlv": _dec(x["hv"], "lg"),
+                           "fund": _dec(x["f"], "fu"), "oi": _dec(x["oi"], "lg")}, index=idx)
+        df["mcap"] = df["c"] * df["supply"]
         D[k] = df
-    meta = {k: {q: v for q, v in x.items() if not isinstance(v, list)} for k, x in j["coins"].items()}
-    return D, meta
+        meta[k] = {q: v for q, v in x.items() if q not in ("c", "v", "sup", "hv", "f", "oi")}
+    stand = {}
+    for k, x in j.get("stand", {}).items():
+        sup = _dec(x["sup"], "lg")
+        stand[k] = pd.Series([sup[min(i // 7, len(sup) - 1)] for i in range(x["n"])], index=pd.date_range(x["first"], periods=x["n"], freq="D"))
+    return D, meta, stand
 
 
 if __name__ == "__main__":
     os.makedirs(RAW, exist_ok=True)
-    {"cands": cands, "cmc": cmc, "select": select, "hl": hl, "bnf": bnf, "bnm": bnm, "build": build}[sys.argv[1]]()
+    {"cands": cands, "cmc": cmc, "select": select, "hl": hl, "bnf": bnf, "bnm": bnm, "build": build, "pages": pages, "standmc": standmc}[sys.argv[1]]()

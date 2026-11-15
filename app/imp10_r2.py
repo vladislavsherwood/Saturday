@@ -12,12 +12,16 @@ WRAP = {"WBTC", "STETH", "WETH", "WBETH", "CBBTC", "WEETH", "RETH", "BTCB", "LBT
         "USDD", "USD0", "USDX", "SUSDE", "USDY", "BUIDL", "USDTB", "RLUSD", "USD1", "USDF", "XSGD", "EURS", "TBTC", "RENBTC", "HBTC", "WBNB", "CUSDC", "CDAI"}
 
 
-def universe():
-    coins = [("BTC-USD", "btc")] + [(s, "alt") for s in YCID if s != "BTC-USD"]
+R100 = {x["cid"] for x in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "found", "random100.json")))}
+
+
+def universe(part="A"):
+    """A — монеты Yahoo + кэш CMC без 100 новых (для подбора); B — BTC + только 100 новых (независимая проверка)."""
+    coins = [("BTC-USD", "btc")] + ([(s, "alt") for s in YCID if s != "BTC-USD"] if part == "A" else [])
     have = set(YCID.values())
     for f in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "cmcv_*.json"))):
         cid = int(os.path.basename(f)[5:-5])
-        if cid in have:
+        if cid in have or ((cid in R100) != (part == "B")):
             continue
         m = mcap(cid)
         sym = json.load(open(os.path.join(SP, "imp10_mcap", f"{cid}.json")))["sym"] if m is not None else None
@@ -58,7 +62,7 @@ def pick(F, t, rule, rng, n=N, K=None):
     rel = F["REL"][s]; sig = F["SIG"][s]
 
     def top(idx, key, k=n, rev=True):
-        idx = np.array([i for i in idx if np.isfinite(key[i])])
+        idx = np.array([i for i in idx if np.isfinite(key[i])], dtype=int)
         if len(idx) == 0:
             return idx
         o = np.argsort(key[idx]); o = o[::-1] if rev else o
@@ -74,7 +78,7 @@ def pick(F, t, rule, rng, n=N, K=None):
     if rule == "LIQ_AGE1":
         return top(cand[age[cand] >= 365], vol)
     if rule == "RND_AGE1":
-        c2 = cand[age[cand] >= 365]; return rng.choice(c2, size=min(n, len(c2)), replace=False)
+        c2 = cand[age[cand] >= 365]; return np.array([], dtype=int) if len(c2) == 0 else rng.choice(c2, size=min(n, len(c2)), replace=False)
     if rule == "RND_TOP30":
         c2 = top(cand, cap, 30); return rng.choice(c2, size=min(n, len(c2)), replace=False)
     if rule == "TOP30_MOM":
@@ -128,10 +132,11 @@ def run(U, F, rules, draws=10, starts=None, seed=1):
 
 if __name__ == "__main__":
     t0 = time.time()
-    U = Uni(universe()); F = features(U); F["C"] = U.C
+    part = sys.argv[2] if len(sys.argv) > 2 else "A"
+    U = Uni(universe(part)); F = features(U); F["C"] = U.C
     print(f"вселенная: {len(U.coins)} монет [{time.time() - t0:.0f} с]", flush=True)
     rules = ["RND", "RND_AGE1", "RND_TOP30", "CAP", "CAP_AGE1", "CAP_AGE2", "LIQ", "LIQ_AGE1", "TOP30_MOM", "TOP30_WEAK", "TOP30_VOLHI", "TOP30_VOLLO",
              "TOP30_RELPOS", "MOM_ALL", "TOP15_YOUNG"]
     R = run(U, F, rules)
-    json.dump(R, open(os.path.join(SP, f"imp10_r2_{N}.json"), "w"))
+    json.dump(R, open(os.path.join(SP, f"imp10_r2_{N}{part}.json"), "w"))
     print(f"[{time.time() - t0:.0f} с]")
