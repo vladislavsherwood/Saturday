@@ -17,7 +17,8 @@ import engine  # noqa: E402
 
 COINS = [("BTC-USD", "Bitcoin", "btc"), ("ETH-USD", "Ethereum", "alt"), ("SOL-USD", "Solana", "alt"), ("DOGE-USD", "Dogecoin", "alt"), ("XRP-USD", "XRP", "alt"),
          ("BNB-USD", "BNB", "alt"), ("PEPE24478-USD", "Pepe", "alt"), ("HYPE32196-USD", "Hyperliquid", "alt"), ("ADA-USD", "Cardano", "alt"), ("LINK-USD", "Chainlink", "alt"),
-         ("PUMP36507-USD", "Pump.fun", "alt"), ("ENA-USD", "Ethena", "alt"), ("ZEC-USD", "Zcash", "alt"), ("USELESS36828-USD", "Useless", "alt")]
+         ("PUMP36507-USD", "Pump.fun", "alt"), ("ENA-USD", "Ethena", "alt"), ("ZEC-USD", "Zcash", "alt"), ("USELESS36828-USD", "Useless", "alt"),
+         ("XMR-USD", "Monero", "alt"), ("LIT39125-USD", "Lighter", "alt")]
 KEEP = ("dca", "main", "quiet", "merged", "sma200", "rsi", "fng", "usdt")
 
 
