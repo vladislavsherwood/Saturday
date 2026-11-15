@@ -170,8 +170,12 @@ const fail = (text) => { throw new Error(text); };
 async function addTrade(b) {
   if (!["buy", "sell"].includes(b.side) || !(b.amount > 0)) fail("Нужна сторона сделки и сумма больше нуля");
   const t = mem.tickers.find((x) => x.symbol === b.symbol) || fail("Сначала добавьте этот тикер"), day = b.day || todayStr();
-  const qty = b.qty > 0 ? b.qty : b.price > 0 ? b.amount / b.price : fail("Нужно количество монет или цена"), price = b.price > 0 ? b.price : b.amount / qty;
-  await storeTrade({ id: Date.now(), day, symbol: b.symbol, side: b.side, amount: b.amount, qty, price, fee: b.fee || 0, source: b.source || "manual", borrowed: b.borrowed || 0, repaid: b.repaid || 0 });
+  const qty0 = b.qty > 0 ? b.qty : b.price > 0 ? b.amount / b.price : fail("Нужно количество монет или цена"), price = b.price > 0 ? b.price : b.amount / qty0;
+  // комиссия: монетой — на счёт приходит меньше монет при покупке (уходит больше при продаже); в долларах — покупка дороже, выручка меньше
+  const fc = b.fee_kind === "coin" && b.fee_amount > 0 ? b.fee_amount : 0, fu = b.fee_kind === "usd" && b.fee_amount > 0 ? b.fee_amount : 0;
+  const qty = b.side === "buy" ? Math.max(0, qty0 - fc) : qty0 + fc, amount = b.side === "buy" ? b.amount + fu : Math.max(0, b.amount - fu);
+  await storeTrade({ id: Date.now(), day, symbol: b.symbol, side: b.side, amount, qty, price, fee: Math.round((fu + fc * price) * 1e4) / 1e4, fee_amount: b.fee_amount || 0, fee_kind: b.fee_kind || null, gross_qty: qty0, gross_amount: b.amount,
+    source: b.source || "manual", borrowed: b.borrowed || 0, repaid: b.repaid || 0 });
   if (!t.since || day < t.since) { t.since = day; await saveCfg(); }
   return { ok: true };
 }
@@ -183,9 +187,10 @@ const SCAN = `На картинке — скриншот из приложени
 - Если на экране неисполненная заявка, пополнение, вывод или перевод, а не сделка, — found = false и объяснение в note.
 - Если сделок несколько, возьми самую верхнюю и напиши об этом в note.
 - symbol выбери из списка тикеров пользователя, если актив сделки там есть; иначе null.
+- Комиссию (Fee, Trading fee, Комиссия) перепиши как есть: fee_amount — число, fee_currency — в чём она указана (тикер монеты, например PENGU, или USDT). Если комиссий несколько строк — сложи одинаковые по валюте и возьми основную. quantity — количество из ордера (Traded Qty / Filled Qty) без вычета комиссии.
 Тикеры пользователя: TICKERS
 Сегодня: TODAY
-Ответь только объектом JSON с полями: found (boolean), side ("buy" | "sell" | null), asset (string | null), symbol (string | null), amount_usd (number | null), quantity (number | null), price (number | null), fee_usd (number | null), date ("ГГГГ-ММ-ДД" | null), currency (string | null), note (строка по-русски, одно короткое предложение или пусто).`;
+Ответь только объектом JSON с полями: found (boolean), side ("buy" | "sell" | null), asset (string | null), symbol (string | null), amount_usd (number | null), quantity (number | null), price (number | null), fee_amount (number | null), fee_currency (string | null), date ("ГГГГ-ММ-ДД" | null), currency (string | null), note (строка по-русски, одно короткое предложение или пусто).`;
 async function scan(b) {
   if (!sampler) fail("Распознавание недоступно — введите сделку вручную");
   const bin = atob(b.image), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -194,10 +199,12 @@ async function scan(b) {
   catch (e) { fail(e && e.code === "not_granted" ? "Вы не разрешили странице обращаться к Claude — введите сделку вручную" : e && e.code === "rate_limited" ? "Слишком много запросов — попробуйте через минуту" : e && e.code === "images_unavailable" ? "Здесь нельзя отправить картинку — введите сделку вручную" : "Не удалось прочитать скриншот — введите сделку вручную"); }
   if (!d || typeof d !== "object") fail("Не удалось разобрать скриншот — введите сделку вручную");
   const n = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null), o = { found: !!d.found, side: ["buy", "sell"].includes(d.side) ? d.side : null, asset: d.asset || null, symbol: mem.tickers.some((t) => t.symbol === d.symbol) ? d.symbol : null,
-    amount_usd: n(d.amount_usd), quantity: n(d.quantity), price: n(d.price), fee_usd: n(d.fee_usd), date: /^\d{4}-\d\d-\d\d$/.test(d.date || "") ? d.date : null, currency: d.currency || null, note: String(d.note || ""), computed: [] };
+    amount_usd: n(d.amount_usd), quantity: n(d.quantity), price: n(d.price), fee_amount: n(d.fee_amount), fee_currency: d.fee_currency ? String(d.fee_currency).toUpperCase() : null, date: /^\d{4}-\d\d-\d\d$/.test(d.date || "") ? d.date : null, currency: d.currency || null, note: String(d.note || ""), computed: [] };
   if (o.amount_usd == null && o.quantity && o.price) { o.amount_usd = r2(o.quantity * o.price); o.computed.push("amount_usd"); }
   if (o.quantity == null && o.amount_usd && o.price) { o.quantity = o.amount_usd / o.price; o.computed.push("quantity"); }
   if (o.price == null && o.amount_usd && o.quantity) { o.price = o.amount_usd / o.quantity; o.computed.push("price"); }
+  // комиссия: в долларах (USDT/USDC/USD) или монетой сделки
+  if (o.fee_amount != null) { const usd = /^(USD|USDT|USDC)$/.test(o.fee_currency || ""); o.fee_kind = usd ? "usd" : "coin"; o.fee_usd = usd ? o.fee_amount : o.price ? r2(o.fee_amount * o.price * 1e4) / 1e4 : null; }
   return o;
 }
 async function api(path, opts = {}) {

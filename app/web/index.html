@@ -377,7 +377,7 @@ async function trades(symbol) {
     const t = await api("/api/trades?symbol=" + encodeURIComponent(symbol));
     const SRC = { plan: "по плану", scan: "со скриншота", manual: "вручную" };
     box.innerHTML = t.length ? `<h3>Сделки</h3>` + t.slice(0, 30).map((x) => `<div class="tr"><div><b class="${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "Продажа" : "Покупка"}</b>
-      <small>${new Date(x.day + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })} · ${SRC[x.source] || ""} · ${qty(x.qty)} по $${qty(x.price)}</small></div>
+      <small>${new Date(x.day + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })} · ${SRC[x.source] || ""} · ${qty(x.qty)} по $${qty(x.price)}${x.fee > 0 ? ` · комиссия ${x.fee_kind === "coin" && x.fee_amount ? qty(x.fee_amount) + " монет" : "$" + (x.fee < 0.01 ? x.fee.toFixed(4) : num(x.fee))}` : ""}</small></div>
       <b class="num ${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "−" : ""}$${big(x.amount)}</b><button class="x" onclick="dropTrade(${x.id}, '${esc(symbol)}')" aria-label="Удалить сделку">×</button></div>`).join("") : "";
   } catch (e) { box.innerHTML = ""; }
 }
@@ -469,7 +469,7 @@ async function readShot(f) {
   try {
     const url = await shrink(f), r = await api("/api/scan", { method: "POST", body: JSON.stringify({ image: url.split(",")[1], media_type: "image/jpeg" }) });
     if (!r.found) return { ...draft, shot: url, note: r.note || "На скриншоте не нашлось сделки", warn: true };
-    return { symbol: draft.symbol || r.symbol, asset: r.asset, side: r.side, amount: r.amount_usd, qty: r.quantity, price: r.price, fee: r.fee_usd, day: r.date, note: r.note, computed: r.computed || [], shot: url, scanned: true,
+    return { symbol: draft.symbol || r.symbol, asset: r.asset, side: r.side, amount: r.amount_usd, qty: r.quantity, price: r.price, fee_amount: r.fee_amount, fee_kind: r.fee_kind || (r.fee_amount ? "coin" : null), fee_cur: r.fee_currency, day: r.date, note: r.note, computed: r.computed || [], shot: url, scanned: true,
       warn: !!(r.currency && !/^USD[TC]?$/i.test(r.currency) && r.amount_usd == null) };
   } catch (err) { return { ...draft, note: (f.name ? f.name + ": " : "") + err.message, warn: true }; }
 }
@@ -501,12 +501,15 @@ function tradeForm(d) {
     <div class="field"><span>Сумма, $${mark("amount_usd")}</span><input id="fAmount" type="number" inputmode="decimal" value="${v(draft.amount)}" placeholder="0"></div>
     <div class="field"><span>Количество${mark("quantity")}</span><input id="fQty" type="number" inputmode="decimal" value="${v(draft.qty)}" placeholder="из суммы и цены"></div>
     <div class="field"><span>Цена, $${mark("price")}</span><input id="fPrice" type="number" inputmode="decimal" value="${v(draft.price)}" placeholder="из суммы и количества"></div>
+    <div class="field"><span>Комиссия</span><input id="fFee" type="number" inputmode="decimal" value="${v(draft.fee_amount)}" placeholder="0"><em id="fFeeCur" style="cursor:pointer;white-space:nowrap">${draft.fee_kind === "usd" ? "USDT" : esc(short(draft.symbol || draft.asset || "") || "монетой")} ⇄</em></div>
     <div class="field"><span>Дата</span><input id="fDay" type="date" value="${esc(draft.day)}" max="${state.day}"></div>
     <div class="row2"><button class="btn" onclick="${queue.length ? "nextShot()" : "qTotal = 0; closeSheet()"}">${queue.length ? "Пропустить" : "Отмена"}</button><button class="btn main" id="fSave">Записать</button></div>
     ${draft.scanned ? '<div class="note">В журнал попадёт только то, что в полях выше — поправьте, если что-то прочитано неверно.</div>' : ""}`);
   $("fCoins").addEventListener("click", (e) => { const b = e.target.closest("[data-c]"); if (!b) return; draft.symbol = b.dataset.c; $("fCoins").querySelectorAll(".pill").forEach((x) => x.classList.toggle("on", x === b)); });
   $("fSide").addEventListener("click", (e) => { const b = e.target.closest("[data-s]"); if (!b) return; draft.side = b.dataset.s; $("fSide").querySelectorAll(".pill").forEach((x) => x.classList.toggle("on", x === b)); });
   $("fSave").addEventListener("click", saveTrade);
+  if (!draft.fee_kind) draft.fee_kind = "coin";
+  $("fFeeCur").addEventListener("click", () => { draft.fee_kind = draft.fee_kind === "usd" ? "coin" : "usd"; $("fFeeCur").textContent = (draft.fee_kind === "usd" ? "USDT" : short(draft.symbol || draft.asset || "") || "монетой") + " ⇄"; });
 }
 async function saveTrade() {
   const n = (id) => { const x = parseFloat($(id).value); return x > 0 ? x : null; }, amount = n("fAmount"), q = n("fQty"), price = n("fPrice");
@@ -515,7 +518,7 @@ async function saveTrade() {
   if (!q && !price) return toast("Нужно количество или цена");
   $("fSave").disabled = true;
   try {
-    await api("/api/trades", { method: "POST", body: JSON.stringify({ symbol: draft.symbol, side: draft.side, amount, qty: q, price, fee: draft.fee || 0, day: $("fDay").value || state.day, source: draft.scanned ? "scan" : "manual" }) });
+    await api("/api/trades", { method: "POST", body: JSON.stringify({ symbol: draft.symbol, side: draft.side, amount, qty: q, price, fee_amount: n("fFee") || 0, fee_kind: n("fFee") ? draft.fee_kind : null, day: $("fDay").value || state.day, source: draft.scanned ? "scan" : "manual" }) });
     haptic("ok"); const sym = draft.symbol; await load(); toast("Сделка записана", true);
     if (queue.length) nextShot(); else { qTotal = 0; openTicker(sym); }
   } catch (e) { toast(e.message); $("fSave").disabled = false; }
