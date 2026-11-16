@@ -70,9 +70,7 @@ def history(symbol):
             common = df.index.intersection(b.index)
             for k in ("o", "h", "l", "c"):
                 df.loc[common, k] = b.loc[common, k].values
-            new = b.index.difference(df.index)
-            if len(new):
-                df = pd.concat([df, b.loc[new, ["o", "h", "l", "c"]].assign(v=0.0)]).sort_index()
+            # дни, которых ещё нет на Yahoo, не добавляем: рыночные индикаторы (доля USDT, страх) за них ещё не готовы
             binance_price = float(b["c"].iloc[-1])
         except Exception as e:  # noqa: BLE001  нет связи с Binance — остаёмся на Yahoo
             print("Binance", symbol, "недоступен:", e)
