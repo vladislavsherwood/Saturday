@@ -22,7 +22,8 @@ COINS = [("BTC-USD", "Bitcoin", "btc"), ("ETH-USD", "Ethereum", "alt"), ("SOL-US
 KEEP = ("dca", "main", "quiet", "merged", "sma200", "rsi", "fng", "usdt")
 
 
-def main(out):
+def build_snap():
+    """Данные дня для приложения (SNAP): цены, свечи, планы стратегий по дням и combo4 на сегодня по монетам COINS. Используют build_snap.py и main()."""
     coins = {}
     for symbol, name, kind in COINS:
         try:
@@ -49,7 +50,11 @@ def main(out):
         st = C4.strategy(s, c["h"], R[s], ind)
         c["h"]["strategies"].insert(0, st)
         print(f"{s}: combo4 сегодня {st['plan_today']:+.3f} — {st['action']} | {st['label']}")
-    snap = {"as_of": max(c["h"]["as_of"] for c in coins.values()), "coins": coins}
+    return {"as_of": max(c["h"]["as_of"] for c in coins.values()), "coins": coins}
+
+
+def main(out):
+    snap = build_snap()
     page = open(os.path.join(HERE, "web", "index.html"), encoding="utf-8").read()
     css = re.search(r"<style>(.*?)</style>", page, re.S).group(1)
     body = re.search(r"<body>(.*?)<script>", page, re.S).group(1)
