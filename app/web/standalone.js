@@ -2,7 +2,7 @@
    цены, сигналы и история по монетам встроены в страницу (SNAP), сделки и настройки хранятся в базе артефакта
    (личный раздел зрителя; если базы нет — в памяти браузера), скриншоты сделок читает Claude через возможность страницы. */
 const mem = { unit: 10, tickers: null, trades: [] };
-let col = null, sampler = null;
+let col = null, sampler = null, scanImg = null;   // scanImg: false — этот просмотр не умеет отправлять картинки Claude
 const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
 const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
@@ -14,6 +14,7 @@ async function boot() {
     if (window.claude && window.claude.use) {
       const [db, user, s] = await Promise.all([claude.use("db"), claude.use("user"), claude.use("sample")]);
       sampler = s;
+      if (s && s.limits) { try { const L = await s.limits(); scanImg = L && L.images ? L.images : false; } catch (e) { scanImg = null; } }
       if (db && user) col = db.collection("data/users/" + (await user.id()));
     }
   } catch (e) { col = null; }
@@ -229,10 +230,21 @@ const SCAN = `На картинке — скриншот из приложени
 async function scan(b) {
   if (!sampler) fail("Распознавание недоступно — введите сделку вручную");
   const bin = atob(b.image), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  let d;
-  try { d = await sampler.json(SCAN.replace("TICKERS", mem.tickers.map((t) => t.symbol).join(", ")).replace("TODAY", todayStr()), { images: [new Blob([bytes], { type: b.media_type || "image/jpeg" })], cache: false }); }
-  catch (e) { fail(e && e.code === "not_granted" ? "Вы не разрешили странице обращаться к Claude — введите сделку вручную" : e && e.code === "rate_limited" ? "Слишком много запросов — попробуйте через минуту" : e && e.code === "images_unavailable" ? "Здесь нельзя отправить картинку — введите сделку вручную" : "Не удалось прочитать скриншот — введите сделку вручную"); }
-  if (!d || typeof d !== "object") fail("Не удалось разобрать скриншот — введите сделку вручную");
+  let d, raw = "";
+  const prompt = SCAN.replace("TICKERS", mem.tickers.map((t) => t.symbol).join(", ")).replace("TODAY", todayStr()), img = new Blob([bytes], { type: b.media_type || "image/jpeg" });
+  // ответ берём текстом и разбираем сами: так работает и там, где у страницы нет sample.json
+  try { raw = (await sampler(prompt, { images: [img], cache: false })).text || ""; }
+  catch (e) { const c = (e && e.code) || "unknown";
+    fail(c === "not_granted" ? "Вы не разрешили странице обращаться к Claude — разрешите в запросе или введите сделку вручную"
+      : c === "rate_limited" ? "Слишком много запросов или исчерпан лимит Claude — попробуйте позже"
+      : c === "images_unavailable" ? "В этом окне нельзя отправить картинку Claude — откройте артефакт в браузере на claude.ai или введите сделку вручную"
+      : c === "image_rejected" ? "Claude не принял картинку — попробуйте другой скриншот (PNG или JPEG)"
+      : c === "session_expired" ? "Нужно заново войти в Claude"
+      : c === "sampling_disabled" || c === "capability_disabled" ? "Claude недоступен для этой страницы в этом окне"
+      : c === "refused" ? "Claude отказался читать этот скриншот"
+      : "Не удалось прочитать скриншот (" + c + ") — попробуйте ещё раз или введите вручную"); }
+  try { d = JSON.parse(raw); } catch (e) { const m = raw.match(/\{[\s\S]*\}/); try { d = m ? JSON.parse(m[0]) : null; } catch (e2) { d = null; } }
+  if (!d || typeof d !== "object") fail("Не удалось разобрать ответ по скриншоту — попробуйте ещё раз или введите вручную");
   const n = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null), o = { found: !!d.found, side: ["buy", "sell"].includes(d.side) ? d.side : null, asset: d.asset || null, symbol: mem.tickers.some((t) => t.symbol === d.symbol) ? d.symbol : null,
     amount_usd: n(d.amount_usd), quantity: n(d.quantity), price: n(d.price), fee_amount: n(d.fee_amount), fee_currency: d.fee_currency ? String(d.fee_currency).toUpperCase() : null, date: /^\d{4}-\d\d-\d\d$/.test(d.date || "") ? d.date : null, currency: d.currency || null, note: String(d.note || ""), computed: [] };
   if (o.amount_usd == null && o.quantity && o.price) { o.amount_usd = r2(o.quantity * o.price); o.computed.push("amount_usd"); }
