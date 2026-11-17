@@ -393,7 +393,7 @@ function market(i) {
   if (!i.state) return "";
   return `<h3>Рынок сейчас</h3>` + i.state.map((r, n) => {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
-    const tag = on ? "сработало сейчас" : all ? "выполнено, но раньше сработало другое" : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
+    const tag = on ? "сработало сейчас" : all ? (i.rule >= 0 ? "выполнено, но раньше сработало другое" : "условия выполнены") : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
     const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
     const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? `■ ${esc(w)}` : /копится/.test(r.what) ? `⏸ ${esc(w)}` : `▲ Купить: ${esc(r.what)}`;
     return `<div class="rule ${on ? "on" : ""} ${kind}" onclick="this.querySelector('p').hidden = !this.querySelector('p').hidden">
