@@ -47,4 +47,20 @@ t('к покупке осталось $0,60 (вчера купил больше)
 t('на следующий день: $0,60 и новый взнос вместе', { since: 11, buys: daily(11, 3).concat([[2, 3.4]]), expect: { amount: 2.6, tiny: 0, extra: 0.6 } });
 t('ровно $1 предлагается', { since: 10, buys: daily(10, 2).concat([[1, 3]]), expect: { amount: 1, tiny: 0 } });
 t('продажа меньше $1 пропускается', { since: 10, actions: { 0: -0.3 }, buys: [[5, 2]], expect: { amount: 0, tiny: 0.6 } });
+// что изменилось со вчера: сколько дней держится сегодняшнее решение и какой сигнал закончился
+{
+  const ctx = { console, localStorage: { getItem: () => null, setItem() {} }, window: {}, document: {}, navigator: {}, atob: (x) => Buffer.from(x, 'base64').toString('binary') };
+  ctx.SNAP = { as_of: iso(end - 1), coins: { 'T-USD': coin({}) } }; vm.createContext(ctx); vm.runInContext(src, ctx);
+  const since = (plan, fam) => vm.runInContext(`since(${JSON.stringify({ plan, fam })})`, ctx), eq = (name, got, want) => { const ok = Object.keys(want).every((k) => got[k] === want[k]); console.log((ok ? 'ok   ' : 'FAIL ') + name + ' → ' + JSON.stringify(got)); all = all && ok; };
+  eq('сигнал новый сегодня', since([1, 1, 1.25], '..h'), { streak: 1, ended: null });
+  eq('сигнал держится третий день', since([1, 1.25, 1.25, 1.25], '.hhh'), { streak: 3, ended: null });
+  eq('другой сигнал в ту же сторону — счёт заново', since([1, 1.25, 1.25], '.gh'), { streak: 1, ended: null });
+  eq('вчерашний сигнал закончился', since([1, 1.25, 1], '.h.'), { ended: 'h' });
+  eq('обычные дни: ничего не закончилось', since([1, 1, 1], '...'), { ended: null });
+  eq('продажа после покупки — новый сигнал', since([1.25, -0.3], 'hk'), { streak: 1, ended: null });
+  // обычный DCA на тех же днях: цена ровная (100), взнос $2, 11 дней — вложено $22, стоит на комиссию 0,1% меньше
+  ctx.__seed = { unit: 2, tickers: [{ symbol: 'T-USD', name: 'Test', kind: 'alt', strategy: 'combo4', unit: 2, since: iso(end - 10) }], trades: [] };
+  const it = vm.runInContext('Object.assign(mem, __seed); today().items[0]', ctx);
+  eq('обычный DCA за 11 дней', { inv: it.dca_invested, val: it.dca_value, pnl: it.dca_pnl }, { inv: 22, val: 21.98, pnl: -0.02 });
+}
 process.exit(all ? 0 : 1);

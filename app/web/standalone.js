@@ -176,6 +176,7 @@ function today() {
       // портфель: вложено = взносы с даты старта + чистые покупки до неё; стоимость = позиция + резерв − долг (для перпа — капитал счёта)
       const inv = unit * days + Math.max(0, bk.boughtBefore - bk.soldBefore), val = qty * h.price + reserve - debt;
       Object.assign(i, { invested_total: r2(inv), value: r2(val), pnl: r2(val - inv) });
+      Object.assign(i, since(st), plainDca(t, h, day, unit, days));
       if (a < 0 && Math.abs(amount) < 0.005 && !tiny) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
     }
     return i;
@@ -184,6 +185,28 @@ function today() {
   return { day, unit: mem.unit, items, total: sum(items, (i) => Math.max(0, i.amount)), left: sum(todo, (i) => Math.max(0, i.amount)), sell_left: sum(todo, (i) => Math.max(0, -i.amount)),
     reserve: sum(items, (i) => i.reserve || 0), holding: sum(items, (i) => i.holding || 0), scan: !!sampler, strategies: names,
     value: sum(items, (i) => i.value || 0), invested_total: sum(items, (i) => i.invested_total || 0), pnl: sum(items, (i) => i.pnl || 0), debt: sum(items, (i) => i.debt || 0) };
+}
+// Что изменилось со вчера. Решение на сегодня — последнее в плане, вчерашнее — перед ним; семейство правила на каждый день
+// лежит рядом одной буквой. streak — сколько дней подряд держится сегодняшнее (тот же сигнал в ту же сторону);
+// ended — буква семейства, чей сигнал был вчера и закончился (сегодня снова обычный взнос).
+function since(st) {
+  const P = st.plan || [], F = st.fam || "", n = P.length; if (n < 2) return { streak: 1, ended: null };
+  const kind = (x) => (x < 0 ? -1 : x > 1 ? 1 : 0), k = kind(P[n - 1]), f = F[n - 1] || ".";
+  let run = 1; while (run < n && run < 400 && kind(P[n - 1 - run]) === k && (F[n - 1 - run] || ".") === f) run++;
+  return { streak: run, ended: k === 0 && kind(P[n - 2]) !== 0 ? F[n - 2] || "." : null, prev_kind: kind(P[n - 2]), prev_fam: F[n - 2] || "." };
+}
+// Обычный DCA на тех же днях: взнос каждый день с даты старта монеты по цене закрытия дня (сегодня — по текущей цене),
+// с той же комиссией 0,1%, что в расчётах на истории. Сравнивается со счётом монеты: позиция + резерв − долг.
+function plainDca(t, h, day, unit, days) {
+  if (!t.since || days < 2) return { dca_value: null, dca_pnl: null };
+  const dn = (x) => Math.round(Date.parse(x) / 864e5), end = dn(day), start = Math.max(dn(t.since), end - 1500), last = h.t.length - 1, tl = h.t[last];
+  let q = 0, n = 0;
+  for (let d = start; d <= end; d++) {
+    const i = d > tl ? -1 : h.t[last - (tl - d)] === d ? last - (tl - d) : h.t.lastIndexOf(d), p = i >= 0 ? h.c[i] : h.price;
+    if (p > 0) { q += unit * 0.999 / p; n++; }
+  }
+  const v = q * h.price;
+  return { dca_value: r2(v), dca_pnl: r2(v - unit * n), dca_invested: r2(unit * n) };
 }
 // П/У портфеля по дням (свечи): для каждого дня — позиция, резерв и долг по сделкам и взносам; открытие/максимум/минимум/закрытие — по ценам монет дня
 function pnlHistory() {

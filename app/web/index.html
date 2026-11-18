@@ -301,7 +301,7 @@ window.addEventListener("resize", () => { if ($("pnlC")) drawPnl(); });
 // короткая подпись действия для строки актива: что сделать и почему
 function phrase(i) {
   if (i.reserve_mode) {
-    const a = i.plan_today, why = (i.action || "").split(":")[0];
+    const a = i.plan_today, why = (i.action || "").split(/:| — /)[0];   // имя сработавшего правила, без повтора действия
     if (i.wait) return `<i>копим $${big(i.wait.have)} из $${big(i.wait.need)}</i> · минимум открытия перпа`;
     if (i.tiny) return i.tiny.sell ? "продажа меньше $1 · пропускаем" : "меньше $1 · добавится к следующей покупке";
     if (i.partial) return `докупить взнос · <i>сегодня куплено $${big(i.partial)}</i>`;
@@ -310,9 +310,11 @@ function phrase(i) {
     if (i.mode === "perp" && a >= 0 && i.amount > 0) return `<i>открыть лонг${i.borrowed > 0 ? `, плечом $${big(i.borrowed)}` : ""}</i>${a > 1 ? " · " + esc(why) : ""}`;
     if (i.margin && a >= 0 && i.borrowed > 0 && a <= 1) return `обычный взнос · <i>$${big(i.borrowed)} в долг</i>`;
     if (/^копим/.test(i.action || "") && a <= 1) return `обычный взнос · <i>копим резерв до разворота USDT</i>`;
-    if (a < 0) return `<i class="s">продать ${Math.round(-a * 100)}%</i> · ${esc(why)}`;
-    if (a > 1) return `<i>взнос + ${a >= 2 ? "весь резерв" : Math.round((a - 1) * 100) + "% резерва"}</i> · ${esc(why)}`;
-    return i.missed_amount >= 0.1 ? `обычный взнос · <i>+$${big(i.missed_amount)} за прошлые дни</i>` : "обычный взнос";
+    const held = i.streak > 1 ? ` · ${i.streak}-й день` : i.streak === 1 ? " · с сегодня" : "";
+    if (a < 0) return `<i class="s">продать ${Math.round(-a * 100)}%</i> · ${esc(why)}${held}`;
+    if (a > 1) return `<i>взнос + ${a >= 2 ? "весь резерв" : Math.round((a - 1) * 100) + "% резерва"}</i> · ${esc(why)}${held}`;
+    if (i.missed_amount >= 0.1) return `обычный взнос · <i>+$${big(i.missed_amount)} за прошлые дни</i>`;
+    return i.ended ? `обычный взнос · сигнал закончился${FAMN[i.ended] ? ": " + FAMN[i.ended] : ""}` : "обычный взнос";
   }
   const m = i.mult;
   return m > 1 ? `<i>×${m}</i> · ${esc(i.label || i.strategy_name)}` : m < 0 ? `<i class="s">продать ×${-m}</i> · ${esc(i.label || "")}` : m === 0 ? "пропуск" : "обычный взнос";
@@ -419,13 +421,27 @@ function actionCard(i) {
     : i.partial ? `Сегодня уже куплено на $${big(i.partial)} — осталось докупить обычный взнос.`
     : i.missed_amount >= 0.1 && a > 0 ? `В сумме — $${big(i.missed_amount)} обычных взносов, не купленных в прошлые дни.` : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
-  return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}</div>`;
+  return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}${changed(i, r)}</div>`;
+}
+// что изменилось со вчера — одной строкой; у сработавшего правила — его показатели сейчас
+function changed(i, r) {
+  if (i.streak == null) return "";
+  const signal = i.plan_today < 0 || i.plan_today > 1, was = i.ended ? FAMN[i.ended] : null;
+  const line = signal ? (i.streak > 1 ? `Сигнал держится ${i.streak}-й день.` : "Сигнал новый: вчера был обычный взнос.")
+    : i.ended ? `Вчерашний сигнал закончился${was ? " («" + was + "»)" : ""} — снова обычный взнос.` : "";
+  const f = (c) => c.value.toLocaleString("ru-RU", { maximumFractionDigits: c.digits, minimumFractionDigits: c.digits }) + c.unit;
+  const now = signal && r ? r.conds.filter((c) => c.value != null).map((c) => `${c.name} ${f(c)}`).join(" · ") : "";
+  return line || now ? `<p>${esc(line)}${now ? (line ? " " : "") + "Сейчас: " + esc(now) + "." : ""}</p>` : "";
 }
 function position(i) {
   const cells = [["В активе", "$" + big(i.holding || 0)], ["Количество", i.qty ? qty(i.qty) : "—"], ["Средняя цена", i.avg_price ? "$" + qty(i.avg_price) : "—"]];
   if (i.reserve != null) cells.push(["В резерве", "$" + big(i.reserve)]);
   if (i.value != null) { const pl = i.pnl || 0, pp = i.invested_total > 0 ? (pl / i.invested_total) * 100 : 0; cells.push(["Стоимость (с резервом)", "$" + big(i.value)], ["П/У к вложенному", `${pl >= 0 ? "+" : "−"}$${big(Math.abs(pl))} (${pl >= 0 ? "+" : "−"}${num(Math.abs(pp))}%)`]); }
   if (i.debt > 0.005) cells.push([i.mode === "perp" ? "Плечом в позиции" : "Долг по марже", "$" + big(i.debt)]);
+  const sg = (x) => (x >= 0 ? "+" : "−");
+  if (i.avg_price && i.price > 0) { const d = (i.price / i.avg_price - 1) * 100; cells.push(["Цена сейчас", `$${qty(i.price)} · ${sg(d)}${num(Math.abs(d))}%`]); }
+  if (i.dca_pnl != null && i.pnl != null) { const d = i.pnl - i.dca_pnl;
+    cells.push(["Обычный DCA за эти дни", `${sg(i.dca_pnl)}$${big(Math.abs(i.dca_pnl))}`], ["Стратегия к обычному DCA", `${sg(d)}$${big(Math.abs(d))}`]); }
   const p = i.profit || 0, has = i.trades > 0;
   return `<h3>Мой счёт</h3><div class="grid">${cells.map(([a, b]) => `<div class="cell"><small>${a}</small><b class="num">${b}</b></div>`).join("")}
     <div class="cell" style="grid-column: 1 / -1"><small>Результат по сделкам</small><b class="num ${!has ? "" : p >= 0 ? "up" : "down"}">${has ? (p >= 0 ? "+" : "−") + "$" + big(Math.abs(p)) : "сделок пока нет"}</b></div></div>
@@ -436,7 +452,7 @@ async function trades(symbol) {
   const box = $("trades"); if (!box) return;
   try {
     const t = await api("/api/trades?symbol=" + encodeURIComponent(symbol));
-    const SRC = { plan: "по плану", scan: "со скриншота", manual: "вручную" };
+    const SRC = { plan: "по плану", scan: "со скриншота", manual: "вручную", bybit: "с биржи" };
     box.innerHTML = t.length ? `<h3>Сделки</h3>` + t.slice(0, 30).map((x) => `<div class="tr"><div><b class="${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "Продажа" : "Покупка"}</b>
       <small>${new Date(x.day + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })} · ${SRC[x.source] || ""} · ${qty(x.qty)} по $${qty(x.price)}${x.fee > 0 ? ` · комиссия ${x.fee_kind === "coin" && x.fee_amount ? qty(x.fee_amount) + " монет" : "$" + (x.fee < 0.01 ? x.fee.toFixed(4) : num(x.fee))}` : ""}</small></div>
       <b class="num ${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "−" : ""}$${big(x.amount)}</b><button class="x" onclick="dropTrade(${x.id}, '${esc(symbol)}')" aria-label="Удалить сделку">×</button></div>`).join("") : "";
