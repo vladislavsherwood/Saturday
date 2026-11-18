@@ -17,7 +17,7 @@ function run(name, { actions = {}, since, buys = [], unit = 2, expect }) {
   const trades = buys.map(([ago, amount, side], n) => ({ id: n + 1, symbol: 'T-USD', side: side || 'buy', day: iso(end - ago), amount, qty: amount / 100, price: 100 }));
   ctx.__seed = { unit, tickers: [{ symbol: 'T-USD', name: 'Test', kind: 'alt', strategy: 'combo4', unit, since: iso(end - since) }], trades };
   const it = vm.runInContext('Object.assign(mem, __seed); today().items[0]', ctx);
-  const got = { amount: it.amount, missed: it.missed || 0, missed_amount: it.missed_amount || 0, reserve: it.reserve };
+  const got = { amount: it.amount, missed: it.missed || 0, missed_amount: it.missed_amount || 0, reserve: it.reserve, tiny: it.tiny ? it.tiny.have : 0 };
   const ok = Object.keys(expect).every((k) => Math.abs(got[k] - expect[k]) < 0.005);
   console.log((ok ? 'ok   ' : 'FAIL ') + name + ' → ' + JSON.stringify(got) + (ok ? '' : '  expected ' + JSON.stringify(expect)));
   return ok;
@@ -36,4 +36,9 @@ t('already bought today', { since: 10, buys: [...Array(10)].map((_, i) => [i + 1
 t('signal +25% with a strategic reserve of $10 and nothing missed (as before)', { since: 10, actions: { 0: 1.25 }, buys: [...Array(5)].map((_, i) => [i + 1, 2]), expect: { amount: 2 + 0.25 * 10, missed: 0 } });
 t('signal +25%, yesterday missed, strategic reserve $10', { since: 11, actions: { 0: 1.25 }, buys: [...Array(5)].map((_, i) => [i + 2, 2]), expect: { amount: 4 + 0.25 * 10, missed: 1 } });
 t('sell day today: nothing to buy', { since: 10, actions: { 0: -0.3 }, buys: [...Array(9)].map((_, i) => [i + 2, 2]), expect: { missed: 0 } });
+// меньше $1 биржа не исполнит: сегодня не предлагается, завтра добавится к покупке
+t('only $0.60 left to buy (more was bought yesterday): nothing proposed today', { since: 10, buys: [...Array(9)].map((_, i) => [i + 2, 2]).concat([[1, 3.4]]), expect: { amount: 0, tiny: 0.6, reserve: 0.6 } });
+t('the day after: the $0.60 and the new $2 together', { since: 11, buys: [...Array(9)].map((_, i) => [i + 3, 2]).concat([[2, 3.4]]), expect: { amount: 2.6, tiny: 0, missed: 1, missed_amount: 0.6 } });
+t('exactly $1 is still proposed', { since: 10, buys: [...Array(9)].map((_, i) => [i + 2, 2]).concat([[1, 3]]), expect: { amount: 1, tiny: 0 } });
+t('a sale of under $1 is skipped', { since: 10, actions: { 0: -0.3 }, buys: [[5, 2]], expect: { amount: 0, tiny: 0.6 } });
 process.exit(all ? 0 : 1);

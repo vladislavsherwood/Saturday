@@ -304,6 +304,7 @@ function phrase(i) {
   if (i.reserve_mode) {
     const a = i.plan_today, why = (i.action || "").split(":")[0];
     if (i.wait) return `<i>копим $${big(i.wait.have)} из $${big(i.wait.need)}</i> · минимум открытия перпа`;
+    if (i.tiny) return i.tiny.sell ? "продажа меньше $1 · пропускаем" : "меньше $1 · добавится к следующей покупке";
     if (i.small_sell) return `<i class="s">продажа меньше 0,01 монеты</i> · пропускаем`;
     if (i.nothing_to_sell) return `<i class="s">продавать нечего</i> · взнос в резерв`;
     if (i.mode === "perp" && a >= 0 && i.amount > 0) return `<i>открыть лонг${i.borrowed > 0 ? `, плечом $${big(i.borrowed)}` : ""}</i>${a > 1 ? " · " + esc(why) : ""}`;
@@ -321,7 +322,7 @@ function render() {
   const d = new Date(state.day + "T00:00:00Z");
   $("day").textContent = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
   $("unitChip").innerHTML = "<span>взнос</span>$" + num(state.unit);
-  const rank = (i) => (i.done ? 2 : 0) + (i.amount ? 0 : 1);
+  const rank = (i) => (i.done || i.tiny ? 2 : 0) + (i.amount ? 0 : 1);
   const items = state.items.slice().sort((a, b) => rank(a) - rank(b) || Math.abs(b.amount || 0) - Math.abs(a.amount || 0));
   const hero = $("hero"), verb = $("verb"), also = $("also");
   also.hidden = true;
@@ -353,10 +354,11 @@ function render() {
 function row(i) {
   const s = esc(i.symbol);
   if (i.error) return `<div class="item bad" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b></div><div class="amt">нет данных</div><div class="check none"></div></div>`;
-  const a = i.amount || 0, shown = i.done ? (i.done_side === "sell" ? -i.done : i.done) : a;
+  const tiny = !i.done && i.tiny, a = i.amount || 0, shown = i.done ? (i.done_side === "sell" ? -i.done : i.done) : tiny ? (tiny.sell ? -tiny.have : tiny.have) : a;
   const amt = shown ? `<div class="amt num ${shown < 0 ? "sell" : ""}">${shown < 0 ? "−" : ""}$${big(Math.abs(shown))}</div>` : '<div class="amt num zero">—</div>';
-  const btn = i.done || a ? `<button class="check" onclick="event.stopPropagation(); toggle('${s}')" aria-label="${i.done ? "Отменить" : "Сделано"}">${CHECK}</button>` : '<div class="check none"></div>';
-  return `<div class="item ${i.done ? "done" : ""}" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b><small>${phrase(i)}</small></div>${amt}${btn}</div>`;
+  const btn = tiny ? `<button class="check" onclick="event.stopPropagation(); toast('${tiny.sell ? "Продажу меньше $1 биржа не исполнит — пропускаем" : "Меньше $1 биржа не исполнит — сумма добавится к следующей покупке"}', true)" aria-label="Меньше доллара">${CHECK}</button>`
+    : i.done || a ? `<button class="check" onclick="event.stopPropagation(); toggle('${s}')" aria-label="${i.done ? "Отменить" : "Сделано"}">${CHECK}</button>` : '<div class="check none"></div>';
+  return `<div class="item ${i.done || tiny ? "done" : ""}" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b><small>${phrase(i)}</small></div>${amt}${btn}</div>`;
 }
 
 async function toggle(symbol) {
@@ -405,12 +407,13 @@ function actionCard(i) {
   if (!i.reserve_mode) return scale(i);
   const a = i.plan_today, kind = a < 0 ? "sell" : a > 1 ? "buy" : "", r = i.state && i.rule >= 0 ? i.state[i.rule] : null;
   const perp = i.mode === "perp";
-  const head = i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
+  const head = i.tiny ? (i.tiny.sell ? `Продажа на $${big(i.tiny.have)} — меньше $1` : `Покупка на $${big(i.tiny.have)} — меньше $1`) : i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
   const owed = (i.label || "").match(/отложено (\d+)% резерва/), copit = /^копим/.test(i.action || ""), release = /^разворот USDT/.test(i.action || "");
   const sub = i.nothing_to_sell ? "Сигнал на продажу, но позиции пока нет. Сегодняшний взнос остаётся в резерве." : r ? r.why : "Сигналов нет — обычный ежедневный взнос.";
   const steps = copit ? `<ol class="steps"><li><strong>Сегодня:</strong> только обычный взнос.</li><li><strong>Копим:</strong> покупку из резерва${owed ? ` (сейчас ≈${owed[1]}% резерва)` : ""} не делаем, она откладывается.</li><li><strong>Потом:</strong> когда доля USDT развернётся вниз (на 3,5% от своего 10-дневного пика), приложение скажет купить отложенное вдвойне.</li></ol>`
     : release ? `<ol class="steps"><li><strong>Сегодня:</strong> доля USDT развернулась вниз — покупаем отложенное ×2 сверх взноса.</li></ol>` : "";
-  const mg = i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
+  const mg = i.tiny ? (i.tiny.sell ? "Меньше $1 биржа не исполнит — продажу пропускаем." : "Меньше $1 биржа не исполнит — сегодня не покупаем, сумма добавится к следующей покупке.")
+    : i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
     : perp ? (i.amount > 0 && i.borrowed > 0 ? `Перп, плечо: из $${big(i.amount)} залог $${big(i.amount - i.borrowed)} своих, $${big(i.borrowed)} — плечом.` : i.amount > 0 ? `Перп без плеча: залог $${big(i.amount)}.` : "")
     : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "")
     : i.missed > 0 && a > 0 ? `В сумме — взносы, не купленные за ${i.missed} ${daysWord(i.missed)}: $${big(i.missed_amount)}.` : "";

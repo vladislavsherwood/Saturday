@@ -117,6 +117,7 @@ function ledger(symbol, since) {
   return o;
 }
 const r2 = (x) => Math.round(x * 100) / 100;
+const MIN_ORDER = 1;   // меньше доллара биржа не исполняет
 // сколько дней подряд обычный взнос не куплен: дни после последней покупки (или со старта монеты) до сегодня, в которые план говорил
 // покупать. День продажи не считается: по стратегии его взнос остаётся в резерве. Действие дня — план по данным предыдущего дня.
 function skipped(t, bk, st, h, day) {
@@ -159,12 +160,16 @@ function today() {
         amount = Math.min(reserve, pending + (a - 1) * base); missedAmt = Math.max(0, pending - Math.min(reserve, unit));
         if (missedAmt < 0.005) missed = 0;
       } else amount = a < 0 ? a * qty * h.price : 0;
+      // меньше $1 биржа не исполнит (спот и маржа; у перпа свой минимум): сделку не предлагаем. Покупка добавится к следующей —
+      // как любой непокупленный взнос; продажа пропускается
+      let tiny = null;
+      if (mode !== "perp" && Math.abs(amount) >= 0.005 && Math.abs(amount) < MIN_ORDER) { tiny = { have: r2(Math.abs(amount)), need: MIN_ORDER, sell: amount < 0 }; amount = 0; borrowed = 0; repaid = 0; missed = 0; missedAmt = 0; }
       Object.assign(i, { reserve: r2(reserve), amount: r2(amount), plan_today: a, mode, margin: mode !== "spot" && !!st.m, has_margin: !!st.m, borrowed: r2(borrowed), repaid: r2(repaid), debt: r2(debt),
-        lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small, missed, missed_amount: r2(missedAmt) });
+        lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small, missed, missed_amount: r2(missedAmt), tiny });
       // портфель: вложено = взносы с даты старта + чистые покупки до неё; стоимость = позиция + резерв − долг (для перпа — капитал счёта)
       const inv = unit * days + Math.max(0, bk.boughtBefore - bk.soldBefore), val = qty * h.price + reserve - debt;
       Object.assign(i, { invested_total: r2(inv), value: r2(val), pnl: r2(val - inv) });
-      if (a < 0 && Math.abs(amount) < 0.005) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
+      if (a < 0 && Math.abs(amount) < 0.005 && !tiny) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
     }
     return i;
   });
