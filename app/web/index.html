@@ -298,13 +298,13 @@ async function drawPnl() {
 }
 window.addEventListener("resize", () => { if ($("pnlC")) drawPnl(); });
 
-const daysWord = (n) => (n % 10 === 1 && n % 100 !== 11 ? "день" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "дня" : "дней");
 // короткая подпись действия для строки актива: что сделать и почему
 function phrase(i) {
   if (i.reserve_mode) {
     const a = i.plan_today, why = (i.action || "").split(":")[0];
     if (i.wait) return `<i>копим $${big(i.wait.have)} из $${big(i.wait.need)}</i> · минимум открытия перпа`;
     if (i.tiny) return i.tiny.sell ? "продажа меньше $1 · пропускаем" : "меньше $1 · добавится к следующей покупке";
+    if (i.partial) return `докупить взнос · <i>сегодня куплено $${big(i.partial)}</i>`;
     if (i.small_sell) return `<i class="s">продажа меньше 0,01 монеты</i> · пропускаем`;
     if (i.nothing_to_sell) return `<i class="s">продавать нечего</i> · взнос в резерв`;
     if (i.mode === "perp" && a >= 0 && i.amount > 0) return `<i>открыть лонг${i.borrowed > 0 ? `, плечом $${big(i.borrowed)}` : ""}</i>${a > 1 ? " · " + esc(why) : ""}`;
@@ -312,7 +312,7 @@ function phrase(i) {
     if (/^копим/.test(i.action || "") && a <= 1) return `обычный взнос · <i>копим резерв до разворота USDT</i>`;
     if (a < 0) return `<i class="s">продать ${Math.round(-a * 100)}%</i> · ${esc(why)}`;
     if (a > 1) return `<i>взнос + ${a >= 2 ? "весь резерв" : Math.round((a - 1) * 100) + "% резерва"}</i> · ${esc(why)}`;
-    return i.missed > 0 ? `обычный взнос · <i>за ${i.missed + 1} ${daysWord(i.missed + 1)}</i>` : "обычный взнос";
+    return i.missed_amount >= 0.1 ? `обычный взнос · <i>+$${big(i.missed_amount)} за прошлые дни</i>` : "обычный взнос";
   }
   const m = i.mult;
   return m > 1 ? `<i>×${m}</i> · ${esc(i.label || i.strategy_name)}` : m < 0 ? `<i class="s">продать ×${-m}</i> · ${esc(i.label || "")}` : m === 0 ? "пропуск" : "обычный взнос";
@@ -416,7 +416,8 @@ function actionCard(i) {
     : i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
     : perp ? (i.amount > 0 && i.borrowed > 0 ? `Перп, плечо: из $${big(i.amount)} залог $${big(i.amount - i.borrowed)} своих, $${big(i.borrowed)} — плечом.` : i.amount > 0 ? `Перп без плеча: залог $${big(i.amount)}.` : "")
     : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "")
-    : i.missed > 0 && a > 0 ? `В сумме — взносы, не купленные за ${i.missed} ${daysWord(i.missed)}: $${big(i.missed_amount)}.` : "";
+    : i.partial ? `Сегодня уже куплено на $${big(i.partial)} — осталось докупить обычный взнос.`
+    : i.missed_amount >= 0.1 && a > 0 ? `В сумме — $${big(i.missed_amount)} обычных взносов, не купленных в прошлые дни.` : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
   return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}</div>`;
 }
@@ -654,7 +655,7 @@ async function saveTrade() {
   if (!q && !price) return toast("Нужно количество или цена");
   $("fSave").disabled = true;
   try {
-    await api("/api/trades", { method: "POST", body: JSON.stringify({ symbol: draft.symbol, side: draft.side, amount, qty: q, price, fee_amount: n("fFee") || 0, fee_kind: n("fFee") ? draft.fee_kind : null, day: $("fDay").value || state.day, source: draft.scanned ? "scan" : "manual" }) });
+    await api("/api/trades", { method: "POST", body: JSON.stringify({ symbol: draft.symbol, side: draft.side, amount, qty: q, price, fee_amount: n("fFee") || 0, fee_kind: n("fFee") ? draft.fee_kind : null, day: $("fDay").value || state.day, source: draft.scanned ? "scan" : "manual", ref: draft.ref || null, time: draft.time || null }) });
     haptic("ok"); const sym = draft.symbol; await load(); toast("Сделка записана", true);
     if (queue.length) nextShot(); else { qTotal = 0; openTicker(sym); }
   } catch (e) { toast(e.message); $("fSave").disabled = false; }
