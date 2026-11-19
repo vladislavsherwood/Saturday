@@ -134,6 +134,7 @@ function owed(t, st, h, day, unit) {
   return { due: p, prior };
 }
 function today() {
+  live();
   const day = todayStr(), names = {};
   const items = mem.tickers.map((t) => {
     const k = coin(t.symbol), h = k.h, st = h.strategies.find((x) => x.code === t.strategy) || h.strategies[0], bk = ledger(t.symbol, t.since), unit = t.unit || mem.unit;
@@ -211,6 +212,60 @@ function plainDca(t, h, day, unit, days) {
   }
   const v = q * h.price;
   return { dca_value: r2(v), dca_pnl: r2(v - unit * n), dca_invested: r2(unit * n) };
+}
+// Часовые цены монет за последние дни и цена этой минуты. Их даёт страница-хозяин (window.dcaIntra(свежие) →
+// { coins: { тикер: { t: [час от эпохи], o, h, l, c } } }); без неё часовых свечей нет и цены — из данных дня.
+let intra = null, intraBusy = null;
+async function loadIntra(fresh) {   // true — пришли новые цены
+  if (typeof window.dcaIntra !== "function") return false;
+  if (intraBusy) return intraBusy;   // график и страница спрашивают разом — запрос один
+  if (!fresh && intra && Date.now() - intra.got < 5 * 60000) return false;
+  intraBusy = (async () => {
+    try { const d = await window.dcaIntra(!!fresh); if (!d || !d.coins || !Object.keys(d.coins).length) return false; intra = d; intra.got = Date.now(); return true; }
+    catch (e) { return false; }
+  })();
+  try { return await intraBusy; } finally { intraBusy = null; }
+}
+// цена этой минуты вместо цены из данных дня (те собираются раз в шесть часов); сигналы и планы от неё не зависят
+function live() {
+  if (!intra || Date.now() - intra.got > 6 * 3600e3) return;
+  for (const s in intra.coins) { const k = coin(s), c = intra.coins[s].c, p = c && c[c.length - 1]; if (k && p > 0) k.h.price = p; }
+}
+// П/У портфеля свечами по tf часов (1 или 4), последние 60 свечей: тот же счёт, что по дням, — позиция, резерв и долг на
+// каждый час по сделкам (час сделки — из её времени, без времени — начало дня) и взносам (взнос добавляется в 00:00 UTC
+// и во вложенное, и в резерв, поэтому П/У на границе дня не прыгает). У монеты без часовых цен внутри дня цена ровная.
+function pnlIntra(tf) {
+  const dn = (x) => Math.round(Date.parse(x) / 864e5), hEnd = Math.floor(Date.now() / 3600e3), first = (Math.floor(hEnd / tf) - 59) * tf, dEnd = Math.floor(hEnd / 24);
+  const P = mem.tickers.map((t) => {
+    const H = coin(t.symbol).h, I = intra.coins[t.symbol], at = (r) => Math.min(hEnd, dn(r.day) * 24 + (r.time ? Math.min(23, +String(r.time).slice(0, 2) || 0) : 0));   // не позже этого часа: время со скриншота — местное
+    const x = { H, I, idx: new Map(H.t.map((v, i) => [v, i])), ix: I ? new Map(I.t.map((v, i) => [v, i])) : null, unit: t.unit || mem.unit, since: t.since ? dn(t.since) : null, at, j: 0,
+      tr: mem.trades.filter((r) => r.symbol === t.symbol).sort((a, b) => at(a) - at(b) || a.id - b.id), qty: 0, bS: 0, sS: 0, brS: 0, rpS: 0, bB: 0, sB: 0, last: null };
+    if (I) for (let i = I.t.length - 1; i >= 0; i--) if (I.t[i] < first && I.c[i] > 0) { x.last = I.c[i]; break; }   // цена перед первой свечой
+    return x;
+  });
+  const out = []; let bar = null;
+  for (let hr = first; hr <= hEnd; hr++) {
+    const d = Math.floor(hr / 24); let o = 0, hi = 0, lo = 0, c = 0, inv = 0, any = false;
+    for (const x of P) {
+      while (x.j < x.tr.length && x.at(x.tr[x.j]) <= hr) { const r = x.tr[x.j++], inS = x.since != null && dn(r.day) >= x.since;
+        if (r.side === "sell") { x.qty = Math.max(0, x.qty - r.qty); if (inS) { x.sS += r.amount; x.rpS += r.repaid || 0; } else x.sB += r.amount; }
+        else { x.qty += r.qty; if (inS) { x.bS += r.amount; x.brS += r.borrowed || 0; } else x.bB += r.amount; } }
+      const i = x.ix ? x.ix.get(hr) : null; let po, ph, pl, pc;
+      if (i != null && x.I.c[i] > 0) { pc = x.I.c[i]; po = x.I.o[i] > 0 ? x.I.o[i] : pc; ph = Math.max(x.I.h[i] || pc, po, pc); pl = Math.min(x.I.l[i] > 0 ? x.I.l[i] : pc, po, pc); x.last = pc; }
+      else { if (!x.I || x.last == null) { const k = x.idx.get(d); x.last = d >= dEnd ? x.H.price || x.last : k != null ? x.H.c[k] : x.last != null ? x.last : x.H.price; } pc = po = ph = pl = x.last; }
+      if (pc == null) continue;
+      const days = x.since != null && d >= x.since ? d - x.since + 1 : 0, contrib = x.unit * days;
+      const res = days ? Math.max(0, contrib - (x.bS - x.brS) + (x.sS - x.rpS)) : 0, debt = Math.max(0, x.brS - x.rpS), base = res - debt;
+      const i0 = contrib + Math.max(0, x.bB - x.sB);
+      if (i0 <= 0 && x.qty <= 0) continue;
+      any = true; inv += i0; o += x.qty * po + base; hi += x.qty * ph + base; lo += x.qty * pl + base; c += x.qty * pc + base;
+    }
+    if (!any) continue;
+    const k = Math.floor(hr / tf);
+    if (!bar || bar.k !== k) { bar = { k, ts: k * tf * 3600e3, tf, o: o - inv, h: hi - inv, l: lo - inv, c: c - inv, v: c, inv }; out.push(bar); }
+    else { bar.h = Math.max(bar.h, hi - inv); bar.l = Math.min(bar.l, lo - inv); bar.c = c - inv; bar.v = c; bar.inv = inv; }
+  }
+  return out.map((b) => ({ ts: b.ts, tf: b.tf, o: r2(b.o), h: r2(b.h), l: r2(b.l), c: r2(b.c), v: r2(b.v), inv: r2(b.inv) }));
 }
 // П/У портфеля по дням (свечи): для каждого дня — позиция, резерв и долг по сделкам и взносам; открытие/максимум/минимум/закрытие — по ценам монет дня
 function pnlHistory() {
@@ -336,7 +391,7 @@ async function api(path, opts = {}) {
   if (seg[0] === "tickers" && m === "PATCH") { const t = tick(seg[1]); if (b.strategy) t.strategy = b.strategy; if (b.margin != null) t.margin = !!b.margin; if (b.mode) { t.mode = ["spot", "margin", "perp"].includes(b.mode) ? b.mode : "spot"; t.margin = t.mode === "margin"; } if (b.reset_unit) t.unit = null; else if (b.unit != null) { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); t.unit = b.unit; } await saveCfg(); return { ok: true }; }
   if (seg[0] === "tickers" && m === "DELETE") { mem.tickers = mem.tickers.filter((t) => t.symbol !== seg[1]); await saveCfg(); return { ok: true }; }
   if (seg[0] === "unit") { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); mem.unit = b.unit; await saveCfg(); return { ok: true }; }
-  if (seg[0] === "pnl" && m === "GET") return pnlHistory();
+  if (seg[0] === "pnl" && m === "GET") { const tf = +arg.get("tf") || 0; if (tf === 1 || tf === 4) { await loadIntra(); if (intra) return pnlIntra(tf); } return pnlHistory(); }
   if (seg[0] === "hist" && m === "GET") return histPerf(decodeURIComponent(seg[1]));
   if (seg[0] === "histd" && m === "GET") return histDetail(decodeURIComponent(seg[1]), Number(seg[2]) || 0);
   if (seg[0] === "done" && m === "POST") { if (!b.price || !b.amount) fail("Нет суммы или цены"); const it = today().items.find((x) => x.symbol === b.symbol) || {}; return addTrade({ symbol: b.symbol, side: b.amount < 0 ? "sell" : "buy", amount: Math.abs(b.amount), price: b.price, source: "plan", borrowed: b.amount > 0 ? it.borrowed || 0 : 0, repaid: b.amount < 0 ? it.repaid || 0 : 0 }); }
