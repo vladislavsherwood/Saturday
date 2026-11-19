@@ -6,7 +6,8 @@
   (даёт ловушке ложную выгоду: купить на −30% от закрытия, которое не изменилось, — не использовать); 2 — как 0 + проверка «в худший момент»
   (все заявки, до которых достал бы минимум со стрессом, исполнены прямо перед проверкой); WFEE — комиссия заявки; WEXIT — продать купленное на фитиле при возврате к опорной цене;
   WMIN — заявки меньше минимума Bybit объединять с более глубоким уровнем; WGD — не ставить заявки по монете, пока по ней есть заём.
-Возврат: как sim6 + (траты ловушки / вложено, число исполнений). При WK пустом считает ровно как bybit_msim.sim6."""
+SK, SF — фитильная продажа (круг 6): уровни выше опорной цены и доли позиции на момент выставления (пустые — нет продаж).
+Возврат: как sim6 + (траты ловушки / вложено, число исполнений). При WK и SK пустых считает ровно как bybit_msim.sim6."""
 import numpy as np
 from numba import njit
 from agent_margin import ML, UNIT
@@ -15,7 +16,7 @@ from agent_margin import ML, UNIT
 @njit(cache=True)
 def sim6w(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
           WT, SPL, FEES, FEEP, PERP, FUND, MINO, MINB, hl, MM, MMSH, LD, XC, YLD, MK,
-          WK, WF, WEV, DAYN, WAGE, WST, WFEE, WEXIT, WMIN, WGD):
+          WK, WF, WEV, DAYN, WAGE, WST, WFEE, WEXIT, WMIN, WGD, SK, SF):
     n, K = C.shape
     r = np.zeros(K); u = np.zeros(K); pu = np.zeros(K); debt = np.zeros(K); su = np.zeros(K); stg = np.zeros(K); dca = np.zeros(K); col = np.zeros(K)
     NS = 4
@@ -27,6 +28,8 @@ def sim6w(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
     wjj = np.full(K, -10 ** 9); wdone = np.zeros((K, max(NL, 1))); wamt = np.zeros((K, max(NL, 1))); wref = np.zeros(K)
     wlu = np.zeros((K, max(NL, 1))); wlr = np.zeros((K, max(NL, 1))); wld = np.zeros((K, max(NL, 1))); wsp = 0.0; wcnt = 0
     vsk = np.zeros(K); vuk = np.zeros(K)
+    # wk, круг 6: фитильная продажа — окно, исполненные уровни, количество монет на уровень (доля позиции на момент выставления)
+    NSK = SK.shape[0]; sjj = np.full(K, -10 ** 9); sref = np.zeros(K); sdone = np.zeros((K, max(NSK, 1))); sunits = np.zeros((K, max(NSK, 1)))
     for t in range(s0, n):
         tot = 0.0
         for k in range(K):
@@ -177,6 +180,38 @@ def sim6w(C, LO, HI, ACT, GRP, SHW, LEVM, s0, LEV, stress, sh_rate, rate,
                             wdone[k, q] = 1.0; wsp += v; wcnt += 1
                             if WEXIT > 0:
                                 wlu[k, q] += dq; wlr[k, q] = wref[k]; wld[k, q] = t
+            # wk, круг 6: фитильная продажа — лимитки выше опорной цены (то же окно обновления); продажа по лимиту, если максимум дня ≥ лимита;
+            # как продажа правила: доля позиции, заём по монете гасится пропорционально; на перпах — шаг 0,01 монеты (MINO > 0), без минимума $5
+            if NSK > 0 and t > s0 and t > WAGE[k] and u[k] > 0:
+                tj = t - 1
+                if WEV > 1:
+                    tj = tj - (DAYN[tj] % WEV)
+                if tj != sjj[k]:
+                    sjj[k] = tj; rf = C[tj, k] if tj >= 0 else np.nan
+                    if np.isnan(rf):
+                        rf = C[t - 1, k]
+                    sref[k] = rf
+                    for q in range(NSK):
+                        sdone[k, q] = 0.0; sunits[k, q] = SF[q] * u[k]
+                for q in range(NSK):
+                    if sdone[k, q] > 0 or u[k] <= 0:
+                        continue
+                    lim = sref[k] * (1 + SK[q])
+                    if HI[t, k] >= lim and lim > 0:
+                        qu = min(sunits[k, q], u[k])
+                        if MINO > 0 and qu < u[k] * 0.999:
+                            stp = 0.01 * MK[k]; qu = np.floor(qu / stp) * stp
+                        sdone[k, q] = 1.0
+                        if qu > 0:
+                            fr = qu / u[k]
+                            if hl and not PERP[k]:
+                                spu = u[k] - pu[k]
+                                r[k] += fr * (spu * lim * (1 - FEES[k]) + pu[k] * lim * (1 - FEEP[k]) - debt[k] + col[k]); col[k] *= 1 - fr
+                            else:
+                                r[k] += fr * (u[k] * lim * (1 - fe) - debt[k])
+                            u[k] *= 1 - fr; pu[k] *= 1 - fr; debt[k] *= 1 - fr
+                            for q2 in range(NL):
+                                wlu[k, q2] *= 1 - fr
             if t > s0:
                 want = SHW[t - 1, k]
                 if want > stg[k] + 1e-12:

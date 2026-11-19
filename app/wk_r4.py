@@ -62,16 +62,21 @@ VARS = {
     "финалист, доли ×1,2 (18/30/42)": wick(lv=[(0.25, 0.18), (0.40, 0.30), (0.60, 0.42)]),
     "финалист, уровни −23/37/56": wick(lv=[(0.23, 0.15), (0.37, 0.25), (0.56, 0.35)]),
     "финалист, раз в 2 дня": wick(lv=[(0.25, 0.15), (0.40, 0.25), (0.60, 0.35)], ev=2),
+    # круг 6: фитильная продажа +25/40/60 (доли позиции) отдельно и вместе с покупочной ловушкой
+    "продажа +25/40/60 → 10/20/30 (без покупок)": dict(NONE, WEV=3, SK=np.array([0.25, 0.40, 0.60]), SF=np.array([0.10, 0.20, 0.30])),
+    "финалист + продажа 10/20/30": dict(wick(lv=[(0.25, 0.15), (0.40, 0.25), (0.60, 0.35)]), SK=np.array([0.25, 0.40, 0.60]), SF=np.array([0.10, 0.20, 0.30])),
+    "финалист + продажа 5/10/15": dict(wick(lv=[(0.25, 0.15), (0.40, 0.25), (0.60, 0.35)]), SK=np.array([0.25, 0.40, 0.60]), SF=np.array([0.05, 0.10, 0.15])),
 }
 
 
 WSTM = int(os.environ.get("WK_WST", "2"))
+E0 = np.zeros(0)
 
 
 def sim(P, A, G, W, Lm, s, sv, k, rate, MK, WA, w, sl=slice(None)):
     return sim6w(P.B.C[sl], P.B.LO[sl], P.B.HI[sl], A[sl], G[sl], W[sl], np.ones(P.B.C[sl].shape), int(s), Lm, sv, 0.15 / 365, rate,
                  k["WT"], k["SPL"], k["FEES"], k["FEEP"], k["PERP"], k["FUND"], k["MINO"], k["MINB"], k["hl"], k["MM"], k["MMSH"], k["LD"], k["XC"], 0.0, MK,
-                 w["WK"], w["WF"], w["WEV"], DAYN[sl], WA, WSTM, w["WFEE"], w["WEXIT"], w["WMIN"], w["WGD"])
+                 w["WK"], w["WF"], w["WEV"], DAYN[sl], WA, WSTM, w["WFEE"], w["WEXIT"], w["WMIN"], w["WGD"], w.get("SK", E0), w.get("SF", E0))
 
 
 def runs(P, S, L, w, perps=False, lags=(-1, 0, 1)):

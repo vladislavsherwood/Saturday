@@ -61,6 +61,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
        size: 'place' — размер заявки фиксируется при выставлении: f × резерв на момент обновления (не больше текущего резерва);
        min(X, lim) → минимальная заявка в единицах стенда (или число); merge: 'down' | 'up' — мелкие уровни объединить с более глубоким / мелким (иначе пропустить);
        lv(X, jj) — уровни функцией дня выставления (волатильность, сегмент); ref(X, jj) — опорная цена (по умолчанию закрытие дня jj);
+       phase — сдвиг календаря обновлений (every > 1): день выставления — (t + phase) % every == 0;
        first — исполнять до сделки правила (фитиль внутри дня, правило — по закрытию); fee — комиссия заявки (мейкер);
        pan: 'protect' — не тратить долг отложенной паники (резерв − owed) | 'spend' — покупка фитиля гасит долг | 'off' — без заявок, пока есть долг;
        cool — после исполнения N дней без заявок; mult(X, jj) — множитель долей на окно;
@@ -69,7 +70,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
   const wk = w ? { jj: NaN, done: null, base: 0, ref: 0, lv: null, amt: null, lots: [], cool: -1e9 } : null;
   const wickStep = (i, j, before) => {
     if (!(j >= 0 && I.age[j] > (w.age || 60) && (!w.day || w.day(X, i)))) return;
-    const ev = w.every || 1, jj = ev > 1 ? j - (I.t[j] % ev) : j, j0 = Math.max(0, jj), cl = w.mode === 'close', tt = w.tt || 0;
+    const ev = w.every || 1, jj = ev > 1 ? j - ((I.t[j] + (w.phase || 0)) % ev) : j, j0 = Math.max(0, jj), cl = w.mode === 'close', tt = w.tt || 0;
     if (jj !== wk.jj) { // новое окно заявок: выставлены после закрытия дня jj
       wk.jj = jj; wk.ref = w.ref ? w.ref(X, j0) : c[j0]; wk.lv = typeof w.lv === 'function' ? w.lv(X, j0) : w.lv; wk.done = new Uint8Array(wk.lv.length);
       const mu = w.mult ? w.mult(X, j0) : 1; wk.mu = mu;
@@ -92,6 +93,34 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       if (w.exit) wk.lots.push({ u: du_, p: px, i, ref: wk.ref });
       if (w.cool) wk.cool = i + w.cool;
       if (w.log) w.log.push([X.name, i, k, amt, lim, c[i]]);
+    }
+  };
+  /* wk, круг 6: «фитильная продажа» — зеркало ловушки, pol.wickS = { lv: [[k, f], …], every, phase, once, size: 'place', mode: 'close', age, day, fee,
+       cond(X, jj, a) — режим (решение на окно), minU(X) — минимальная продажа в монетах стенда, rebuy: { d, f, days } — после продажи лимитка на откуп
+       ниже цены продажи на d, на долю f выручки, живёт days дней }. Если максимум дня X.h[i] ≥ ref × (1 + k) — продано f позиции по лимиту, выручка в резерв.
+       Без pol.wickS поведение прежнее. */
+  const ws = pol && pol.wickS ? pol.wickS : null, wsfee = ws && ws.fee != null ? ws.fee : FEE;
+  const wks = ws ? { jj: NaN, done: null, ref: 0, lv: null, u: null, on: true, rb: [] } : null;
+  const wickSell = (i, j, a) => {
+    if (wks.rb.length) { // откуп после фитильной продажи
+      for (const R_ of wks.rb) { if (R_.i >= i || !(R_.amt > 0)) continue; if (i > R_.until) { R_.amt = 0; continue; }
+        if (X.l[i] <= R_.lim && cash > 0) { const amt = Math.min(R_.amt, cash); units += (amt * (1 - wsfee)) / R_.lim; cash -= amt; R_.amt = 0; if (ws.log) ws.log.push([X.name, i, 'откуп', amt, R_.lim, c[i]]); } }
+      wks.rb = wks.rb.filter((R_) => R_.amt > 0);
+    }
+    if (!(j >= 0 && I.age[j] > (ws.age || 60) && (!ws.day || ws.day(X, i)))) return;
+    const ev = ws.every || 1, jj = ev > 1 ? j - ((I.t[j] + (ws.phase || 0)) % ev) : j, j0 = Math.max(0, jj), cl = ws.mode === 'close';
+    if (jj !== wks.jj) { wks.jj = jj; wks.ref = ws.ref ? ws.ref(X, j0) : c[j0]; wks.lv = typeof ws.lv === 'function' ? ws.lv(X, j0) : ws.lv; wks.done = new Uint8Array(wks.lv.length); wks.u = wks.lv.map(([, f]) => f * units); wks.on = !ws.cond || ws.cond(X, j0, a); }
+    if (!wks.on) return;
+    for (let q = 0; q < wks.lv.length; q++) {
+      if (ws.once && wks.done[q]) continue;
+      const k = wks.lv[q][0], f = wks.lv[q][1], lim = wks.ref * (1 + k), px = cl ? c[i] : lim;
+      if (!((cl ? c[i] : X.h[i]) >= lim) || !(units > 0)) continue;
+      const dU = ws.size === 'place' ? Math.min(units, wks.u[q]) : f * units;
+      if (!(dU > 0) || (ws.minU && dU < ws.minU(X))) continue;
+      if (wk) for (const L of wk.lots) L.u *= 1 - dU / units;
+      units -= dU; const amt = dU * px * (1 - wsfee); cash += amt; wks.done[q] = 1;
+      if (ws.rebuy) wks.rb.push({ amt: amt * (ws.rebuy.f == null ? 1 : ws.rebuy.f), lim: px * (1 - ws.rebuy.d), i, until: i + (ws.rebuy.days || 30) });
+      if (ws.log) ws.log.push([X.name, i, k, dU * px, lim, c[i]]);
     }
   };
   for (let i = a0; i < b; i++) {
@@ -122,6 +151,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     // dcaf: «ловушка для фитилей» — лимитные заявки ниже вчерашнего закрытия (pol.wick = { lv: [[k, f], …], age }): если минимум дня ≤ ref × (1 − k), куплено f резерва по лимиту
     // (wk: код вынесен в wickStep выше; без новых полей считает ровно как раньше)
     if (wk && !w.first) wickStep(i, j, before);
+    if (wks) wickSell(i, j, a); // wk, круг 6: фитильная продажа (после сделки правила и фитильной покупки)
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
     if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
   }
