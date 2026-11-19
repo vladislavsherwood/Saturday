@@ -1,0 +1,21 @@
+/* dcaf, круг 1б: сетка фильтров обычного взноса. act 0 — копить взнос; 0,5 — купить полвзноса. Запуск: node dcaf_r2.js */
+const L = require('./r4_lib.js'), { S0, c } = L;
+const F = (act, conds) => { const S = L.clone(); S.rules.push({ act, conds }); return S; };
+const out = [];
+const T = (nm, conds) => { for (const a of [0, 0.5]) { const r = L.run(`${nm} → ${a}`, F(a, conds), L.pol0, { quiet: true }); out.push(r); console.log(r.txt.slice(0, 150)); } };
+L.run('combo4', S0);
+console.log('— «дорого»: рынок —');
+for (const v of [65, 70, 75, 80]) T(`fng > ${v}`, [c('fng', '>', v)]);
+for (const v of [1.3, 1.5, 1.8]) T(`BTC/200д > ${v}`, [c('btc200', '>', v)]);
+for (const v of [2.5, 3]) T(`mvrv > ${v}`, [c('mvrv', '>', v)]);
+for (const v of [0.85, 0.9, 0.95]) T(`usdt < ${v}`, [c('usdt', '<', v)]);
+console.log('— «дорого»: монета —');
+for (const v of [1.5, 2, 2.5, 3]) T(`монета/200д > ${v}`, [c('sma200', '>', v)]);
+for (const v of [5, 10, 20]) T(`от ATH < ${v}%`, [c('dd', '<', v)]);
+for (const v of [70, 75, 80]) T(`rsi > ${v}`, [c('rsi', '>', v)]);
+for (const v of [100, 200]) T(`рост 90д > ${v}%`, [c('ret90', '>', v)]);
+console.log('— «нож»: медвежий тренд без паники —');
+for (const v of [0.6, 0.7, 0.8, 0.9]) T(`монета/200д < ${v}`, [c('sma200', '<', v)]);
+for (const v of [0.7, 0.8, 0.9]) T(`BTC/200д < ${v}`, [c('btc200', '<', v)]);
+for (const v of [-30, -50]) T(`рост 90д < ${v}%`, [c('ret90', '<', v)]);
+for (const v of [1.1, 1.2]) T(`usdt > ${v}`, [c('usdt', '>', v)]);
