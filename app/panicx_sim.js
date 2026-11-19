@@ -67,7 +67,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       let want, pan = false, rel = 0, oth = false, relO = 0;
       if (pol && pol.buy && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
       else if (pol && pol.other && q >= 0 && pol.other(R[q].r)) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buyO({ X, j, share, before, st, r: R[q].r }))); want = UNIT + fr * before; st.oo = Math.min(before + UNIT - want, (st.oo || 0) + (share - fr) * before); oth = true; }
-      else { want = UNIT + (a - 1) * before; pan = q >= 0 && R[q].p; }
+      else { want = a < 1 ? a * UNIT : UNIT + (a - 1) * before; pan = q >= 0 && R[q].p; } // 0 < a < 1 — доля взноса (dcaf)
       if (pol && pol.release && st.owed > 0 && j >= 0) { const k = pol.release({ X, j, before, st }); if (k > 0) { rel = Math.min(1, k) * st.owed; st.owed -= rel; } }
       if (pol && pol.releaseO && st.oo > 0 && j >= 0) { const k = pol.releaseO({ X, j, before, st }); if (k > 0) { relO = Math.min(1, k) * st.oo; st.oo -= relO; } }
       if (pol && pol.extra && j >= 0) { const k = pol.extra({ X, j, before, st }); if (k > 0) rel += Math.min(1, k) * before; } // докупка из резерва (доля резерва накануне)
@@ -75,6 +75,9 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       if (pan || rel) st.spent += amt - UNIT;
       if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q, pan: pan || rel > 0, oth: oth || relO > 0 });
     }
+    // dcaf: «ловушка для фитилей» — лимитные заявки ниже вчерашнего закрытия (pol.wick = { lv: [[k, f], …], age }): если минимум дня ≤ ref × (1 − k), куплено f резерва по лимиту
+    if (pol && pol.wick && j >= 0 && I.age[j] > (pol.wick.age || 60) && (!pol.wick.day || pol.wick.day(X, i))) { const w = pol.wick, ev = w.every || 1, jj = ev > 1 ? j - (I.t[j] % ev) : j, ref = c[Math.max(0, jj)], cl = w.mode === 'close', tt = w.tt || 0;
+      for (const [k, fr] of w.lv) { const lim = ref * (1 - k), px = cl ? c[i] : lim; if ((cl ? c[i] : X.l[i] / (1 - tt)) <= lim && cash > 0) { const amt = fr * cash; units += (amt * (1 - FEE)) / px; cash -= amt; if (pol.wick.log) pol.wick.log.push([X.name, i, k, amt, lim, c[i]]); } } }
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
     if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
   }
