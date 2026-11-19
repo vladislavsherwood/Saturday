@@ -267,6 +267,32 @@ function pnlIntra(tf) {
   }
   return out.map((b) => ({ ts: b.ts, tf: b.tf, o: r2(b.o), h: r2(b.h), l: r2(b.l), c: r2(b.c), v: r2(b.v), inv: r2(b.inv) }));
 }
+// Цена монеты свечами (последние 60) и свои сделки на них: tf 0 — по дням из данных дня (сегодняшняя свеча — от вчерашнего
+// закрытия до цены сейчас), 1 и 4 — по часам из часовых цен. На свече: b — куплено, $ (bp — средняя цена покупок), s и sp —
+// то же для продаж. Нет часовых цен по монете — ответ по дням (у строк d вместо ts).
+function priceBars(symbol, tf) {
+  const k0 = coin(symbol) || fail("Нет данных по этому тикеру"), H = k0.h, dn = (x) => Math.round(Date.parse(x) / 864e5), rows = [], I = tf && intra ? intra.coins[symbol] : null;
+  let barOf;
+  if (I) {
+    const hEnd = Math.floor(Date.now() / 3600e3), first = (Math.floor(hEnd / tf) - 59) * tf; let bar = null;
+    for (let i = 0; i < I.t.length; i++) { const hr = I.t[i], c = I.c[i]; if (hr < first || !(c > 0)) continue; const k = Math.floor(hr / tf), o = I.o[i] > 0 ? I.o[i] : c;
+      if (!bar || bar.k !== k) { bar = { k, ts: k * tf * 3600e3, tf, o, h: Math.max(I.h[i] || c, o, c), l: Math.min(I.l[i] > 0 ? I.l[i] : c, o, c), c }; rows.push(bar); }
+      else { bar.h = Math.max(bar.h, I.h[i] || c, c); bar.l = Math.min(bar.l, I.l[i] > 0 ? I.l[i] : c, c); bar.c = c; } }
+    barOf = (r) => Math.floor(Math.min(hEnd, dn(r.day) * 24 + (r.time ? Math.min(23, +String(r.time).slice(0, 2) || 0) : 0)) / tf);
+  } else {
+    const n = H.t.length, end = dn(todayStr());
+    for (let i = Math.max(0, n - 59); i < n; i++) { const c = H.c[i]; if (!(c > 0)) continue; const o = (H.o && H.o[i]) || c; rows.push({ k: H.t[i], d: H.t[i], o, h: Math.max((H.h && H.h[i]) || c, o, c), l: Math.min((H.l && H.l[i]) || c, o, c), c }); }
+    if (n && end > H.t[n - 1] && H.price > 0) { const o = H.c[n - 1] || H.price; rows.push({ k: end, d: end, o, h: Math.max(o, H.price), l: Math.min(o, H.price), c: H.price }); }
+    barOf = (r) => Math.min(end, dn(r.day));
+  }
+  const at = new Map(rows.map((b) => [b.k, b]));
+  for (const r of mem.trades) { if (r.symbol !== symbol) continue; const k = barOf(r); let b = at.get(k);
+    if (!b && rows.length && k >= rows[0].k) for (let j = rows.length - 1; j >= 0; j--) if (rows[j].k <= k) { b = rows[j]; break; }   // свечи на этот час или день нет — ближайшая до него
+    if (!b || !(r.amount > 0)) continue;
+    const s = r.side === "sell" ? "s" : "b"; b[s] = (b[s] || 0) + r.amount; b[s + "q"] = (b[s + "q"] || 0) + (r.qty || (r.price > 0 ? r.amount / r.price : 0)); }
+  return rows.map((b) => { const o = { o: b.o, h: b.h, l: b.l, c: b.c }; if (b.ts != null) { o.ts = b.ts; o.tf = b.tf; } else o.d = b.d;
+    if (b.b) { o.b = r2(b.b); o.bp = b.bq > 0 ? b.b / b.bq : null; } if (b.s) { o.s = r2(b.s); o.sp = b.sq > 0 ? b.s / b.sq : null; } return o; });
+}
 // П/У портфеля по дням (свечи): для каждого дня — позиция, резерв и долг по сделкам и взносам; открытие/максимум/минимум/закрытие — по ценам монет дня
 function pnlHistory() {
   const dn = (x) => Math.round(Date.parse(x) / 864e5), end = dn(todayStr());
@@ -392,6 +418,7 @@ async function api(path, opts = {}) {
   if (seg[0] === "tickers" && m === "DELETE") { mem.tickers = mem.tickers.filter((t) => t.symbol !== seg[1]); await saveCfg(); return { ok: true }; }
   if (seg[0] === "unit") { if (!(b.unit > 0)) fail("Сумма должна быть больше нуля"); mem.unit = b.unit; await saveCfg(); return { ok: true }; }
   if (seg[0] === "pnl" && m === "GET") { const tf = +arg.get("tf") || 0; if (tf === 1 || tf === 4) { await loadIntra(); if (intra) return pnlIntra(tf); } return pnlHistory(); }
+  if (seg[0] === "price" && m === "GET") { const tf = +arg.get("tf") || 0, on = tf === 1 || tf === 4; if (on) await loadIntra(); return priceBars(decodeURIComponent(seg[1]), on ? tf : 0); }
   if (seg[0] === "hist" && m === "GET") return histPerf(decodeURIComponent(seg[1]));
   if (seg[0] === "histd" && m === "GET") return histDetail(decodeURIComponent(seg[1]), Number(seg[2]) || 0);
   if (seg[0] === "done" && m === "POST") { if (!b.price || !b.amount) fail("Нет суммы или цены"); const it = today().items.find((x) => x.symbol === b.symbol) || {}; return addTrade({ symbol: b.symbol, side: b.amount < 0 ? "sell" : "buy", amount: Math.abs(b.amount), price: b.price, source: "plan", borrowed: b.amount > 0 ? it.borrowed || 0 : 0, repaid: b.amount < 0 ? it.repaid || 0 : 0 }); }
