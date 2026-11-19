@@ -18,7 +18,7 @@ function run(name, { actions = {}, since, buys = [], unit = 2, expect }) {
   const trades = buys.map(([ago, amount, side], n) => ({ id: n + 1, symbol: 'T-USD', side: side || 'buy', day: iso(end - ago), amount, qty: amount / 100, price: 100 }));
   ctx.__seed = { unit, tickers: [{ symbol: 'T-USD', name: 'Test', kind: 'alt', strategy: 'combo4', unit, since: iso(end - since) }], trades };
   const it = vm.runInContext('Object.assign(mem, __seed); today().items[0]', ctx);
-  const got = { amount: it.amount, extra: it.missed_amount || 0, reserve: it.reserve, tiny: it.tiny ? it.tiny.have : 0, done: it.done || 0, partial: it.partial || 0 };
+  const got = { amount: it.amount, extra: it.missed_amount || 0, reserve: it.reserve, tiny: it.tiny ? it.tiny.have : 0, done: it.done || 0, partial: it.partial || 0, caught: it.caught || 0 };
   const ok = Object.keys(expect).every((k) => Math.abs(got[k] - expect[k]) < 0.005);
   console.log((ok ? 'ok   ' : 'FAIL ') + name + ' → ' + JSON.stringify(got) + (ok ? '' : '  ожидалось ' + JSON.stringify(expect)));
   return ok;
@@ -37,6 +37,11 @@ t('вчера купил меньше взноса: остаток остаёт�
 t('пропустил вчера, сегодня купил только на один день: второй ещё к покупке', { since: 10, buys: daily(10, 2).concat([[0, 2]]), expect: { amount: 2, partial: 2, done: 0 } });
 t('сегодня купил всё', { since: 10, buys: daily(10, 0), expect: { amount: 0, done: 2, partial: 0 } });
 t('сегодня купил на $1,94 из $2: шесть центов не докупить — сделано', { since: 10, buys: daily(10, 1).concat([[0, 1.94]]), expect: { amount: 0, done: 1.94, partial: 0 } });
+// новый день приложения начался, пока докупалось вчерашнее: покупка закрыла прошлые дни, а к покупке — взнос нового дня
+t('вчера осталось $1,95, сегодня куплено ровно $1,95: остался взнос нового дня, а не «мало куплено»', { since: 10, buys: daily(10, 2).concat([[1, 0.05], [0, 1.95]]), expect: { amount: 2, partial: 1.95, caught: 1.95, done: 0 } });
+t('как у владельца: 5 дней по $2, куплено на 4 дня, сегодняшняя покупка $1,95 пришлась на новый день', { since: 4, buys: [[4, 1.98], [2, 1.94], [1, 2.13], [0, 1.95]], expect: { amount: 2, partial: 1.95, caught: 1.95, reserve: 2 } });
+t('вчера осталось $2, сегодня куплен только $1: это недокуплено, а не новый день', { since: 10, buys: daily(10, 2).concat([[0, 1]]), expect: { amount: 3, partial: 1, caught: 0 } });
+t('долгов за прошлые дни нет, сегодня куплено меньше взноса на доллар: докупить', { since: 10, buys: daily(10, 1).concat([[0, 1]]), expect: { amount: 1, partial: 1, caught: 0 } });
 // сигнал «взнос + 25% резерва»: недокупленные взносы целиком, доля — от резерва стратегии ($10 за пять дней продажи)
 t('сигнал +25%, резерв стратегии $10, пропусков нет (как раньше)', { since: 10, actions: { ...kept(10, 6), 0: 1.25 }, buys: daily(5, 1), expect: { amount: 2 + 0.25 * 10, extra: 0 } });
 t('сигнал +25%, вчера пропущено, резерв стратегии $10', { since: 11, actions: { ...kept(11, 7), 0: 1.25 }, buys: daily(6, 2), expect: { amount: 4 + 0.25 * 10, extra: 2 } });

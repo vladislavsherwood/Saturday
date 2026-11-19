@@ -124,13 +124,14 @@ const MIN_ORDER = 1;   // меньше доллара биржа не испол
 function owed(t, st, h, day, unit) {
   const dn = (x) => Math.round(Date.parse(x) / 864e5), end = dn(day), start = Math.max(t.since ? dn(t.since) : end, end - 1500), got = {};
   for (const r of mem.trades) if (r.symbol === t.symbol && r.side !== "sell" && (!t.since || r.day >= t.since)) { const d = Math.min(end, dn(r.day)); got[d] = (got[d] || 0) + r.amount - (r.borrowed || 0); }
-  const last = h.t.length - 1, tl = h.t[last]; let p = 0;
+  const last = h.t.length - 1, tl = h.t[last]; let p = 0, prior = 0;
   for (let d = start; d <= end; d++) {
+    if (d === end) prior = p;   // что оставалось к покупке за прошлые дни, до сегодняшнего взноса
     const i = d > tl ? last + 1 : h.t[last - (tl - d)] === d ? last - (tl - d) : h.t.lastIndexOf(d);   // дни идут подряд; на случай пропуска — поиск
     if ((i > 0 ? st.plan[Math.min(i, st.plan.length) - 1] : 1) > 0) p += unit;
     p = Math.max(0, p - (got[d] || 0));
   }
-  return p;
+  return { due: p, prior };
 }
 function today() {
   const day = todayStr(), names = {};
@@ -146,7 +147,7 @@ function today() {
       // резерв = взносы − свои деньги в покупках + выручка без погашения долга; долг = занятое − погашенное
       const days = Math.round((Date.parse(day) - Date.parse(t.since || day)) / 864e5) + 1, debt = Math.max(0, bk.borrowedSince - bk.repaidSince);
       const reserve = Math.max(0, unit * days - (bk.boughtSince - bk.borrowedSince) + (bk.soldSince - bk.repaidSince)), before = Math.max(0, reserve - unit);
-      let a = st.plan_today, amount, borrowed = 0, repaid = 0, wait = null, minOpen = null, small = false, missed = 0, missedAmt = 0, partial = 0;
+      let a = st.plan_today, amount, borrowed = 0, repaid = 0, wait = null, minOpen = null, small = false, missed = 0, missedAmt = 0, partial = 0, caught = 0;
       const mode = modeOf(t);
       if (mode !== "spot" && st.m) {   // маржа или перпы: доли схемы с плечом, сделки дна/паники/продаж 50/50 на два дня
         const m = st.m;
@@ -161,18 +162,21 @@ function today() {
       } else if (a > 0) {
         // спот: обычные взносы копятся, пока не куплены, и идут в сегодняшнюю покупку целиком (как взнос у перпа до минимума
         // открытия); доля сигнала считается от остального резерва. Если всё покупалось вовремя и полностью — прежняя сумма.
-        const pending = Math.min(reserve, owed(t, st, h, day, unit)), base = Math.max(0, reserve - pending);
+        const ow = owed(t, st, h, day, unit), pending = Math.min(reserve, ow.due), base = Math.max(0, reserve - pending);
         // уже покупал сегодня — к покупке остаётся только недокупленный взнос (долю сигнала второй раз не предлагаем)
         amount = bk.today > 0 ? pending : Math.min(reserve, pending + (a - 1) * base);
         missedAmt = bk.today > 0 ? 0 : Math.max(0, pending - Math.min(reserve, unit)); missed = missedAmt >= 0.005 ? 1 : 0;
         if (bk.today > 0 && amount >= MIN_ORDER) partial = bk.today;
+        // сегодняшняя покупка закрыла то, что оставалось за прошлые дни (с точностью до нескольких центов): значит, к покупке
+        // остался взнос самого сегодняшнего дня — это новый взнос, а не «куплено мало»
+        if (partial && ow.prior >= 0.5 && bk.today >= ow.prior - Math.max(0.05, 0.03 * ow.prior)) caught = Math.min(bk.today, ow.prior);
       } else amount = a < 0 ? a * qty * h.price : 0;
       // меньше $1 биржа не исполнит (спот и маржа; у перпа свой минимум): сделку не предлагаем. Покупка добавится к следующей —
       // как любой непокупленный взнос; продажа пропускается
       let tiny = null;
-      if (mode !== "perp" && Math.abs(amount) >= 0.005 && Math.abs(amount) < MIN_ORDER) { tiny = { have: r2(Math.abs(amount)), need: MIN_ORDER, sell: amount < 0 }; amount = 0; borrowed = 0; repaid = 0; missed = 0; missedAmt = 0; partial = 0; }
+      if (mode !== "perp" && Math.abs(amount) >= 0.005 && Math.abs(amount) < MIN_ORDER) { tiny = { have: r2(Math.abs(amount)), need: MIN_ORDER, sell: amount < 0 }; amount = 0; borrowed = 0; repaid = 0; missed = 0; missedAmt = 0; partial = 0; caught = 0; }
       Object.assign(i, { reserve: r2(reserve), amount: r2(amount), plan_today: a, mode, margin: mode !== "spot" && !!st.m, has_margin: !!st.m, borrowed: r2(borrowed), repaid: r2(repaid), debt: r2(debt),
-        lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small, missed, missed_amount: r2(missedAmt), tiny, partial: r2(partial), done: partial ? 0 : i.done });   // недокуплено — строка снова открыта
+        lev: mode !== "spot" && st.m ? st.m.lev : 1, wait, min_open: minOpen && r2(minOpen), small_sell: small, missed, missed_amount: r2(missedAmt), tiny, partial: r2(partial), caught: r2(caught), done: partial ? 0 : i.done });   // недокуплено — строка снова открыта
       // портфель: вложено = взносы с даты старта + чистые покупки до неё; стоимость = позиция + резерв − долг (для перпа — капитал счёта)
       const inv = unit * days + Math.max(0, bk.boughtBefore - bk.soldBefore), val = qty * h.price + reserve - debt;
       Object.assign(i, { invested_total: r2(inv), value: r2(val), pnl: r2(val - inv) });
