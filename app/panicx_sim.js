@@ -56,13 +56,57 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
   let a0 = 0, b = X.n; if (part === 'h1') b = Math.floor(X.n / 2); if (part === 'h2') a0 = Math.floor(X.n / 2);
   const c = X.c, R = compile(X, S.rules), I = X.ind;
   let cash = 0, units = 0, du = 0, st = { owed: 0, spent: 0, r0: 0, ep: -1 }; const tr = rec ? [] : null;
+  /* wk (2026-11-19): расширения «ловушки для фитилей» pol.wick — все необязательные; без них поведение прежнее (dcaf):
+       once  — уровень исполняется не больше одного раза за окно заявок (every > 1: заявка исполнилась — до следующего обновления её нет);
+       size: 'place' — размер заявки фиксируется при выставлении: f × резерв на момент обновления (не больше текущего резерва);
+       min(X, lim) → минимальная заявка в единицах стенда (или число); merge: 'down' | 'up' — мелкие уровни объединить с более глубоким / мелким (иначе пропустить);
+       lv(X, jj) — уровни функцией дня выставления (волатильность, сегмент); ref(X, jj) — опорная цена (по умолчанию закрытие дня jj);
+       first — исполнять до сделки правила (фитиль внутри дня, правило — по закрытию); fee — комиссия заявки (мейкер);
+       pan: 'protect' — не тратить долг отложенной паники (резерв − owed) | 'spend' — покупка фитиля гасит долг | 'off' — без заявок, пока есть долг;
+       cool — после исполнения N дней без заявок; mult(X, jj) — множитель долей на окно;
+       exit: { up | ref, days } — лимит на продажу купленного на фитиле: +up от цены покупки или возврат к опорной цене (со следующего дня), лот держится до days дней. */
+  const w = pol && pol.wick ? pol.wick : null, wfee = w && w.fee != null ? w.fee : FEE;
+  const wk = w ? { jj: NaN, done: null, base: 0, ref: 0, lv: null, amt: null, lots: [], cool: -1e9 } : null;
+  const wickStep = (i, j, before) => {
+    if (!(j >= 0 && I.age[j] > (w.age || 60) && (!w.day || w.day(X, i)))) return;
+    const ev = w.every || 1, jj = ev > 1 ? j - (I.t[j] % ev) : j, j0 = Math.max(0, jj), cl = w.mode === 'close', tt = w.tt || 0;
+    if (jj !== wk.jj) { // новое окно заявок: выставлены после закрытия дня jj
+      wk.jj = jj; wk.ref = w.ref ? w.ref(X, j0) : c[j0]; wk.lv = typeof w.lv === 'function' ? w.lv(X, j0) : w.lv; wk.done = new Uint8Array(wk.lv.length);
+      const mu = w.mult ? w.mult(X, j0) : 1; wk.mu = mu;
+      if (w.size === 'place') {
+        wk.base = before; wk.amt = wk.lv.map(([, fr]) => fr * mu * before);
+        if (w.min) { const mn = (q) => (typeof w.min === 'function' ? w.min(X, wk.ref * (1 - wk.lv[q][0])) : w.min), n = wk.lv.length, ord = w.merge === 'up' ? [...Array(n).keys()].reverse() : [...Array(n).keys()];
+          let carry = 0; for (const q of ord) { const x = wk.amt[q] + carry; if (x < mn(q)) { wk.amt[q] = 0; carry = w.merge ? x : 0; } else { wk.amt[q] = x; carry = 0; } } }
+      }
+    }
+    if (i <= wk.cool || (w.pan === 'off' && st.owed > 0)) return;
+    for (let q = 0; q < wk.lv.length; q++) {
+      if (w.once && wk.done[q]) continue;
+      const k = wk.lv[q][0], fr = wk.lv[q][1] * wk.mu, lim = wk.ref * (1 - k), px = cl ? c[i] : lim;
+      if (!((cl ? c[i] : X.l[i] / (1 - tt)) <= lim && cash > 0)) continue;
+      const avail = w.pan === 'protect' ? Math.max(0, cash - st.owed) : cash;
+      const amt = w.size === 'place' ? Math.min(avail, wk.amt[q]) : fr * avail;
+      if (!(amt > 0) || (w.min && w.size !== 'place' && amt < (typeof w.min === 'function' ? w.min(X, lim) : w.min))) continue;
+      const du_ = (amt * (1 - wfee)) / px; units += du_; cash -= amt; wk.done[q] = 1;
+      if (w.pan === 'spend') st.owed = Math.max(0, st.owed - amt);
+      if (w.exit) wk.lots.push({ u: du_, p: px, i, ref: wk.ref });
+      if (w.cool) wk.cool = i + w.cool;
+      if (w.log) w.log.push([X.name, i, k, amt, lim, c[i]]);
+    }
+  };
   for (let i = a0; i < b; i++) {
     const p = c[i], j = i - 1 - lag; du += (UNIT * (1 - FEE)) / p;
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
     const a = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
     cash += UNIT;
     if (pol && j >= 0 && I.pday[j] === 1 && st.ep !== j) st = { owed: 0, spent: 0, r0: before, ep: j, oo: st.oo || 0 };
-    if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } }
+    if (wk && wk.lots.length) { // wk: выход из фитильных покупок лимитом на продажу (исполняется внутри дня, до сделки правила)
+      for (const L of wk.lots) { if (L.i >= i || !(L.u > 0)) continue; const tg = w.exit.up != null ? L.p * (1 + w.exit.up) : L.ref;
+        if (X.h[i] >= tg) { const u = Math.min(L.u, units); units -= u; cash += u * tg * (1 - wfee); L.u = 0; } else if (w.exit.days && i - L.i >= w.exit.days) L.u = 0; }
+      wk.lots = wk.lots.filter((L) => L.u > 0);
+    }
+    if (wk && w.first) wickStep(i, j, before);
+    if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (wk) for (const L of wk.lots) L.u *= 1 + a; if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) {
       let want, pan = false, rel = 0, oth = false, relO = 0;
       if (pol && pol.buy && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
@@ -76,8 +120,8 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       if (rec && amt > UNIT + 1e-9) tr.push({ i, s: 1, amt: amt - UNIT, p, q, pan: pan || rel > 0, oth: oth || relO > 0 });
     }
     // dcaf: «ловушка для фитилей» — лимитные заявки ниже вчерашнего закрытия (pol.wick = { lv: [[k, f], …], age }): если минимум дня ≤ ref × (1 − k), куплено f резерва по лимиту
-    if (pol && pol.wick && j >= 0 && I.age[j] > (pol.wick.age || 60) && (!pol.wick.day || pol.wick.day(X, i))) { const w = pol.wick, ev = w.every || 1, jj = ev > 1 ? j - (I.t[j] % ev) : j, ref = c[Math.max(0, jj)], cl = w.mode === 'close', tt = w.tt || 0;
-      for (const [k, fr] of w.lv) { const lim = ref * (1 - k), px = cl ? c[i] : lim; if ((cl ? c[i] : X.l[i] / (1 - tt)) <= lim && cash > 0) { const amt = fr * cash; units += (amt * (1 - FEE)) / px; cash -= amt; if (pol.wick.log) pol.wick.log.push([X.name, i, k, amt, lim, c[i]]); } } }
+    // (wk: код вынесен в wickStep выше; без новых полей считает ровно как раньше)
+    if (wk && !w.first) wickStep(i, j, before);
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
     if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
   }
