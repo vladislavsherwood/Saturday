@@ -52,7 +52,15 @@
   .pf-bar { display: flex; gap: 2px; height: 8px; margin: 14px 0 8px; } .pf-bar i { border-radius: 4px; min-width: 4px; }
   .pf-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); } .pf-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
   .pf-leg b { color: var(--text); font-weight: 700; }
-  .pf-chart { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; } .pf-ct small + small { min-height: 15px; margin-top: 2px; color: var(--text); font-weight: 600; }
+  .pf-chart { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .pf-ch { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }
+  .pf-tf { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--soft); }
+  .pf-tf button { min-width: 40px; height: 26px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--mute); font: inherit; font-size: 12px; font-weight: 700; transition: background 0.15s, color 0.15s; }
+  .pf-tf button.on { background: var(--text); color: var(--surface); }
+  #pnlC, #pxC { transition: opacity 0.2s; } #pnlC.wait, #pxC.wait { opacity: 0.35; }
+  .px-h { margin: 26px 2px 10px; } .px-h h3 { margin: 0; } #pxC { display: block; width: 100%; }
+  .px-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--mute); font-weight: 650; margin-top: 6px; } .px-key b { color: var(--text); font-size: 11px; margin-right: 3px; }
+  .px-key i { display: inline-block; width: 14px; border-top: 2px dashed var(--mute); vertical-align: middle; margin-right: 4px; } .pf-ct > small { display: block; min-height: 15px; margin-top: 2px; color: var(--text); font-weight: 600; }
   .hist { background: var(--soft); border-radius: 16px; padding: 6px 12px; }
   .hist .hr { display: grid; grid-template-columns: 1.25fr 0.9fr 1fr 0.9fr; gap: 6px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; align-items: start; }
   .hist .hr:first-child { border-top: 0; } .hist .hh span { color: var(--mute); font-size: 11.5px; font-weight: 700; }
@@ -267,33 +275,50 @@ function pieHtml() {
 }
 
 // свечной график П/У портфеля по дням: зелёная свеча — день закрылся выше открытия, оранжевая — ниже; пунктир — ноль
-let pnlRows = [];
+let pnlRows = [], pnlTf = 0, pnlSeq = 0;   // pnlTf: 0 — по дням, 4 и 1 — по часам (когда страница-хозяин даёт часовые цены)
+try { const v = +localStorage.getItem("dca-pnl-tf"); if (v === 1 || v === 4) pnlTf = v; } catch (e) {}
+const PNL_TF = [[0, "1Д", "по дням"], [4, "4Ч", "по 4 часа"], [1, "1Ч", "по часам"]];
+const pnlHead = () => { const can = typeof window.dcaIntra === "function", cur = PNL_TF.find((x) => x[0] === (can ? pnlTf : 0)) || PNL_TF[0];
+  return `<div class="pf-ch"><small id="pnlName">П/У ${cur[2]}</small>${can ? `<div class="pf-tf" role="group" aria-label="Размер свечи">${PNL_TF.map((x) => `<button type="button" class="${x === cur ? "on" : ""}" data-tf="${x[0]}" aria-pressed="${x === cur}" onclick="setPnlTf(${x[0]})">${x[1]}</button>`).join("")}</div>` : ""}</div>`; };
+function setPnlTf(v) {
+  if (v === pnlTf) return; pnlTf = v; haptic(); try { localStorage.setItem("dca-pnl-tf", v); } catch (e) {}
+  document.querySelectorAll(".pf-tf button").forEach((b) => { const on = +b.dataset.tf === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+  const n = $("pnlName"); if (n) n.textContent = "П/У " + PNL_TF.find((x) => x[0] === v)[2];
+  $("pnlTip").textContent = ""; drawPnl();
+}
 async function drawPnl() {
-  try { pnlRows = await api("/api/pnl"); } catch (e) { pnlRows = []; }
-  const cv = $("pnlC"); if (!cv) return;
+  const tf = typeof window.dcaIntra === "function" ? pnlTf : 0, seq = ++pnlSeq, c0 = $("pnlC"); if (c0 && tf) c0.classList.add("wait");
+  let got; try { got = await api("/api/pnl" + (tf ? "?tf=" + tf : "")); } catch (e) { got = []; }
+  if (seq !== pnlSeq) return;   // пока ждали часовые цены, выбрали другой размер свечи
+  pnlRows = got;
+  const cv = $("pnlC"); if (!cv) return; cv.classList.remove("wait");
+  if (tf && pnlRows.length && pnlRows[0].ts == null) { toast("Часовых цен сейчас нет — показаны дни"); pnlTf = 0; document.querySelectorAll(".pf-tf button").forEach((b) => b.classList.toggle("on", +b.dataset.tf === 0)); const n = $("pnlName"); if (n) n.textContent = "П/У по дням"; }
   const css = getComputedStyle(document.documentElement), col = (v) => css.getPropertyValue(v).trim();
   const W = cv.clientWidth, H = 150, dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr;
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   const rows = pnlRows.slice(-60), L = 46, R = 6, T = 8, B = 18;
   g.font = "11px system-ui, sans-serif"; g.fillStyle = col("--mute");
   if (!rows.length) { g.fillText("Свечи появятся после первого дня с взносами", 0, H / 2); return; }
-  let lo = Math.min(0, ...rows.map((r) => r.l)), hi = Math.max(0, ...rows.map((r) => r.h)); if (hi - lo < 1) { hi += 0.5; lo -= 0.5; }
+  const byHour = rows[0].ts != null;
+  // по дням шкала от нуля; по часам — по самим свечам, иначе движение за несколько часов сжимается в полоску
+  let lo = Math.min(...rows.map((r) => r.l), ...(byHour ? [] : [0])), hi = Math.max(...rows.map((r) => r.h), ...(byHour ? [] : [0])); if (hi - lo < 1) { hi += 0.5; lo -= 0.5; }
   const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B), n = Math.max(rows.length, 20), step = (W - L - R) / n, bw = Math.max(3, Math.min(12, step * 0.7));
   const fmt = (v) => (v < 0 ? "−" : "") + "$" + (Math.abs(v) >= 1000 ? Math.round(Math.abs(v) / 100) / 10 + "k" : num(Math.abs(v)));
   g.strokeStyle = col("--line"); g.lineWidth = 1;
   for (const v of [hi - pad, lo + pad]) { g.beginPath(); g.moveTo(L, y(v)); g.lineTo(W - R, y(v)); g.stroke(); g.fillText(fmt(v), 0, y(v) + 4); }
-  g.setLineDash([3, 3]); g.strokeStyle = col("--mute"); g.beginPath(); g.moveTo(L, y(0)); g.lineTo(W - R, y(0)); g.stroke(); g.setLineDash([]); g.fillText("$0", 0, y(0) + 4);
+  if (lo < 0 && hi > 0 || !byHour) { g.setLineDash([3, 3]); g.strokeStyle = col("--mute"); g.beginPath(); g.moveTo(L, y(0)); g.lineTo(W - R, y(0)); g.stroke(); g.setLineDash([]); g.fillText("$0", 0, y(0) + 4); }
   rows.forEach((r, k) => {
     const x = L + step * (k + n - rows.length) + step / 2, up = r.c >= r.o, c = up ? col("--accent") : col("--sell");
     g.strokeStyle = c; g.fillStyle = c; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y(r.h)); g.lineTo(x, y(r.l)); g.stroke();
     const t0 = y(Math.max(r.o, r.c)), h0 = Math.max(2, Math.abs(y(r.o) - y(r.c))); g.beginPath(); g.roundRect ? g.roundRect(x - bw / 2, t0, bw, h0, 1.5) : g.rect(x - bw / 2, t0, bw, h0); g.fill();
   });
-  const dt = (d) => new Date(d * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
-  g.fillStyle = col("--mute"); const s0 = dt(rows[0].d), e = dt(rows[rows.length - 1].d), x0 = L + step * (n - rows.length), xe = W - R - g.measureText(e).width;
+  // по дням — дата дня (UTC); по часам — начало свечи по часам телефона
+  const dt = (r) => byHour ? new Date(r.ts).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).replace(/\s*г\.,?/, "") : new Date(r.d * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+  g.fillStyle = col("--mute"); const s0 = dt(rows[0]), e = dt(rows[rows.length - 1]), x0 = L + step * (n - rows.length), xe = W - R - g.measureText(e).width;
   if (rows.length > 1 && x0 + g.measureText(s0).width + 8 < xe) g.fillText(s0, x0, H - 3); g.fillText(e, xe, H - 3);
   const tip = (ev) => { const bx = cv.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - bx.left, k = Math.floor((px - L) / step) - (n - rows.length);
-    const r = rows[Math.max(0, Math.min(rows.length - 1, k))]; $("pnlTip").textContent = `${dt(r.d)}: П/У ${fmt(r.c)} (мин ${fmt(r.l)}, макс ${fmt(r.h)}) · портфель $${big(r.v)}`; };
+    const r = rows[Math.max(0, Math.min(rows.length - 1, k))]; $("pnlTip").textContent = `${dt(r)}: П/У ${fmt(r.c)} (мин ${fmt(r.l)}, макс ${fmt(r.h)}) · портфель $${big(r.v)}`; };
   cv.onmousemove = tip; cv.ontouchstart = tip; cv.ontouchmove = tip; cv.onmouseleave = () => ($("pnlTip").textContent = "");
 }
 window.addEventListener("resize", () => { if ($("pnlC")) drawPnl(); });
@@ -348,7 +373,7 @@ function render() {
       <div class="pf-bar">${parts.map((p) => `<i style="flex:${p[1] / tot};background:${p[2]}"></i>`).join("")}</div>
       <div class="pf-leg">${parts.map((p) => `<span><i style="background:${p[2]}"></i>${p[0]} <b class="num">$${big(p[1])}</b></span>`).join("")}${state.debt > 0.005 ? `<span><i style="background:var(--sell)"></i>Долг / плечо <b class="num">$${big(state.debt)}</b></span>` : ""}</div>
       ${pieHtml()}
-      <div class="pf-chart"><div class="pf-ct"><small>П/У по дням</small><small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля по дням" role="img"></canvas></div>
+      <div class="pf-chart"><div class="pf-ct">${pnlHead()}<small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля" role="img"></canvas></div>
     </div>`;
   drawPnl();
   $("list").innerHTML = '<div class="list">' + items.map(row).join("") + "</div>";
@@ -484,12 +509,57 @@ function openTicker(symbol) {
   const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
   openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price} · ${esc(i.strategy_name)}</div></div>
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
-    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
+    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + pxBox(s) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
     <h3>Стратегии на истории</h3><div id="strats"><div class="hint">Считаю историю…</div></div>
     ${i.has_margin ? `<h3>Где покупаю</h3><div class="pills" id="fMode">${[["spot", "Спот"], ["margin", "Маржа на споте"], ["perp", "Перпы"]].map(([k, n]) => `<button class="pill ${i.mode === k ? "on" : ""}" onclick="saveMode('${s}', '${k}')">${n}</button>`).join("")}</div>
     <div class="note">${i.mode === "perp" ? "Перпы (Bybit): вся позиция — лонг-перп, залог — ваш USDT на том же счёте. Плечо на сигналах ×1,45 (на дне ×2). Открытие — от большего из $5 и 0,01 монеты: мелкие взносы копятся. Продажа — шагом 0,01 монеты. Держите все монеты-перпы на одном счёте." : i.mode === "margin" ? "Маржа на споте: дно 25% резерва с плечом ×2, паника — доли ×2 с плечом ×1,45, разворот — весь резерв с плечом ×1,45; сделки дна, паники и продаж — половина сегодня, половина завтра; продажи сначала гасят долг." : "Спот: только свои деньги, без плеча."}</div>` : ""}
     <h3>Ежедневный взнос</h3><div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}" onchange="saveUnit('${s}')"><em>в день</em></div>`);
-  trades(symbol); strategies(symbol); histBox(symbol);
+  trades(symbol); strategies(symbol); histBox(symbol); drawPx(symbol);
+}
+// Цена монеты свечами и свои сделки на ней: покупка — треугольник под свечой, продажа — над свечой; пунктир — средняя цена входа.
+// Размер свечи — как у графика портфеля (по дням; по 4 часа и по часам, когда страница-хозяин даёт часовые цены), выбор свой.
+let pxTf = 0, pxSeq = 0, pxRows = [];
+try { const v = +localStorage.getItem("dca-px-tf"); if (v === 1 || v === 4) pxTf = v; } catch (e) {}
+const pxBox = (s) => { const can = typeof window.dcaIntra === "function", cur = can ? pxTf : 0;
+  return `<div class="pf-ch px-h"><h3>Цена и мои сделки</h3>${can ? `<div class="pf-tf" id="pxTfs" role="group" aria-label="Размер свечи">${PNL_TF.map((x) => `<button type="button" class="${x[0] === cur ? "on" : ""}" data-tf="${x[0]}" aria-pressed="${x[0] === cur}" onclick="setPxTf('${s}', ${x[0]})">${x[1]}</button>`).join("")}</div>` : ""}</div>
+    <canvas id="pxC" height="190" aria-label="Свечной график цены монеты с отметками своих покупок и продаж" role="img"></canvas><div class="hx-tip" id="pxTip"></div>
+    <div class="px-key"><span><b>▲</b>покупка</span><span><b>▼</b>продажа</span><span id="pxAvg" hidden><i></i>средняя цена входа</span></div>`; };
+const pxMarkTf = (v) => document.querySelectorAll("#pxTfs button").forEach((b) => { const on = +b.dataset.tf === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+function setPxTf(symbol, v) { if (v === pxTf) return; pxTf = v; haptic(); try { localStorage.setItem("dca-px-tf", v); } catch (e) {} pxMarkTf(v); drawPx(symbol); }
+async function drawPx(symbol) {
+  const tf = typeof window.dcaIntra === "function" ? pxTf : 0, seq = ++pxSeq, c0 = $("pxC"); if (!c0) return; if (tf) c0.classList.add("wait");
+  let rows; try { rows = await api("/api/price/" + encodeURIComponent(symbol) + (tf ? "?tf=" + tf : "")); } catch (e) { rows = []; }
+  const cv = $("pxC"); if (seq !== pxSeq || !cv) return; cv.classList.remove("wait"); pxRows = rows;
+  const i = state.items.find((x) => x.symbol === symbol) || {}, css = getComputedStyle(document.documentElement), col = (v) => css.getPropertyValue(v).trim(), tipEl = $("pxTip");
+  const W = cv.clientWidth, H = 190, dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H); g.font = "11px system-ui, sans-serif"; g.fillStyle = col("--mute");
+  if (!rows.length) { g.fillText("Нет цен для графика", 0, H / 2); return; }
+  const byHour = rows[0].ts != null, base = tf && !byHour ? "Часовых цен по этой монете нет — показаны дни" : ""; tipEl.textContent = base; if (tf && !byHour) pxMarkTf(0);
+  const L = 50, R = 6, T = 16, B = 30, avg = i.qty > 1e-12 && i.avg_price > 0 ? i.avg_price : null;
+  let lo = Math.min(...rows.map((r) => r.l)), hi = Math.max(...rows.map((r) => r.h)); const inAvg = avg != null && avg > lo * 0.8 && avg < hi * 1.2;   // средняя — в шкале, только если она рядом с ценами окна
+  if (inAvg) { lo = Math.min(lo, avg); hi = Math.max(hi, avg); } if (!(hi > lo)) { hi *= 1.01; lo *= 0.99; }
+  $("pxAvg").hidden = !inAvg;
+  const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B), n = Math.max(rows.length, 20), step = (W - L - R) / n, bw = Math.max(3, Math.min(12, step * 0.7));
+  const fmt = (v) => "$" + (v >= 1000 ? Math.round(v).toLocaleString("ru-RU") : v >= 1 ? num(v) : Number(v.toPrecision(3)).toLocaleString("ru-RU", { maximumSignificantDigits: 3 }));
+  g.strokeStyle = col("--line"); g.lineWidth = 1;
+  for (const v of [hi, lo]) { g.beginPath(); g.moveTo(L, y(v)); g.lineTo(W - R, y(v)); g.stroke(); g.fillText(fmt(v), 0, y(v) + 4); }
+  if (inAvg) { g.setLineDash([3, 3]); g.strokeStyle = col("--mute"); g.beginPath(); g.moveTo(L, y(avg)); g.lineTo(W - R, y(avg)); g.stroke(); g.setLineDash([]); if (Math.abs(y(avg) - y(hi)) > 12 && Math.abs(y(avg) - y(lo)) > 12) g.fillText(fmt(avg), 0, y(avg) + 4); }
+  const X = (k) => L + step * (k + n - rows.length) + step / 2, tri = (x, yy, up, s) => { g.beginPath(); g.moveTo(x, yy); g.lineTo(x - s, yy + (up ? s * 1.6 : -s * 1.6)); g.lineTo(x + s, yy + (up ? s * 1.6 : -s * 1.6)); g.closePath(); g.fill(); };
+  rows.forEach((r, k) => {
+    const x = X(k), c = r.c >= r.o ? col("--accent") : col("--sell");
+    g.strokeStyle = c; g.fillStyle = c; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y(r.h)); g.lineTo(x, y(r.l)); g.stroke();
+    const t0 = y(Math.max(r.o, r.c)), h0 = Math.max(2, Math.abs(y(r.o) - y(r.c))); g.beginPath(); g.roundRect ? g.roundRect(x - bw / 2, t0, bw, h0, 1.5) : g.rect(x - bw / 2, t0, bw, h0); g.fill();
+  });
+  // отметки поверх свечей: вершина треугольника смотрит на свечу
+  g.fillStyle = col("--text"); const ms = Math.max(3.5, Math.min(5, step * 0.55));
+  rows.forEach((r, k) => { if (r.b) tri(X(k), y(r.l) + 4, true, ms); if (r.s) tri(X(k), y(r.h) - 4, false, ms); });
+  const dt = (r) => byHour ? new Date(r.ts).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).replace(/\s*г\.,?/, "") : new Date(r.d * 864e5).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+  g.fillStyle = col("--mute"); const s0 = dt(rows[0]), e = dt(rows[rows.length - 1]), x0 = L + step * (n - rows.length), xe = W - R - g.measureText(e).width;
+  if (rows.length > 1 && x0 + g.measureText(s0).width + 8 < xe) g.fillText(s0, x0, H - 3); g.fillText(e, xe, H - 3);
+  const tip = (ev) => { const bx = cv.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - bx.left, k = Math.floor((px - L) / step) - (n - rows.length);
+    const r = rows[Math.max(0, Math.min(rows.length - 1, k))], deal = (a, p, w) => a ? ` · ${w} $${big(a)}${p ? " по " + fmt(p) : ""}` : "";
+    tipEl.textContent = `${dt(r)}: ${fmt(r.c)} (мин ${fmt(r.l)}, макс ${fmt(r.h)})${deal(r.b, r.bp, "куплено")}${deal(r.s, r.sp, "продано")}`; };
+  cv.onmousemove = tip; cv.ontouchstart = tip; cv.ontouchmove = tip; cv.onmouseleave = () => (tipEl.textContent = base);
 }
 // график сделок стратегии за выбранный период (как в артефакте «Сделки стратегии по монетам»): цена (лог), покупки — круг, продажи — кольцо,
 // цвет — правило, размер — доля счёта; ниже — стоимость счёта стратегии и DCA (пунктир)
