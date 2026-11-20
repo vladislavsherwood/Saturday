@@ -12,7 +12,8 @@ import combo2_margin  # noqa: F401  регистрирует индикатор�
 import agent4d_margin as AD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-S4 = json.load(open(os.path.join(HERE, "found", "combo5-best.json")))
+SPECS = {code: json.load(open(os.path.join(HERE, "found", f"{code}-best.json"))) for code in ("combo5", "combo4")}   # в приложении обе: combo5 — новая, combo4 — прежняя
+S4 = SPECS["combo5"]
 WICK = S4["wick"]
 _ind_prev = AD.Book.ind
 
@@ -116,17 +117,19 @@ def margin_today(pm, Gk, LM, t):
     return {"es": round(es, 6), "bu": round(bu, 6), "bs": round(bs, 6), "sf": round(min(1.0, sf), 6), "lev": lev, "a": round(a, 6)}
 
 
-def compute(coins):
-    """coins: [(symbol, kind)] → {symbol: {dates, plan, fam, defer, owed_share}} по дням IDX."""
-    S = {"base": 1, "rules": [dict(r, grp=0) for r in S4["rules"]]}
+def compute(coins, code="combo5", B=None):
+    """coins: [(symbol, kind)] → {symbol: {dates, plan, fam, defer, owed_share}} по дням IDX; code — правила combo5 или combo4; B — готовая книга (не считать второй раз)."""
+    rules = SPECS[code]["rules"]
+    S = {"base": 1, "rules": [dict(r, grp=0) for r in rules]}
     import pandas as pd
-    AD.IDX = pd.date_range("2014-09-01", pd.Timestamp.utcnow().tz_localize(None).normalize())  # в agent4d_margin конец задан датой — для приложения до сегодня
-    B = AD.Book(coins)
+    if B is None:
+        AD.IDX = pd.date_range("2014-09-01", pd.Timestamp.utcnow().tz_localize(None).normalize())  # в agent4d_margin конец задан датой — для приложения до сегодня
+        B = AD.Book(coins)
     A, _, RI = B.plan(S)
     usdt, othd, C = B.series("usdt"), B.series("othd"), B.C
     isP = np.array([r["act"] > 1 and has(r, "usdt") for r in S["rules"]] + [False])
     import combo3_margin as C3M
-    SM, LM = C3M.scheme6({"base": 1, "rules": S4["rules"]}, lp=1.45, lr=1.45, sr=1.0, t1grp="off")   # базовое плечо ×1,45 (решение пользователя), дно ×2
+    SM, LM = C3M.scheme6({"base": 1, "rules": rules}, lp=1.45, lr=1.45, sr=1.0, t1grp="off")   # базовое плечо ×1,45 (решение пользователя), дно ×2
     AM, GM, RIM = B.plan(SM)
     isPM = np.array([r["act"] > 1 and has(r, "usdt") for r in SM["rules"]] + [False])
     F = np.array([fam(r) for r in S["rules"]] + [-1])
@@ -150,7 +153,7 @@ def compute(coins):
         # маржа (основная схема combo4: дно 25% ×2, паника доли ×2 с плечом ×1,5, разворот 100% ×1,5, отложенная 50%; сделки дна, паники и продаж 50/50 на два дня)
         pm, dm, _ = defer_plan(AM[:, k], RIM[:, k], isPM, C[:, k], u, upk, pend, first, last)
         m = margin_today(pm, GM[:, k], LM, last)
-        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k, "m": m}
+        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k, "m": m, "code": code}
     return out
 
 
@@ -173,8 +176,13 @@ def strategy(sym, h, R, ind):
     beta = ind("beta180", li); light = "⚪" if beta is None else "🟢" if beta >= 0.9 else "🟡" if beta >= 0.5 else "🔴"
     label = f"{light} бета к BTC {beta:.2f}".replace(".", ",") if beta is not None else ""
     if R["owed"][li] > 0: label += f" · отложено {R['owed'][li] * 100:.0f}% резерва"
-    st = state(ind, li, R)
+    code = R.get("code", "combo5")
+    st = state(ind, li, R) if code == "combo5" else state(ind, li, R)[:15]   # у combo4 нет удержания после капитуляции (последняя карточка)
     mm = R["m"]
+    if code == "combo4":
+        return {"fam": fams, "m": mm, "code": "combo4", "name": "combo4 (прежняя)", "about": "Прежняя итоговая стратегия: 57 правил (дно, ликвидации, паника, разворот, продажи на страхе и вершинах, эйфория в стейблах) + отложенная паника. Без удержания после капитуляции и без лимиток на фитиль.",
+                "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
+                "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
     return {"fam": fams, "m": mm, "code": "combo5", "name": "combo5 (итоговая)", "about": "Итоговая стратегия: 58 правил (дно, ликвидации, паника, разворот, продажи на страхе и вершинах, эйфория в стейблах, удержание после капитуляции) + отложенная паника (пока доля USDT растёт, паника копит; на развороте USDT покупает отложенное вдвойне) + ловушка для фитилей: раз в 3 дня три лимитки из резерва на −25 / −40 / −60% от закрытия (15 / 25 / 35% резерва). Резерв, не занятый лимитками, — в стейблах с доходом.",
             "wick": {"lv": [[-float(k), float(f)] for k, f in zip(WICK["levels"], WICK["fractions_of_reserve"])], "every": int(WICK["every_days"]), "age": int(WICK["coin_age_min_days"])},
             "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
@@ -216,3 +224,30 @@ def state(ind, i, R):
     ]
     # order — место карточки в списке «Рынок сейчас» (порядок проверки правил): удержание проверяется сразу после охраны, до продаж на страхе
     return [{"title": t, "what": w, "kind": kd, "why": y, "conds": cs, "order": 4.5 if t == "Удержание после капитуляции" else n} for n, (t, w, kd, y, cs) in enumerate(rows)]
+
+
+def edge(c, l, plan, wick=None, lag=0, fee=0.001):
+    """Доход к DCA, % за всю историю, как в быстром стенде (panicx_sim.edge): взнос 1/день, решение дня t исполняется по закрытию t+1+lag;
+    wick — лимитки на фитиль (раз в every дней по номеру дня t % every == 0, размер — доля резерва при выставлении, каждый уровень раз за окно)."""
+    t, c, l = wick["t"] if wick else None, list(c), list(l) if l is not None else None
+    cash = units = du = 0.0; n = len(c); jj0 = None; amt = []; done = []; ref = 0.0
+    for i in range(n):
+        p = c[i]
+        if not p or p <= 0 or p != p: continue
+        j = i - 1 - lag; du += (1 - fee) / p
+        a = plan[j] if j >= 0 else 1.0
+        before = cash; cash += 1.0
+        if a < 0:
+            x = -a * units * p; units -= x / p; cash += x * (1 - fee)
+        elif a > 0:
+            want = a if a < 1 else 1.0 + (a - 1) * before; x = min(cash, want); units += x * (1 - fee) / p; cash -= x
+        if wick and j > wick["age"] and l is not None:
+            ev = wick["every"]; jj = j - (int(t[j]) % ev)
+            if jj != jj0:
+                jj0 = jj; ref = c[max(0, jj)]; amt = [fr * before for _, fr in wick["lv"]]; done = [False] * len(amt)
+            for q, (k, _) in enumerate(wick["lv"]):
+                lim = ref * (1 - k)
+                if done[q] or not (l[i] <= lim) or cash <= 0: continue
+                x = min(cash, amt[q])
+                if x > 0: units += x * (1 - fee) / lim; cash -= x; done[q] = True
+    return ((units * c[-1] + cash) / (du * c[-1]) - 1) * 100
