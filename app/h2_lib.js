@@ -48,7 +48,7 @@ for (const g in G) for (const X of G[g]) {
   const cu = new Float64Array(n).fill(NaN); for (let i = 29; i < n; i++) { let m = Infinity; for (let k = i - 29; k <= i; k++) m = Math.min(m, X.c[k]); cu[i] = (X.c[i] / m - 1) * 100; } I.h2cup = cu;
   const ms = new Float64Array(n); { let last = -1e9; for (let i = 0; i < n; i++) { if (I.mvrv[i] < 1) last = i; ms[i] = i - last; } } I.h2mvs = ms; // дней с последнего дня MVRV < 1
   for (const [k, q] of [['h2fd', 10], ['h2fd15', 15], ['h2fd20', 20]]) { const a = new Float64Array(n); let last = -1e9; for (let i = 0; i < n; i++) { if (I.fng[i] < q) last = i; a[i] = i - last; } I[k] = a; } // дней с последнего дня страха < q
-  { const a = new Float64Array(n).fill(NaN); let p = NaN; for (let i = 0; i < n; i++) { if (I.fng[i] < 10) p = X.c[i]; a[i] = X.c[i] / p; } I.h2capr = a; } // цена монеты к её закрытию в последний день страха < 10
+  for (const [k, q] of [['h2capr', 10], ['h2capr15', 15], ['h2capr20', 20]]) { const a = new Float64Array(n).fill(NaN); let p = NaN; for (let i = 0; i < n; i++) { if (I.fng[i] < q) p = X.c[i]; a[i] = X.c[i] / p; } I[k] = a; } // цена монеты к её закрытию в последний день страха < q
   { const a = new Float64Array(n), b = new Float64Array(n); let l1 = -1e9, l2 = -1e9; for (let i = 0; i < n; i++) { if (I.oidd30 && I.oidd30[i] < -28) l1 = i; if (I.fng[i] < 10 || (I.oidd30 && I.oidd30[i] < -28) || (I.dly20_100f && I.dly20_100f[i] > 0.5)) l2 = i; a[i] = i - l1; b[i] = i - l2; } I.h2liq = a; I.h2cap = b; } // дней с волны ликвидаций / с любого из правил 1–3 combo4
 }
 /* «отложенная покупка дна»: правила с полем h2: 1 — второй долг стенда (pol.other / buyO / releaseO / expireO, st.oo; panicx_sim не меняется).

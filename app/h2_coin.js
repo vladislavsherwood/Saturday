@@ -5,7 +5,7 @@ const H = require('./h2_lib.js'), { L, P, c } = H;
 const EPS = { '2015': ['2015-01-01', '2016-03-01'], '2018': ['2018-10-01', '2019-06-01'], '2020': ['2020-02-15', '2020-06-01'], '2022': ['2022-05-01', '2023-03-01'] };
 const win = (a, b) => [c('t', '>', L.T(a) - 0.5), c('t', '<', L.T(b) + 0.5)];
 const lists = ['sel', 'ex', 'rnd', 'n100'];
-let B = null; const baseR = (pol) => (B = B || P.evc(H.S57, pol, lists));
+const B = new Map(); const baseR = (pol) => { if (!B.has(pol)) B.set(pol, P.evc(H.S57, pol, lists)); return B.get(pol); }; // основа — по объекту политики
 const L1 = L.Z.L1;
 function diff(R, pol) {
   const b = baseR(pol), o = [];
