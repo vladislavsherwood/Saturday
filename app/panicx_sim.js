@@ -154,6 +154,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     if (wk && !w.first) wickStep(i, j, before);
     if (wks) wickSell(i, j, a); // wk, круг 6: фитильная продажа (после сделки правила и фитильной покупки)
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
+    if (pol && pol.trace) pol.trace.push([i, cash, units, st.owed || 0]); // diag: состояние на конец дня (кэш, монеты, долг паники)
     if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
   }
   const dca = du * c[b - 1], fin = units * c[b - 1] + cash;
