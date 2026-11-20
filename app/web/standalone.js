@@ -24,7 +24,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; mem.mig11 = v.mig11 || null; mem.mig12 = v.mig12 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; mem.mig11 = v.mig11 || null; mem.mig12 = v.mig12 || null; mem.mig13 = v.mig13 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -111,9 +111,15 @@ async function boot() {
     mem.mig12 = "combo5-best";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя, 20.11.2026): Lighter тоже на combo5
+  if (mem.mig13 !== "lit-combo5") {
+    for (const t of mem.tickers) if (t.symbol === "LIT39125-USD" && coin(t.symbol).h.strategies.some((x) => x.code === "combo5")) t.strategy = "combo5";
+    mem.mig13 = "lit-combo5";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null, mig11: mem.mig11 || null, mig12: mem.mig12 || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null, mig11: mem.mig11 || null, mig12: mem.mig12 || null, mig13: mem.mig13 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }
