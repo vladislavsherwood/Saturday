@@ -123,8 +123,13 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       if (ws.log) ws.log.push([X.name, i, k, dU * px, lim, c[i]]);
     }
   };
+  /* h1 (2026-11-20): простаивающий резерв — pol.h1 = { grow(X, i, s) → множитель резерва за день i (процент / кэрри / хранение в BTC; до взноса и сделок),
+       trade(ctx) → своя сделка после правила и фитилей: > 0 — купить на $ из резерва по закрытию, < 0 — продать монеты на $, [amt, px] — по цене px (лимит),
+       end(ctx) → издержки дня, $ (списываются из резерва; < 0 — доход, напр. премия) }; ctx = { X, i, j, a, q, p, cash, units, st, s }, s — состояние прогона. Без pol.h1 поведение прежнее. */
+  const h1 = pol && pol.h1 ? pol.h1 : null, h1s = h1 ? {} : null;
   for (let i = a0; i < b; i++) {
     const p = c[i], j = i - 1 - lag; du += (UNIT * (1 - FEE)) / p;
+    if (h1 && h1.grow) cash *= h1.grow(X, i, h1s); // h1: доход / форма хранения резерва
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
     const a = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
     cash += UNIT;
@@ -153,6 +158,12 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     // (wk: код вынесен в wickStep выше; без новых полей считает ровно как раньше)
     if (wk && !w.first) wickStep(i, j, before);
     if (wks) wickSell(i, j, a); // wk, круг 6: фитильная продажа (после сделки правила и фитильной покупки)
+    if (h1 && h1.trade && j >= 0) { // h1: своя сделка резерва (после правила и фитилей)
+      let v = h1.trade({ X, i, j, a, q, p, cash, units, st, s: h1s }), px = p; if (Array.isArray(v)) [v, px] = v;
+      if (v > 0) { const amt = Math.min(cash, v); units += (amt * (1 - FEE)) / px; cash -= amt; }
+      else if (v < 0) { const u = Math.min(units, -v / px); units -= u; cash += u * px * (1 - FEE); }
+    }
+    if (h1 && h1.end) cash = Math.max(0, cash - h1.end({ X, i, j, cash, units, p, st, s: h1s }));
     if (pol && j >= 0 && I.pend[j]) st.owed = 0;
     if (pol && pol.trace) pol.trace.push([i, cash, units, st.owed || 0]); // diag: состояние на конец дня (кэш, монеты, долг паники)
     if (pol && pol.expireO && j >= 0 && st.oo > 0 && pol.expireO({ X, j, st })) st.oo = 0;
