@@ -135,7 +135,8 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
       wk.lots = wk.lots.filter((L) => L.u > 0);
     }
     if (wk && w.first) wickStep(i, j, before);
-    if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (wk) for (const L of wk.lots) L.u *= 1 + a; if (rec) tr.push({ i, s: -1, amt, p, q }); } }
+    if (q >= 0 && R[q].r.sellU) { const amt = Math.min(units * p, R[q].r.sellU * UNIT); if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (rec) tr.push({ i, s: -1, amt, p, q }); } } // dms: продать на сумму sellU взносов (взнос дня уходит в резерв)
+    else if (a < 0) { const amt = -a * units * p; if (amt > 0) { units -= amt / p; cash += amt * (1 - FEE); if (wk) for (const L of wk.lots) L.u *= 1 + a; if (rec) tr.push({ i, s: -1, amt, p, q }); } }
     else if (a > 0) {
       let want, pan = false, rel = 0, oth = false, relO = 0;
       if (pol && pol.buy && q >= 0 && R[q].p) { const share = a - 1, fr = Math.min(share, Math.max(0, pol.buy({ X, j, share, before, st }))); want = UNIT + fr * before; st.owed = Math.min(before + UNIT - want, st.owed + (share - fr) * before); pan = true; }
