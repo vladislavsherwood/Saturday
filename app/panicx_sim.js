@@ -127,11 +127,16 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
        trade(ctx) → своя сделка после правила и фитилей: > 0 — купить на $ из резерва по закрытию, < 0 — продать монеты на $, [amt, px] — по цене px (лимит),
        end(ctx) → издержки дня, $ (списываются из резерва; < 0 — доход, напр. премия) }; ctx = { X, i, j, a, q, p, cash, units, st, s }, s — состояние прогона. Без pol.h1 поведение прежнее. */
   const h1 = pol && pol.h1 ? pol.h1 : null, h1s = h1 ? {} : null;
+  /* hv2 (2026-11-20): продажи у волатильной монеты — pol.hv_sell(ctx) → новая доля продажи правила q (a < 0; не больше 100%) в день решения j;
+       pol.hv_after(ctx) → доля позиции (0…1) к продаже сверх правила в этот день, по закрытию (отложенная добавка; не вызывается в день покупки из резерва, a > 1);
+       ctx = { X, i, j, a, q, r, p, units, cash, s }, s — состояние прогона. Без полей pol.hv_… поведение прежнее. */
+  const hvS = pol && pol.hv_sell ? pol.hv_sell : null, hvA = pol && pol.hv_after ? pol.hv_after : null, hvs = hvS || hvA ? {} : null;
   for (let i = a0; i < b; i++) {
     const p = c[i], j = i - 1 - lag; du += (UNIT * (1 - FEE)) / p;
     if (h1 && h1.grow) cash *= h1.grow(X, i, h1s); // h1: доход / форма хранения резерва
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
-    const a = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
+    const a0_ = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
+    const a = hvS && q >= 0 && a0_ < 0 ? Math.max(-1, Math.min(0, hvS({ X, i, j, a: a0_, q, r: R[q].r, p, units, cash, s: hvs }))) : a0_; // hv2
     cash += UNIT;
     if (pol && j >= 0 && I.pday[j] === 1 && st.ep !== j) st = { owed: 0, spent: 0, r0: before, ep: j, oo: st.oo || 0 };
     if (wk && wk.lots.length) { // wk: выход из фитильных покупок лимитом на продажу (исполняется внутри дня, до сделки правила)
@@ -158,6 +163,10 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     // (wk: код вынесен в wickStep выше; без новых полей считает ровно как раньше)
     if (wk && !w.first) wickStep(i, j, before);
     if (wks) wickSell(i, j, a); // wk, круг 6: фитильная продажа (после сделки правила и фитильной покупки)
+    if (hvA && j >= 0 && !(a > 1)) { // hv2: отложенная добавка продажи (после сделки правила и фитилей)
+      const f = Math.min(1, hvA({ X, i, j, a, q, r: q >= 0 ? R[q].r : null, p, units, cash, s: hvs }) || 0);
+      if (f > 0 && units > 0) { const u = f * units; units -= u; cash += u * p * (1 - FEE); if (wk) for (const L of wk.lots) L.u *= 1 - f; if (rec) tr.push({ i, s: -1, amt: u * p, p, q, hv: 1 }); }
+    }
     if (h1 && h1.trade && j >= 0) { // h1: своя сделка резерва (после правила и фитилей)
       let v = h1.trade({ X, i, j, a, q, p, cash, units, st, s: h1s }), px = p; if (Array.isArray(v)) [v, px] = v;
       if (v > 0) { const amt = Math.min(cash, v); units += (amt * (1 - FEE)) / px; cash -= amt; }
