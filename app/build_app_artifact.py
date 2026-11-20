@@ -49,7 +49,7 @@ def build_snap():
             return None if not np.isfinite(v) else float(v)
         st = C4.strategy(s, c["h"], R[s], ind)
         c["h"]["strategies"].insert(0, st)
-        print(f"{s}: combo4 сегодня {st['plan_today']:+.3f} — {st['action']} | {st['label']}")
+        print(f"{s}: {st['code']} сегодня {st['plan_today']:+.3f} — {st['action']} | {st['label']}")
     return {"as_of": max(c["h"]["as_of"] for c in coins.values()), "coins": coins}
 
 

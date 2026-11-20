@@ -7,7 +7,7 @@ const LS = "dca-app-v1", todayStr = () => new Date().toISOString().slice(0, 10);
 const DEFAULTS = ["BTC-USD", "ETH-USD", "SOL-USD", "HYPE32196-USD", "PUMP36507-USD", "DOGE-USD", "PEPE24478-USD", "ENA-USD", "ZEC-USD"];
 const coin = (s) => SNAP.coins[s];
 const modeOf = (t) => t.mode || (t.margin ? "margin" : "spot");   // режим исполнения монеты: спот / маржа на споте / перпы
-const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo4") ? "combo4" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
+const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo5") ? "combo5" : codes.includes("combo4") ? "combo4" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
 async function boot() {
   try {
@@ -22,7 +22,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; mem.mig11 = v.mig11 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -97,9 +97,15 @@ async function boot() {
     mem.mig10 = "hype2";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя, 20.11.2026): все монеты на combo5 — combo4 + удержание после капитуляции + ловушка для фитилей
+  if (mem.mig11 !== "combo5") {
+    for (const t of mem.tickers) if (coin(t.symbol).h.strategies.some((x) => x.code === "combo5")) t.strategy = "combo5";
+    mem.mig11 = "combo5";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null, mig11: mem.mig11 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }
@@ -148,13 +154,13 @@ function today() {
       // резерв = взносы − свои деньги в покупках + выручка без погашения долга; долг = занятое − погашенное
       const days = Math.round((Date.parse(day) - Date.parse(t.since || day)) / 864e5) + 1, debt = Math.max(0, bk.borrowedSince - bk.repaidSince);
       const reserve = Math.max(0, unit * days - (bk.boughtSince - bk.borrowedSince) + (bk.soldSince - bk.repaidSince)), before = Math.max(0, reserve - unit);
-      let a = st.plan_today, amount, borrowed = 0, repaid = 0, wait = null, minOpen = null, small = false, missed = 0, missedAmt = 0, partial = 0, caught = 0;
+      let due = 0, a = st.plan_today, amount, borrowed = 0, repaid = 0, wait = null, minOpen = null, small = false, missed = 0, missedAmt = 0, partial = 0, caught = 0;
       const mode = modeOf(t);
       if (mode !== "spot" && st.m) {   // маржа или перпы: доли схемы с плечом, сделки дна/паники/продаж 50/50 на два дня
         const m = st.m;
         if (mode === "perp") {   // перпы Bybit: открытие от max($5, 0,01 монеты), взнос копится до минимума; продажа — шагом 0,01 монеты
           minOpen = Math.max(5, 0.01 * h.price);
-          const pd = bk.lastBuy ? Math.round((Date.parse(day) - Date.parse(bk.lastBuy)) / 864e5) : days, pending = Math.min(reserve, unit * Math.max(1, pd)), base = Math.max(0, reserve - pending);
+          const pd = bk.lastBuy ? Math.round((Date.parse(day) - Date.parse(bk.lastBuy)) / 864e5) : days, pending = Math.min(reserve, unit * Math.max(1, pd)), base = Math.max(0, reserve - pending); due = pending;
           if (m.sf > 0) { const sq = m.sf * qty >= qty * 0.999 ? qty : Math.floor((m.sf * qty) / 0.01 + 1e-9) * 0.01; a = -m.sf; amount = -sq * h.price; repaid = qty > 0 ? (sq / qty) * debt : 0; small = sq <= 0 && qty > 0; }
           else { const want = pending + m.es * base, own = Math.min(reserve, want); borrowed = want > 0 ? (m.bu * pending + m.bs * base) * own / want : 0; a = 1 + m.es;
             if (own + borrowed < minOpen) { wait = { have: r2(own + borrowed), need: r2(minOpen) }; amount = 0; borrowed = 0; } else amount = own + borrowed; }
@@ -163,7 +169,7 @@ function today() {
       } else if (a > 0) {
         // спот: обычные взносы копятся, пока не куплены, и идут в сегодняшнюю покупку целиком (как взнос у перпа до минимума
         // открытия); доля сигнала считается от остального резерва. Если всё покупалось вовремя и полностью — прежняя сумма.
-        const ow = owed(t, st, h, day, unit), pending = Math.min(reserve, ow.due), base = Math.max(0, reserve - pending);
+        const ow = owed(t, st, h, day, unit), pending = Math.min(reserve, ow.due), base = Math.max(0, reserve - pending); due = pending;
         // уже покупал сегодня — к покупке остаётся только недокупленный взнос (долю сигнала второй раз не предлагаем)
         amount = bk.today > 0 ? pending : Math.min(reserve, pending + (a - 1) * base);
         missedAmt = bk.today > 0 ? 0 : Math.max(0, pending - Math.min(reserve, unit)); missed = missedAmt >= 0.005 ? 1 : 0;
@@ -182,6 +188,7 @@ function today() {
       const inv = unit * days + Math.max(0, bk.boughtBefore - bk.soldBefore), val = qty * h.price + reserve - debt;
       Object.assign(i, { invested_total: r2(inv), value: r2(val), pnl: r2(val - inv) });
       Object.assign(i, since(st), plainDca(t, h, day, unit, days));
+      if (st.wick) i.wick = wick(t, st.wick, h, day, unit, mode, i, due);
       if (a < 0 && Math.abs(amount) < 0.005 && !tiny) Object.assign(i, { mult: 0, amount: 0, nothing_to_sell: true });
     }
     return i;
@@ -190,6 +197,37 @@ function today() {
   return { day, unit: mem.unit, items, total: sum(items, (i) => Math.max(0, i.amount)), left: sum(todo, (i) => Math.max(0, i.amount)), sell_left: sum(todo, (i) => Math.max(0, -i.amount)),
     reserve: sum(items, (i) => i.reserve || 0), holding: sum(items, (i) => i.holding || 0), scan: !!sampler, strategies: names,
     value: sum(items, (i) => i.value || 0), invested_total: sum(items, (i) => i.invested_total || 0), pnl: sum(items, (i) => i.pnl || 0), debt: sum(items, (i) => i.debt || 0) };
+}
+// Ловушка для фитилей (combo5): раз в W.every дней — дни, номер которых от 1970-01-01 делится на every, — после закрытия такого дня
+// три лимитки на покупку от его закрытия (−25 / −40 / −60%) на доли резерва (15 / 25 / 35%) после сделки дня выставления.
+// Исполнилась — до следующего обновления на этом уровне не ставим; уровень меньше минимума биржи прибавляется к следующему, более глубокому.
+// Только свои деньги, без займа. Исполнения определяем по записанным покупкам с даты выставления по цене не выше уровня (+0,5%).
+function wick(t, W, h, day, unit, mode, it, due) {
+  const last = h.t.length - 1; if (last < W.age) return null;
+  let j = last; while (j > 0 && h.t[j] % W.every) j--;
+  const ref = h.c[j], dOf = (d) => new Date(d * 864e5).toISOString().slice(0, 10), place = dOf(h.t[j] + 1), next = dOf(h.t[j] + W.every + 1);
+  const lv = W.lv.map(([k, f]) => ({ k, f, price: ref * (1 - k) }));
+  const deep = lv[lv.length - 1].price * 1.005, inWin = mem.trades.filter((r) => r.symbol === t.symbol && r.side !== "sell" && r.day >= place && r.day < next);
+  const fills = inWin.filter((r) => r.price <= lv[0].price * 1.005);
+  // резерв на момент выставления: взносы по день выставления − свои деньги в покупках + выручка (сделки по этот день, кроме исполнений лимиток)
+  const sinceD = t.since || day, dd = Math.max(0, Math.round((Date.parse(place) - Date.parse(sinceD)) / 864e5) + 1);
+  let base = unit * dd;
+  for (const r of mem.trades) if (r.symbol === t.symbol && (!t.since || r.day >= t.since) && r.day <= place && !fills.includes(r)) base += r.side === "sell" ? r.amount - (r.repaid || 0) : -(r.amount - (r.borrowed || 0));
+  // не больше нынешнего резерва без непокупленных взносов (они «к покупке»); в день выставления — без сегодняшней сделки (сначала сделка, лимитки — от остатка)
+  const cap = it.reserve - (day === place && !it.done ? Math.max(due || 0, it.amount > 0 ? it.amount : 0) : due || 0);
+  base = Math.max(0, Math.min(base, cap + fills.reduce((x, r) => x + r.amount - (r.borrowed || 0), 0)));
+  const minFor = (px) => (mode === "perp" ? Math.max(5, 0.01 * px) : MIN_ORDER);
+  let carry = 0; const out = [];
+  for (const L of lv) {
+    const filled = fills.some((r) => r.price <= L.price * 1.005);
+    carry += L.f * base;
+    if (filled) { out.push({ pct: Math.round(L.k * 100), price: L.price, amount: r2(L.f * base), filled: true }); carry = 0; continue; }
+    if (carry < minFor(L.price)) { out.push({ pct: Math.round(L.k * 100), price: L.price, amount: 0, merged: true }); continue; }
+    const amt = carry, q = mode === "perp" ? Math.floor(amt / L.price / 0.01 + 1e-9) * 0.01 : amt / L.price; carry = 0;
+    out.push({ pct: Math.round(L.k * 100), price: L.price, amount: r2(amt), qty: q });
+  }
+  const live = out.filter((x) => x.amount > 0 && !x.filled), lockd = live.reduce((x, o) => x + o.amount, 0);
+  return { ref, ref_day: dOf(h.t[j]), place, next, today: day === place, levels: out, base: r2(base), locked: r2(lockd), free: r2(Math.max(0, it.reserve - (due || 0) - lockd)), deep, perp: mode === "perp" };
 }
 // Что изменилось со вчера. Решение на сегодня — последнее в плане, вчерашнее — перед ним; семейство правила на каждый день
 // лежит рядом одной буквой. streak — сколько дней подряд держится сегодняшнее (тот же сигнал в ту же сторону);

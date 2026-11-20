@@ -130,6 +130,7 @@
   .act { margin-top: 20px; border-radius: 20px; padding: 16px 18px; background: var(--soft); }
   .act b { display: block; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
   .act.buy b { color: var(--accent); } .act.sell b { color: var(--sell); }
+  .act.wick { margin-top: 12px; } .act.wick b { font-size: 18px; }
   .act p { margin: 6px 0 0; color: var(--mute); font-size: 14px; font-weight: 600; line-height: 1.35; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .cell { background: var(--soft); border-radius: 16px; padding: 10px 14px; min-width: 0; }
@@ -376,7 +377,8 @@ function render() {
       <div class="pf-chart"><div class="pf-ct">${pnlHead()}<small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля" role="img"></canvas></div>
     </div>`;
   drawPnl();
-  $("list").innerHTML = '<div class="list">' + items.map(row).join("") + "</div>";
+  const wk = items.filter((i) => i.wick && i.wick.today && i.wick.levels.some((x) => x.amount > 0 && !x.filled)).length;
+  $("list").innerHTML = (wk ? `<div class="note" style="margin-bottom:8px">Сегодня обновить лимитки на фитиль: ${wk} ${wk === 1 ? "монета" : wk < 5 ? "монеты" : "монет"} — цены и суммы в карточке монеты.</div>` : "") + '<div class="list">' + items.map(row).join("") + "</div>";
 }
 
 function row(i) {
@@ -422,7 +424,7 @@ function gauge(c) {
 }
 function market(i) {
   if (!i.state) return "";
-  return `<h3>Рынок сейчас</h3>` + i.state.map((r, n) => {
+  return `<h3>Рынок сейчас</h3>` + i.state.map((r, n) => [r, n]).sort((x, y) => (x[0].order ?? x[1]) - (y[0].order ?? y[1])).map(([r, n]) => {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
     const tag = on ? "сработало сейчас" : all ? (i.rule >= 0 ? "выполнено, но раньше сработало другое" : "условия выполнены") : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
     const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
@@ -449,6 +451,22 @@ function actionCard(i) {
     : i.missed_amount >= 0.1 && a > 0 ? `В сумме — $${big(i.missed_amount)} обычных взносов, не купленных в прошлые дни.` : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
   return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}${changed(i, r)}</div>`;
+}
+// ловушка для фитилей: три лимитки на покупку из резерва ниже рынка, обновлять раз в 3 дня
+function wickCard(i) {
+  const w = i.wick; if (!w) return "";
+  const dm = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+  const live = w.levels.filter((x) => x.amount > 0 && !x.filled), got = w.levels.filter((x) => x.filled);
+  const line = (x) => x.filled ? `<li>−${x.pct}%: <strong>исполнена</strong> — до обновления на этом уровне не ставим</li>`
+    : x.merged ? `<li>−${x.pct}%: меньше минимума биржи — сумма перенесена на уровень глубже</li>`
+    : `<li>−${x.pct}%: <strong>$${big(x.amount)}</strong> по цене <strong>$${qty(x.price)}</strong>${x.qty ? ` (≈ ${qty(x.qty)} монет)` : ""}</li>`;
+  const head = w.today ? "Сегодня поставить лимитки на фитиль" : got.length && !live.length ? "Лимитки на фитиль исполнились" : "Лимитки на фитиль";
+  const when = w.today ? `От закрытия ${dm(w.ref_day)} ($${qty(w.ref)}). Сначала сделка дня, потом заявки: отменить старые и поставить эти. Стоят до ${dm(w.next)}, ${dayStart()}.`
+    : `Заявки с ${dm(w.place)} от закрытия ${dm(w.ref_day)} ($${qty(w.ref)}); если ещё не стоят — поставьте. Обновить ${dm(w.next)} после ${dayStart()}.`;
+  const none = !live.length && !got.length ? `<p>Резерв пока мал: все уровни меньше минимума биржи — заявки не ставим.</p>` : "";
+  return `<div class="act wick"><b>${head}</b><p>${esc(when)}</p>${none || `<ol class="steps">${w.levels.map(line).join("")}</ol>`}
+    <p>Из своего резерва, без плеча${w.perp ? " (на перпе — лонг лимиткой, номинал = сумма)" : ""}. Если сигналу стратегии нужны деньги под заявками — снять заявки, сделать сделку, поставить заново от остатка.
+    Исполнилась — запишите покупку как обычно; купленное держим. Свободный резерв${w.free > 0.005 ? ` ($${big(w.free)})` : ""} — в стейблах с доходом.</p></div>`;
 }
 // во сколько по часам телефона начинается день приложения (он считается по UTC: в Израиле это 02:00 зимой, 03:00 летом)
 const dayStart = () => new Date(new Date().setUTCHours(0, 0, 0, 0)).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -509,7 +527,7 @@ function openTicker(symbol) {
   const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
   openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price} · ${esc(i.strategy_name)}</div></div>
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
-    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + pxBox(s) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
+    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + wickCard(i) + pxBox(s) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
     <h3>Стратегии на истории</h3><div id="strats"><div class="hint">Считаю историю…</div></div>
     ${i.has_margin ? `<h3>Где покупаю</h3><div class="pills" id="fMode">${[["spot", "Спот"], ["margin", "Маржа на споте"], ["perp", "Перпы"]].map(([k, n]) => `<button class="pill ${i.mode === k ? "on" : ""}" onclick="saveMode('${s}', '${k}')">${n}</button>`).join("")}</div>
     <div class="note">${i.mode === "perp" ? "Перпы (Bybit): вся позиция — лонг-перп, залог — ваш USDT на том же счёте. Плечо на сигналах ×1,45 (на дне ×2). Открытие — от большего из $5 и 0,01 монеты: мелкие взносы копятся. Продажа — шагом 0,01 монеты. Держите все монеты-перпы на одном счёте." : i.mode === "margin" ? "Маржа на споте: дно 25% резерва с плечом ×2, паника — доли ×2 с плечом ×1,45, разворот — весь резерв с плечом ×1,45; сделки дна, паники и продаж — половина сегодня, половина завтра; продажи сначала гасят долг." : "Спот: только свои деньги, без плеча."}</div>` : ""}
@@ -564,8 +582,8 @@ async function drawPx(symbol) {
 // график сделок стратегии за выбранный период (как в артефакте «Сделки стратегии по монетам»): цена (лог), покупки — круг, продажи — кольцо,
 // цвет — правило, размер — доля счёта; ниже — стоимость счёта стратегии и DCA (пунктир)
 const FAMN = { a: "капитуляция", b: "отложенная покупка", c: "волна ликвидаций", d: "паника в стейблах", e: "охрана", f: "разворот биткоина", g: "сильный страх", h: "страх", i: "перегретый фандинг",
-  j: "тихая вершина", k: "широкая тихая вершина", l: "возврат после вершины", m: "памп в медвежьем рынке", n: "альтсезон", o: "эйфория в стейблах", p: "выдача отложенной паники" };
-const FAMC = { a: 0, c: 1, b: 2, d: 3, f: 4, l: 5, p: 7, h: 0, g: 6, j: 1, k: 4, n: 2, m: 5, i: 7, o: 3 };
+  j: "тихая вершина", k: "широкая тихая вершина", l: "возврат после вершины", m: "памп в медвежьем рынке", n: "альтсезон", o: "эйфория в стейблах", p: "выдача отложенной паники", q: "удержание после капитуляции" };
+const FAMC = { a: 0, c: 1, b: 2, d: 3, f: 4, l: 5, p: 7, h: 0, g: 6, j: 1, k: 4, n: 2, m: 5, i: 7, o: 3, q: 6 };
 const TC_L = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"], TC_D = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#0ca30c", "#9085e9", "#e66767"];
 async function toggleHist(row, symbol, y) {
   const nx = row.nextElementSibling; if (nx && nx.classList.contains("hx-box")) { nx.remove(); row.classList.remove("open"); return; }

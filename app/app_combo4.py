@@ -1,4 +1,5 @@
-"""combo4 для приложения (build_app_artifact.py): план по дням для каждой монеты — правила found/combo4-best.json (= combo3 без tune1)
+"""combo5 для приложения (build_app_artifact.py): план по дням для каждой монеты — правила found/combo5-best.json
+(= combo4: combo3 без tune1 + эйфория + эйфория мемов, + 11-е правило «удержание после капитуляции»; ловушка для фитилей — заявками в приложении)
 на индикаторах симулятора маржи (agent4d_margin.Book, те же данные, что у приложения) + отложенная паника (k 0, выдача ×2 на развороте usdt).
 
 Отложенная паника переводится в план «доля резерва» так же, как в pxm_margin.defer (проверено в марже): по каждой монете — модель резерва в долях
@@ -11,7 +12,26 @@ import combo2_margin  # noqa: F401  регистрирует индикатор�
 import agent4d_margin as AD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-S4 = json.load(open(os.path.join(HERE, "found", "combo4-best.json")))
+S4 = json.load(open(os.path.join(HERE, "found", "combo5-best.json")))
+WICK = S4["wick"]
+_ind_prev = AD.Book.ind
+
+
+def _ind_h2(self, k):
+    """+ индикаторы правила «удержание после капитуляции»: h2fd15 — дней с последнего дня страха < 15; mvrv — MVRV биткоина (CoinMetrics)."""
+    I = _ind_prev(self, k)
+    if "h2fd15" not in I:
+        import pandas as pd
+        import data
+        f = I["fng"]; on = (f < 15).fillna(False).values; idx = np.arange(len(f), dtype=float)
+        last = pd.Series(np.where(on, idx, np.nan)).ffill().values
+        I["h2fd15"] = pd.Series(np.where(np.isnan(last), 1e9, idx - last), index=f.index)
+        I["mvrv"] = data.mvrv_history().reindex(f.index, method="ffill")
+    return I
+
+
+if getattr(AD.Book.ind, "__name__", "") != "_ind_h2":
+    AD.Book.ind = _ind_h2
 A_AGE, T_PK, RV, SU, MULT, GAP = 0, 0.98, 0.965, 1.2, 2.0, 10
 
 
@@ -25,11 +45,14 @@ def val(r, k):
 
 # семейства правил — для подписи и панели «Рынок сейчас» (номер семейства = индекс в state)
 FAM = ["Капитуляция", "Отложенная покупка после выноса", "Волна ликвидаций", "Паника в стейблах", "Охрана после разворота", "Разворот биткоина",
-       "Сильный страх", "Страх", "Перегретый фандинг", "Тихая вершина", "Широкая тихая вершина", "Возврат после вершины", "Памп в медвежьем рынке", "Альтсезон", "Эйфория в стейблах"]
+       "Сильный страх", "Страх", "Перегретый фандинг", "Тихая вершина", "Широкая тихая вершина", "Возврат после вершины", "Памп в медвежьем рынке", "Альтсезон", "Эйфория в стейблах", "Удержание после капитуляции"]
+
+
+LET = "abcdefghijklmnoq"   # буква семейства по дням; «p» занята выдачей отложенной паники
 
 
 def fam(r):
-    if r["act"] > 0 and abs(r["act"] - 1) < 1e-9: return 4
+    if r["act"] > 0 and abs(r["act"] - 1) < 1e-9: return 15 if has(r, "mvrv") else 4
     if r["act"] > 1:
         if has(r, "dly20_100f"): return 1
         if has(r, "usdt"): return 3
@@ -137,7 +160,7 @@ def strategy(sym, h, R, ind):
     pos = {int((d - pd.Timestamp("1970-01-01")).days): i for i, d in enumerate(R["idx"])}
     ix = [pos.get(int(t)) for t in h["t"]]
     plan = [float(R["plan"][i]) if i is not None and np.isfinite(R["plan"][i]) else 1.0 for i in ix]
-    fams = "".join("." if i is None else "p" if int(R["defer"][i]) == 2 else ("." if int(R["fam"][i]) < 0 else chr(97 + int(R["fam"][i]))) for i in ix)
+    fams = "".join("." if i is None else "p" if int(R["defer"][i]) == 2 else ("." if int(R["fam"][i]) < 0 else LET[int(R["fam"][i])]) for i in ix)
     li = ix[-1]
     if li is None: raise ValueError(f"{sym}: последнего дня приложения нет в индексе combo4")
     a = plan[-1]; f = int(R["fam"][li]) if li is not None else -1; d = int(R["defer"][li]) if li is not None else 0
@@ -145,14 +168,15 @@ def strategy(sym, h, R, ind):
     acts = "".join(codes[int(x) + 3] for x in np.select([np.array(plan) <= -1, np.array(plan) <= -0.3, np.array(plan) < 0, np.array(plan) >= 2, np.array(plan) > 1], [-3, -2, -1, 3, 2], default=1))
     if d == 1: action = "копим: сегодня только обычный взнос, доля резерва откладывается до разворота USDT"
     elif d == 2: action = "разворот USDT: покупаем отложенное ×2 сверх взноса"
-    elif f >= 0: action = FAM[f] + (f" — продать {abs(a) * 100:.0f}%" if a < 0 else f" — взнос и {(a - 1) * 100:.0f}% резерва" if a > 1 else " — только взнос")
+    elif f >= 0: action = FAM[f] + (f" — продать {abs(a) * 100:.0f}%" if a < 0 else f" — взнос и {(a - 1) * 100:.0f}% резерва" if a > 1 else " — только взнос, на страхе не продаём" if f == 15 else " — только взнос")
     else: action = "обычный взнос"
     beta = ind("beta180", li); light = "⚪" if beta is None else "🟢" if beta >= 0.9 else "🟡" if beta >= 0.5 else "🔴"
     label = f"{light} бета к BTC {beta:.2f}".replace(".", ",") if beta is not None else ""
     if R["owed"][li] > 0: label += f" · отложено {R['owed'][li] * 100:.0f}% резерва"
     st = state(ind, li, R)
     mm = R["m"]
-    return {"fam": fams, "m": mm, "code": "combo4", "name": "combo4 (итоговая)", "about": "Итоговая стратегия: 55 правил combo3 (дно, ликвидации, паника, разворот, продажи на страхе и вершинах) + отложенная паника: пока доля USDT растёт, паника не покупает, а копит; на развороте USDT покупает отложенное вдвойне.",
+    return {"fam": fams, "m": mm, "code": "combo5", "name": "combo5 (итоговая)", "about": "Итоговая стратегия: 58 правил (дно, ликвидации, паника, разворот, продажи на страхе и вершинах, эйфория в стейблах, удержание после капитуляции) + отложенная паника (пока доля USDT растёт, паника копит; на развороте USDT покупает отложенное вдвойне) + ловушка для фитилей: раз в 3 дня три лимитки из резерва на −25 / −40 / −60% от закрытия (15 / 25 / 35% резерва). Резерв, не занятый лимитками, — в стейблах с доходом.",
+            "wick": {"lv": [[-float(k), float(f)] for k, f in zip(WICK["levels"], WICK["fractions_of_reserve"])], "every": int(WICK["every_days"]), "age": int(WICK["coin_age_min_days"])},
             "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
             "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
 
@@ -186,5 +210,9 @@ def state(ind, i, R):
         ("Альтсезон", "продать 10% монеты (только альты)", "sell", "Жадность и приток в альткоины.", [c("Страх и жадность", "fng", ">", 65, 0, 100), c("Доля альткоинов за 90 дней", "oth90", ">", 1, -6, 6, " п.п.", 1), c("Альткоин: не крупная и не мем (1 — да)", "isalt", ">", 0.5, 0, 1, "", 1)]),
         ("Эйфория в стейблах", "продать 5% монеты (мемы — 10%), если бета > 0,9", "sell", "Деньги уходят из стейблов в рынок: доля USDT заметно ниже своей средней. У монет, которые сильно ходят вместе с рынком, понемногу фиксируем.",
          [c("USDT.D к своей средней", "usdt", "<", 0.9, 0.6, 1.6, "×", 2), c("Бета к BTC за 180 дней", "beta180", ">", 0.9, 0, 3, "", 2), c("Возраст монеты", "age", ">", 540, 0, 1500, " дн.")]),
+        ("Удержание после капитуляции", "только взнос, на страхе не продавать", "hold", "Недавно была капитуляция (страх ниже 15), а биткоин дешевле средней цены покупки всех держателей (MVRV < 1) — купленное на дне не отдаём на страхе по той же цене. Не для мемов и совсем новых монет.",
+         [c("Дней с последнего страха < 15", "h2fd15", "<", 60, 0, 120, " дн."), c("MVRV биткоина", "mvrv", "<", 1, 0.5, 3, "", 2), c("Возраст монеты", "age", ">", 180, 0, 1500, " дн."),
+          c("Мем (1 — да)", "meme", "<", 0.5, 0, 1, "", 1), c("Биткоин за 30 дней", "btcr30", "<", 20, -40, 60, "%")]),
     ]
-    return [{"title": t, "what": w, "kind": kd, "why": y, "conds": cs} for t, w, kd, y, cs in rows]
+    # order — место карточки в списке «Рынок сейчас» (порядок проверки правил): удержание проверяется сразу после охраны, до продаж на страхе
+    return [{"title": t, "what": w, "kind": kd, "why": y, "conds": cs, "order": 4.5 if t == "Удержание после капитуляции" else n} for n, (t, w, kd, y, cs) in enumerate(rows)]
