@@ -226,36 +226,27 @@ function today() {
     reserve: sum(items, (i) => i.reserve || 0), holding: sum(items, (i) => i.holding || 0), scan: !!sampler, strategies: names,
     value: sum(items, (i) => i.value || 0), invested_total: sum(items, (i) => i.invested_total || 0), pnl: sum(items, (i) => i.pnl || 0), debt: sum(items, (i) => i.debt || 0) };
 }
-// Ловушка для фитилей (combo5): раз в W.every дней — дни, номер которых от 1970-01-01 делится на every, — после закрытия такого дня
-// три лимитки на покупку от его закрытия (−25 / −40 / −60%) на доли резерва (15 / 25 / 35%) после сделки дня выставления.
-// Исполнилась — до следующего обновления на этом уровне не ставим; уровень меньше минимума биржи прибавляется к следующему, более глубокому.
-// Только свои деньги, без займа. Исполнения определяем по записанным покупкам с даты выставления по цене не выше уровня (+0,5%).
+// Фитиль — уведомление на покупку по рынку (по просьбе пользователя вместо лимиток): цена сейчас (цена этой минуты от страницы-хозяина,
+// без неё — закрытие дня) ниже вчерашнего закрытия на 25 / 40 / 60% → купить по рынку 15 / 25 / 35% свободного резерва (без непокупленных
+// взносов и без сегодняшней сделки по плану). Каждый уровень — раз в день: уже есть покупка сегодня по цене не выше уровня (+0,5%) — уровень закрыт.
+// Уровень меньше минимума биржи прибавляется к следующему, более глубокому. Только свои деньги, без займа.
 function wick(t, W, h, day, unit, mode, it, due) {
   const last = h.t.length - 1; if (last < W.age) return null;
-  let j = last; while (j > 0 && h.t[j] % W.every) j--;
-  const ref = h.c[j], dOf = (d) => new Date(d * 864e5).toISOString().slice(0, 10), place = dOf(h.t[j] + 1), next = dOf(h.t[j] + W.every + 1);
-  const lv = W.lv.map(([k, f]) => ({ k, f, price: ref * (1 - k) }));
-  const deep = lv[lv.length - 1].price * 1.005, inWin = mem.trades.filter((r) => r.symbol === t.symbol && r.side !== "sell" && r.day >= place && r.day < next);
-  const fills = inWin.filter((r) => r.price <= lv[0].price * 1.005);
-  // резерв на момент выставления: взносы по день выставления − свои деньги в покупках + выручка (сделки по этот день, кроме исполнений лимиток)
-  const sinceD = t.since || day, dd = Math.max(0, Math.round((Date.parse(place) - Date.parse(sinceD)) / 864e5) + 1);
-  let base = unit * dd;
-  for (const r of mem.trades) if (r.symbol === t.symbol && (!t.since || r.day >= t.since) && r.day <= place && !fills.includes(r)) base += r.side === "sell" ? r.amount - (r.repaid || 0) : -(r.amount - (r.borrowed || 0));
-  // не больше нынешнего резерва без непокупленных взносов (они «к покупке»); в день выставления — без сегодняшней сделки (сначала сделка, лимитки — от остатка)
-  const cap = it.reserve - (day === place && !it.done ? Math.max(due || 0, it.amount > 0 ? it.amount : 0) : due || 0);
-  base = Math.max(0, Math.min(base, cap + fills.reduce((x, r) => x + r.amount - (r.borrowed || 0), 0)));
+  const ref = h.c[last], price = h.price, live = !!(intra && Date.now() - intra.got < 6 * 3600e3 && intra.coins && intra.coins[t.symbol]);
+  const drop = Math.max(0, 1 - price / ref), dOf = (d) => new Date(d * 864e5).toISOString().slice(0, 10);
+  const own = it.done ? 0 : Math.max(due || 0, (it.amount || 0) - (it.borrowed || 0));
+  const free = Math.max(0, (it.reserve || 0) - own);
+  const fills = mem.trades.filter((r) => r.symbol === t.symbol && r.side !== "sell" && r.day === day);
   const minFor = (px) => (mode === "perp" ? Math.max(5, 0.01 * px) : MIN_ORDER);
-  let carry = 0; const out = [];
-  for (const L of lv) {
-    const filled = fills.some((r) => r.price <= L.price * 1.005);
-    carry += L.f * base;
-    if (filled) { out.push({ pct: Math.round(L.k * 100), price: L.price, amount: r2(L.f * base), filled: true }); carry = 0; continue; }
-    if (carry < minFor(L.price)) { out.push({ pct: Math.round(L.k * 100), price: L.price, amount: 0, merged: true }); continue; }
-    const amt = carry, q = mode === "perp" ? Math.floor(amt / L.price / 0.01 + 1e-9) * 0.01 : amt / L.price; carry = 0;
-    out.push({ pct: Math.round(L.k * 100), price: L.price, amount: r2(amt), qty: q });
+  let carry = 0, buy = 0; const levels = [];
+  for (const [k, f] of W.lv) {
+    const px = ref * (1 - k), done = fills.some((r) => r.price <= px * 1.005), L = { pct: Math.round(k * 100), price: px, amount: 0, done, hit: drop >= k };
+    carry += f * free;
+    if (done) { carry = 0; levels.push(L); continue; }
+    if (carry < minFor(px)) { L.merged = true; levels.push(L); continue; }
+    L.amount = r2(carry); carry = 0; if (L.hit) buy += L.amount; levels.push(L);
   }
-  const live = out.filter((x) => x.amount > 0 && !x.filled), lockd = live.reduce((x, o) => x + o.amount, 0);
-  return { ref, ref_day: dOf(h.t[j]), place, next, today: day === place, levels: out, base: r2(base), locked: r2(lockd), free: r2(Math.max(0, it.reserve - (due || 0) - lockd)), deep, perp: mode === "perp" };
+  return { ref, ref_day: dOf(h.t[last]), price, live, drop, levels, buy: r2(buy), free: r2(free), perp: mode === "perp" };
 }
 // Что изменилось со вчера. Решение на сегодня — последнее в плане, вчерашнее — перед ним; семейство правила на каждый день
 // лежит рядом одной буквой. streak — сколько дней подряд держится сегодняшнее (тот же сигнал в ту же сторону);

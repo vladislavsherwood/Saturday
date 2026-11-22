@@ -130,7 +130,18 @@
   .act { margin-top: 20px; border-radius: 20px; padding: 16px 18px; background: var(--soft); }
   .act b { display: block; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
   .act.buy b { color: var(--accent); } .act.sell b { color: var(--sell); }
-  .act.wick { margin-top: 12px; } .act.wick b { font-size: 18px; }
+  .act.wk { margin-top: 12px; padding: 14px 18px 16px; } .act.wk b { font-size: 17px; }
+  .act.wk.on { background: var(--accent); } .act.wk.on b, .act.wk.on p { color: var(--on-accent); } .act.wk.on p { opacity: 0.85; }
+  .wk-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; } .wk-h span { color: var(--mute); font-size: 13.5px; font-weight: 650; }
+  .wk-bar { position: relative; height: 6px; margin: 14px 2px 34px; border-radius: 3px; background: var(--faint); }
+  .wk-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--sell); }
+  .act.wk.on .wk-bar { background: rgba(0, 0, 0, 0.15); } .act.wk.on .wk-fill { background: var(--on-accent); }
+  .wk-t { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--mute); border-radius: 1px; }
+  .wk-t.hit { background: var(--accent); } .wk-t.done { background: var(--accent); opacity: 0.5; } .act.wk.on .wk-t { background: var(--on-accent); }
+  .wk-dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+  .act.wk.on .wk-dot { background: var(--on-accent); box-shadow: 0 0 0 2px var(--accent); }
+  .wk-l { position: absolute; top: 14px; transform: translateX(-50%); font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; text-align: center; line-height: 1.15; }
+  .act.wk .wk-l b { display: block; font-size: 11px; font-weight: 650; color: var(--mute); letter-spacing: 0; } .act.wk.on .wk-l, .act.wk.on .wk-l b { color: var(--on-accent); }
   .act p { margin: 6px 0 0; color: var(--mute); font-size: 14px; font-weight: 600; line-height: 1.35; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .cell { background: var(--soft); border-radius: 16px; padding: 10px 14px; min-width: 0; }
@@ -326,6 +337,7 @@ window.addEventListener("resize", () => { if ($("pnlC")) drawPnl(); });
 
 // короткая подпись действия для строки актива: что сделать и почему
 function phrase(i) {
+  if (i.wick && i.wick.buy > 0) return `<i>фитиль −${num(i.wick.drop * 100)}%: купить по рынку $${big(i.wick.buy)}</i>`;
   if (i.reserve_mode) {
     const a = i.plan_today, why = (i.action || "").split(/:| — /)[0];   // имя сработавшего правила, без повтора действия
     if (i.wait) return `<i>копим $${big(i.wait.have)} из $${big(i.wait.need)}</i> · минимум открытия перпа`;
@@ -377,8 +389,8 @@ function render() {
       <div class="pf-chart"><div class="pf-ct">${pnlHead()}<small id="pnlTip"></small></div><canvas id="pnlC" height="150" aria-label="Свечной график прибыли и убытка портфеля" role="img"></canvas></div>
     </div>`;
   drawPnl();
-  const wk = items.filter((i) => i.wick && i.wick.today && i.wick.levels.some((x) => x.amount > 0 && !x.filled)).length;
-  $("list").innerHTML = (wk ? `<div class="note" style="margin-bottom:8px">Сегодня обновить лимитки на фитиль: ${wk} ${wk === 1 ? "монета" : wk < 5 ? "монеты" : "монет"} — цены и суммы в карточке монеты.</div>` : "") + '<div class="list">' + items.map(row).join("") + "</div>";
+  const wk = items.filter((i) => i.wick && i.wick.buy > 0);
+  $("list").innerHTML = (wk.length ? `<div class="act wk on" style="margin:0 0 10px"><b>Фитиль: купить по рынку</b><p>${wk.map((i) => `${esc(short(i.symbol))} −${num(i.wick.drop * 100)}% — $${big(i.wick.buy)}`).join(" · ")}</p></div>` : "") + '<div class="list">' + items.map(row).join("") + "</div>";
 }
 
 function row(i) {
@@ -453,21 +465,21 @@ function actionCard(i) {
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
   return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}${changed(i, r)}</div>`;
 }
-// ловушка для фитилей: три лимитки на покупку из резерва ниже рынка, обновлять раз в 3 дня
+// фитиль: шкала падения от вчерашнего закрытия и сигнал «купить сейчас по рынку»
+const WK_MAX = 70;   // шкала до −70%
+function wickBar(w) {
+  const x = (v) => Math.min(100, (v / WK_MAX) * 100);
+  const ticks = w.levels.map((L) => `<i class="wk-t ${L.done ? "done" : L.hit && L.amount > 0 ? "hit" : ""}" style="left:${x(L.pct)}%"></i>
+    <span class="wk-l" style="left:${x(L.pct)}%"><b>−${L.pct}%</b>${L.done ? "✓" : L.merged ? "—" : "$" + big(L.amount)}</span>`).join("");
+  return `<div class="wk-bar"><div class="wk-fill" style="width:${x(w.drop * 100)}%"></div>${ticks}<i class="wk-dot" style="left:${x(w.drop * 100)}%"></i></div>`;
+}
 function wickCard(i) {
   const w = i.wick; if (!w) return "";
-  const dm = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
-  const live = w.levels.filter((x) => x.amount > 0 && !x.filled), got = w.levels.filter((x) => x.filled);
-  const line = (x) => x.filled ? `<li>−${x.pct}%: <strong>исполнена</strong> — до обновления на этом уровне не ставим</li>`
-    : x.merged ? `<li>−${x.pct}%: меньше минимума биржи — сумма перенесена на уровень глубже</li>`
-    : `<li>−${x.pct}%: <strong>$${big(x.amount)}</strong> по цене <strong>$${qty(x.price)}</strong>${x.qty ? ` (≈ ${qty(x.qty)} монет)` : ""}</li>`;
-  const head = w.today ? "Сегодня поставить лимитки на фитиль" : got.length && !live.length ? "Лимитки на фитиль исполнились" : "Лимитки на фитиль";
-  const when = w.today ? `От закрытия ${dm(w.ref_day)} ($${qty(w.ref)}). Сначала сделка дня, потом заявки: отменить старые и поставить эти. Стоят до ${dm(w.next)}, ${dayStart()}.`
-    : `Заявки с ${dm(w.place)} от закрытия ${dm(w.ref_day)} ($${qty(w.ref)}); если ещё не стоят — поставьте. Обновить ${dm(w.next)} после ${dayStart()}.`;
-  const none = !live.length && !got.length ? `<p>Резерв пока мал: все уровни меньше минимума биржи — заявки не ставим.</p>` : "";
-  return `<div class="act wick"><b>${head}</b><p>${esc(when)}</p>${none || `<ol class="steps">${w.levels.map(line).join("")}</ol>`}
-    <p>Из своего резерва, без плеча${w.perp ? " (на перпе — лонг лимиткой, номинал = сумма)" : ""}. Если сигналу стратегии нужны деньги под заявками — снять заявки, сделать сделку, поставить заново от остатка.
-    Исполнилась — запишите покупку как обычно; купленное держим. Свободный резерв${w.free > 0.005 ? ` ($${big(w.free)})` : ""} — в стейблах с доходом.</p></div>`;
+  const now = `${w.drop > 0.0005 ? "−" + num(w.drop * 100) : "0"}% от вчерашнего закрытия`;
+  if (w.buy > 0) return `<div class="act wk on"><b>Фитиль: купить сейчас по рынку $${big(w.buy)}</b><p>Цена $${qty(w.price)} — ${now}. Из резерва, без плеча. Купил — запиши сделку.</p>${wickBar(w)}</div>`;
+  const none = w.levels.every((L) => !L.amount && !L.done);
+  return `<div class="act wk"><div class="wk-h"><b>Фитиль</b><span>${now}</span></div>${wickBar(w)}
+    <p>${none ? "Резерв пока мал — сигнала не будет." : "Упадёт до отметки — приложение скажет купить по рынку."}${w.live ? "" : " Цена — по закрытию дня."}</p></div>`;
 }
 // во сколько по часам телефона начинается день приложения (он считается по UTC: в Израиле это 02:00 зимой, 03:00 летом)
 const dayStart = () => new Date(new Date().setUTCHours(0, 0, 0, 0)).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
