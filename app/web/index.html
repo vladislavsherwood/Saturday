@@ -8,18 +8,18 @@
 <script src="/explorer.js"></script>
 <style>
   :root {
-    --bg: #F3F3EF; --surface: #FFFFFF; --text: #0D0E10; --mute: #8B9098; --faint: #D9DAD6;
-    --line: rgba(13, 14, 16, 0.07); --accent: #0FA958; --on-accent: #FFFFFF; --bad: #E5484D; --sell: #E0662F; --soft: #F3F3EF;
+    --bg: #F3F3EF; --surface: #FFFFFF; --text: #0D0E10; --mute: #676C74; --faint: #D9DAD6;
+    --line: rgba(13, 14, 16, 0.07); --accent: #0A8445; --on-accent: #FFFFFF; --bad: #D63A3F; --sell: #C4521F; --soft: #F3F3EF;
     --shadow: 0 1px 2px rgba(13, 14, 16, 0.04), 0 8px 24px rgba(13, 14, 16, 0.05);
   }
   :root[data-theme="dark"] {
-    --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
+    --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #8A919A; --faint: #2A2E33;
     --line: rgba(255, 255, 255, 0.07); --accent: #3CCB85; --on-accent: #07140D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
     --shadow: none;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
+      --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #8A919A; --faint: #2A2E33;
       --line: rgba(255, 255, 255, 0.07); --accent: #3CCB85; --on-accent: #07140D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
       --shadow: none;
     }
@@ -32,6 +32,10 @@
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
   [hidden] { display: none !important; }
   .num { font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+  ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  input, textarea { caret-color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .ico { display: inline-block; width: 0.8em; height: 0.8em; vertical-align: -0.05em; margin-right: 0.3em; fill: currentColor; stroke: currentColor; flex: none; }
 
   /* шапка и главное число дня */
   .top { display: flex; justify-content: space-between; align-items: center; color: var(--mute); font-size: 14px; font-weight: 600; }
@@ -288,7 +292,7 @@ function pieHtml() {
     const d = seg.length === 1 ? `M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx - 0.01} ${cy - R} L ${cx - 0.01} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
       : `M ${p(a0, R)} A ${R} ${R} 0 ${lg} 1 ${p(a1, R)} L ${p(a1, r)} A ${r} ${r} 0 ${lg} 0 ${p(a0, r)} Z`; a0 = a1;
     return `<path d="${d}" fill="${s.c}" stroke="var(--surface)" stroke-width="2"><title>${esc(s.n)}: $${big(s.v)} (${num((s.v / tot) * 100)}%)</title></path>`; };
-  const head = `<div class="pie-h" onclick="pieOpen = !pieOpen; render()"><small>Активы по монетам · ${seg.length}</small><small class="pie-t">${pieOpen ? "свернуть ▴" : "показать ▾"}</small></div>`;
+  const head = `<div class="pie-h" role="button" tabindex="0" aria-expanded="${pieOpen}" onclick="pieOpen = !pieOpen; render()"><small>Активы по монетам · ${seg.length}</small><small class="pie-t">${pieOpen ? "свернуть " + ico("chevUp") : "показать " + ico("chev")}</small></div>`;
   if (!pieOpen) return `<div class="pie-w">${head}</div>`;
   return `<div class="pie-w">${head}<div class="pie"><svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Доли монет в активах">${seg.map(arc).join("")}
       <text x="60" y="57" text-anchor="middle" class="pie-c">активы</text><text x="60" y="73" text-anchor="middle" class="pie-v">$${big(tot)}</text></svg>
@@ -409,7 +413,7 @@ function row(i) {
   const amt = shown ? `<div class="amt num ${shown < 0 ? "sell" : ""}">${shown < 0 ? "−" : ""}$${big(Math.abs(shown))}</div>` : '<div class="amt num zero">—</div>';
   const btn = tiny ? `<button class="check" onclick="event.stopPropagation(); toast('${tiny.sell ? "Продажу меньше $1 биржа не исполнит — пропускаем" : "Меньше $1 биржа не исполнит — сумма добавится к следующей покупке"}', true)" aria-label="Меньше доллара">${CHECK}</button>`
     : i.done || a ? `<button class="check" onclick="event.stopPropagation(); toggle('${s}')" aria-label="${i.done ? "Отменить" : "Сделано"}">${CHECK}</button>` : '<div class="check none"></div>';
-  return `<div class="item ${i.done || tiny ? "done" : ""}" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b><small>${phrase(i)}</small></div>${amt}${btn}</div>`;
+  return `<div class="item ${i.done || tiny ? "done" : ""}" role="button" tabindex="0" onclick="openTicker('${s}')"><div class="sym"><b>${esc(short(i.symbol))}</b><small>${phrase(i)}</small></div>${amt}${btn}</div>`;
 }
 
 async function toggle(symbol) {
@@ -421,6 +425,7 @@ async function toggle(symbol) {
   } catch (e) { toast(e.message); }
 }
 
+document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches('[role="button"]')) { e.preventDefault(); e.target.click(); } });
 let backTo = null;
 function tgBack() { if (backTo) backTo(); }
 function setBack(fn) { backTo = fn; try { if (tg && tg.BackButton) { fn ? tg.BackButton.show() : tg.BackButton.hide(); } } catch (e) {} }
@@ -433,6 +438,11 @@ function openSheet(html, full) {
 function closeSheet() { $("veil").classList.remove("open"); setBack(null); document.activeElement && document.activeElement.blur(); }
 $("veil").addEventListener("click", (e) => { if (e.target.id === "veil") closeSheet(); });
 
+// значки одним набором (SVG, цвет — от текста): покупка, продажа, раскрыть/свернуть, выполнено, удалить
+const ICO = { up: '<path d="M8 3l6 10H2z" stroke="none"/>', down: '<path d="M8 13L2 3h12z" stroke="none"/>', chev: '<path d="M4 6l4 4 4-4" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  chevUp: '<path d="M4 10l4-4 4 4" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', check: '<path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+  x: '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke-width="2" stroke-linecap="round"/>' };
+const ico = (k) => `<svg class="ico" viewBox="0 0 16 16" aria-hidden="true">${ICO[k]}</svg>`;
 // ---------- рынок сейчас: правила стратегии со шкалами ----------
 function gauge(c) {
   if (c.value == null) return `<div class="g"><div class="gl"><span>${esc(c.name)}</span><em>нет данных</em></div></div>`;
@@ -449,8 +459,8 @@ function market(i) {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
     const tag = on ? "сработало" : all ? (i.rule >= 0 ? "выполнено" : "условия выполнены") : `${r.conds.length - left} из ${r.conds.length}`;
     const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
-    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? esc(w) : /копится/.test(r.what) ? esc(w) : `▲ Купить: ${esc(r.what)}`;
-    return `<div class="rule ${on ? "on" : "fold"} ${kind}" onclick="this.classList.toggle('fold')">
+    const act = kind === "sell" ? `${ico("down")}${esc(w)}` : kind === "hold" ? esc(w) : /копится/.test(r.what) ? esc(w) : `${ico("up")}Купить: ${esc(r.what)}`;
+    return `<div class="rule ${on ? "on" : "fold"} ${kind}" role="button" tabindex="0" aria-expanded="${on}" onclick="this.classList.toggle('fold'); this.setAttribute('aria-expanded', !this.classList.contains('fold'))">
       <div class="rh"><i class="kd ${kind}"></i><b>${esc(r.title)}</b><span>${tag}</span></div><div class="rb"><div class="chip ${kind}">${act}</div>${r.conds.map(gauge).join("")}<p>${esc(r.why)}</p></div></div>`;
   }).join("") + `<div class="note">Правила проверяются сверху вниз, срабатывает первое выполненное. Нажмите на правило, чтобы увидеть его условия. Серая точка на шкале показывает, где показатель был неделю назад.</div>`;
 }
@@ -458,18 +468,18 @@ function actionCard(i) {
   if (!i.reserve_mode) return scale(i);
   const a = i.plan_today, kind = a < 0 ? "sell" : a > 1 ? "buy" : "", r = i.state && i.rule >= 0 ? i.state[i.rule] : null;
   const perp = i.mode === "perp";
-  const head = i.tiny ? (i.tiny.sell ? `Продажа на $${big(i.tiny.have)} — меньше $1` : `Покупка на $${big(i.tiny.have)} — меньше $1`) : i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
+  const head = i.tiny ? (i.tiny.sell ? `Продажа на $${big(i.tiny.have)}, меньше $1` : `Покупка на $${big(i.tiny.have)}, меньше $1`) : i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
   const owed = (i.label || "").match(/отложено (\d+)% резерва/), copit = /^копим/.test(i.action || ""), release = /^разворот USDT/.test(i.action || "");
   const sub = i.nothing_to_sell ? "Сигнал на продажу, но позиции пока нет. Сегодняшний взнос остаётся в резерве." : r ? r.why : "Сигналов нет — обычный ежедневный взнос.";
   const steps = copit ? `<ol class="steps"><li><strong>Сегодня</strong> только обычный взнос.</li><li><strong>Копим</strong> долю резерва${owed ? ` (сейчас ≈${owed[1]}%)` : ""}.</li><li><strong>Потом</strong>, когда доля USDT развернётся вниз, покупаем её вдвойне.</li></ol>`
-    : release ? `<ol class="steps"><li><strong>Сегодня:</strong> доля USDT развернулась вниз — покупаем отложенное ×2 сверх взноса.</li></ol>` : "";
-  const mg = i.tiny ? (i.tiny.sell ? "Меньше $1 биржа не исполнит — продажу пропускаем." : "Меньше $1 биржа не исполнит — сегодня не покупаем, сумма добавится к следующей покупке.")
-    : i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
+    : release ? `<ol class="steps"><li><strong>Сегодня</strong> доля USDT развернулась вниз, покупаем отложенное ×2 сверх взноса.</li></ol>` : "";
+  const mg = i.tiny ? (i.tiny.sell ? "Меньше $1 биржа не исполнит, продажу пропускаем." : "Меньше $1 биржа не исполнит — сегодня не покупаем, сумма добавится к следующей покупке.")
+    : i.small_sell ? "Продажа меньше 0,01 монеты на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
     : perp ? (i.amount > 0 && i.borrowed > 0 ? `Перп, плечо: из $${big(i.amount)} залог $${big(i.amount - i.borrowed)} своих, $${big(i.borrowed)} — плечом.` : i.amount > 0 ? `Перп без плеча: залог $${big(i.amount)}.` : "")
-    : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : (i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "")
+    : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} погасить долг по марже.` : (i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "")
         + (a >= 0 && i.missed_amount >= 0.1 ? ` Сюда входят $${big(i.missed_amount)} взносов прошлых дней, которые ещё не куплены.` : ""))
     : i.caught ? `Покупка на $${big(i.partial)} закрыла взносы прошлых дней. Это взнос нового дня — он начался в ${dayStart()}.`
-    : i.partial ? `Сегодня уже куплено на $${big(i.partial)} — осталось докупить обычный взнос.`
+    : i.partial ? `Сегодня уже куплено на $${big(i.partial)}, осталось докупить обычный взнос.`
     : i.missed_amount >= 0.1 && a > 0 ? `Сюда входят $${big(i.missed_amount)} взносов прошлых дней, которые ещё не куплены.` : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
   return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}${changed(i, r)}</div>`;
@@ -479,7 +489,7 @@ const WK_MAX = 70;   // шкала до −70%
 function wickBar(w) {
   const x = (v) => Math.min(100, (v / WK_MAX) * 100);
   const ticks = w.levels.map((L) => `<i class="wk-t ${L.done ? "done" : L.hit && L.amount > 0 ? "hit" : ""}" style="left:${x(L.pct)}%"></i>
-    <span class="wk-l" style="left:${x(L.pct)}%"><b>−${L.pct}%</b>${L.done ? "✓" : L.merged ? "—" : "$" + big(L.amount)}</span>`).join("");
+    <span class="wk-l" style="left:${x(L.pct)}%"><b>−${L.pct}%</b>${L.done ? ico("check") : L.merged ? "" : "$" + big(L.amount)}</span>`).join("");
   return `<div class="wk-bar"><div class="wk-fill" style="width:${x(w.drop * 100)}%"></div>${ticks}<i class="wk-dot" style="left:${x(w.drop * 100)}%"></i></div>`;
 }
 function wickCard(i) {
@@ -497,7 +507,7 @@ function changed(i, r) {
   if (i.streak == null) return "";
   const signal = i.plan_today < 0 || i.plan_today > 1, was = i.ended ? FAMN[i.ended] : null;
   const line = signal ? (i.streak > 1 ? `Сигнал держится ${i.streak}-й день.` : "Сигнал новый: вчера был обычный взнос.")
-    : i.ended ? `Вчерашний сигнал закончился${was ? " («" + was + "»)" : ""} — снова обычный взнос.` : "";
+    : i.ended ? `Вчерашний сигнал закончился${was ? " («" + was + "»)" : ""} . Снова обычный взнос.` : "";
   const f = (c) => c.value.toLocaleString("ru-RU", { maximumFractionDigits: c.digits, minimumFractionDigits: c.digits }) + c.unit;
   const now = signal && r ? r.conds.filter((c) => c.value != null).map((c) => `${c.name} ${f(c)}`).join(" · ") : "";
   return line || now ? `<p>${esc(line)}${now ? (line ? " " : "") + "Сейчас: " + esc(now) + "." : ""}</p>` : "";
@@ -524,7 +534,7 @@ async function trades(symbol) {
     const SRC = { plan: "по плану", scan: "со скриншота", manual: "вручную", bybit: "с биржи" };
     box.innerHTML = t.length ? `<h3>Сделки</h3>` + t.slice(0, 30).map((x) => `<div class="tr"><div><b class="${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "Продажа" : "Покупка"}</b>
       <small>${new Date(x.day + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })} · ${SRC[x.source] || ""} · ${qty(x.qty)} по $${qty(x.price)}${x.fee > 0 ? ` · комиссия ${x.fee_kind === "coin" && x.fee_amount ? qty(x.fee_amount) + " монет" : "$" + (x.fee < 0.01 ? x.fee.toFixed(4) : num(x.fee))}` : ""}</small></div>
-      <b class="num ${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "−" : ""}$${big(x.amount)}</b><button class="x" onclick="dropTrade(${x.id}, '${esc(symbol)}')" aria-label="Удалить сделку">×</button></div>`).join("") : "";
+      <b class="num ${x.side === "sell" ? "s" : ""}">${x.side === "sell" ? "−" : ""}$${big(x.amount)}</b><button class="x" onclick="dropTrade(${x.id}, '${esc(symbol)}')" aria-label="Удалить сделку">${ico("x")}</button></div>`).join("") : "";
   } catch (e) { box.innerHTML = ""; }
 }
 function dropTrade(id, symbol) {
@@ -563,7 +573,7 @@ try { const v = +localStorage.getItem("dca-px-tf"); if (v === 1 || v === 4) pxTf
 const pxBox = (s) => { const can = typeof window.dcaIntra === "function", cur = can ? pxTf : 0;
   return `<div class="pf-ch px-h"><h3>Цена и мои сделки</h3>${can ? `<div class="pf-tf" id="pxTfs" role="group" aria-label="Размер свечи">${PNL_TF.map((x) => `<button type="button" class="${x[0] === cur ? "on" : ""}" data-tf="${x[0]}" aria-pressed="${x[0] === cur}" onclick="setPxTf('${s}', ${x[0]})">${x[1]}</button>`).join("")}</div>` : ""}</div>
     <canvas id="pxC" height="190" aria-label="Свечной график цены монеты с отметками своих покупок и продаж" role="img"></canvas><div class="hx-tip" id="pxTip"></div>
-    <div class="px-key"><span><b>▲</b>покупка</span><span><b>▼</b>продажа</span><span id="pxAvg" hidden><i></i>средняя цена входа</span></div>`; };
+    <div class="px-key"><span><b>${ico("up")}</b>покупка</span><span><b>${ico("down")}</b>продажа</span><span id="pxAvg" hidden><i></i>средняя цена входа</span></div>`; };
 const pxMarkTf = (v) => document.querySelectorAll("#pxTfs button").forEach((b) => { const on = +b.dataset.tf === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
 function setPxTf(symbol, v) { if (v === pxTf) return; pxTf = v; haptic(); try { localStorage.setItem("dca-px-tf", v); } catch (e) {} pxMarkTf(v); drawPx(symbol); }
 async function drawPx(symbol) {
@@ -615,9 +625,9 @@ async function toggleHist(row, symbol, y) {
 function drawTrades(box, D) {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches, PAL = dark ? TC_D : TC_L, css = getComputedStyle(document.documentElement), col = (v) => css.getPropertyValue(v).trim();
   const used = {}; for (const x of D.tr) used[x[3]] = (used[x[3]] || 0) + 1;
-  box.innerHTML = `<div class="hx-key"><span><b class="tri" style="color:var(--text)">▲</b>покупка — под свечой</span><span><b class="tri" style="color:var(--text)">▼</b>продажа — над свечой</span><span>размер — доля счёта</span></div><canvas class="hx-p" height="200" role="img" aria-label="Цена и сделки стратегии"></canvas><canvas class="hx-e" height="110" role="img" aria-label="Стоимость счёта стратегии и DCA"></canvas>
+  box.innerHTML = `<div class="hx-key"><span><b class="tri" style="color:var(--text)">${ico("up")}</b>покупка под свечой</span><span><b class="tri" style="color:var(--text)">${ico("down")}</b>продажа над свечой</span><span>размер — доля счёта</span></div><canvas class="hx-p" height="200" role="img" aria-label="Цена и сделки стратегии"></canvas><canvas class="hx-e" height="110" role="img" aria-label="Стоимость счёта стратегии и DCA"></canvas>
     <div class="hx-tip"></div><div class="hx-leg">${Object.keys(used).filter((k) => FAMN[k]).sort((a, b) => used[b] - used[a]).map((k) => { const sell = D.tr.some((x) => x[3] === k && x[1] < 0);
-      return `<span><b class="tri" style="color:${PAL[FAMC[k]] || col("--mute")}">${sell ? "▼" : "▲"}</b>${FAMN[k]} <em>${used[k]}</em></span>`; }).join("")}<span><i style="background:${col("--text")};height:2px;border-radius:0"></i>стратегия</span><span><i style="border-top:2px dashed ${col("--mute")};height:0;border-radius:0;background:none"></i>DCA</span></div>`;
+      return `<span><b class="tri" style="color:${PAL[FAMC[k]] || col("--mute")}">${sell ? ico("down") : ico("up")}</b>${FAMN[k]} <em>${used[k]}</em></span>`; }).join("")}<span><i style="background:${col("--text")};height:2px;border-radius:0"></i>стратегия</span><span><i style="border-top:2px dashed ${col("--mute")};height:0;border-radius:0;background:none"></i>DCA</span></div>`;
   const [cp, ce] = box.querySelectorAll("canvas"), W = cp.clientWidth, dpr = devicePixelRatio || 1, n = D.c.length, L = 44, R = 6;
   const X = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), dt = (i) => new Date(D.t[i] * 864e5).toLocaleDateString("ru-RU", { month: "short", year: "2-digit", timeZone: "UTC" });
   const prep = (cv, H) => { cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = "10.5px system-ui, sans-serif"; return g; };
@@ -671,7 +681,7 @@ async function histBox(symbol) {
   try {
     const r = await api("/api/hist/" + encodeURIComponent(symbol)), pc = (a, b) => (b > 0 ? (a / b - 1) * 100 : 0), sg = (x) => (x >= 0 ? "+" : "−") + (Math.abs(x) >= 10 ? Math.round(Math.abs(x)).toLocaleString("ru-RU") : num(Math.abs(x))) + "%";
     box.innerHTML = `<div class="hist"><div class="hr hh"><span>Старт</span><span>Вложено</span><span>Стратегия</span><span>DCA</span></div>${r.rows.map((x) => { const s = pc(x.val, x.inv), d = pc(x.dca, x.inv);
-      return `<div class="hr hx" onclick="toggleHist(this, '${esc(symbol)}', ${x.y || 0})"><span>${x.lab} <i class="hx-a">▾</i><small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
+      return `<div class="hr hx" role="button" tabindex="0" onclick="toggleHist(this, '${esc(symbol)}', ${x.y || 0})"><span>${x.lab} <i class="hx-a">${ico("chev")}</i><small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
         <span class="num ${s >= d ? "up" : "down"}"><b>$${big(x.val)}</b><small>${sg(s)}</small></span><span class="num">$${big(x.dca)}<small>${sg(d)}</small></span></div>`; }).join("")}</div>
       <div class="note">$${num(r.unit)} в день, ${esc(r.strategy)}, без плеча. Старты раз в 30 дней за 3 года: лучше DCA в ${r.beat} из ${r.starts}, в минусе ${r.loss}. Прошлое, а не обещание.</div>`;
   } catch (e) { box.innerHTML = ""; }
