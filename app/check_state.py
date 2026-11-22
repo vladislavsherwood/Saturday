@@ -31,7 +31,8 @@ def cards():
         if i == 0:
             keys.append(k)
         return None
-    rows, out, n = C4.state(ind, 0, {"upk": np.array([np.nan])}), [], 0
+    # состав карточек одинаков у combo5 и combo6 (у combo6 лишь порог пампа зависит от волатильности — он берёт ind() до карточек и сбил бы порядок ключей)
+    rows, out, n = C4.state(ind, 0, {"upk": np.array([np.nan])}, "combo5"), [], 0
     for r in rows:
         out.append([(keys[n + j], c["op"], c["target"]) for j, c in enumerate(r["conds"])])
         n += len(r["conds"])
@@ -50,8 +51,9 @@ def by_content(cs):
         for w in need:
             if w not in cs[f]:
                 bad.append(f"«{name}»: в карточке нет условия {w[0]} {w[1]} {w[2]}")
+        vary = {(q["ind"], q["op"]) for r in rules for q in r["conds"]} if name == "Памп в медвежьем рынке" else set()   # порог up90 у combo6 — по волатильности
         for k, op, v in cs[f]:
-            if k and (k, op, v) not in need:
+            if k and (k, op, v) not in need and (k, op) not in vary:
                 bad.append(f"«{name}»: в карточке лишнее условие {k} {op} {v}")
     return bad
 
@@ -71,7 +73,7 @@ def by_history(cs, days):
             return None if not np.isfinite(v) else float(v)
         ok = np.where(np.isfinite(B.C[:, k]))[0]
         for i in range(max(int(ok[0]), int(ok[-1]) - days + 1), int(ok[-1]) + 1):
-            st, fired, d = C4.state(ind, i, r), int(r["fam"][i]), int(r["defer"][i])
+            st, fired, d = C4.state(ind, i, r, C4.MAIN), int(r["fam"][i]), int(r["defer"][i])
             met = [all(c["ok"] for c, key in zip(row["conds"], cs[f]) if key[0]) for f, row in enumerate(st)]
             day = str(r["idx"][i].date()); seen += 1
             if fired >= 0 and not met[fired] and not (fired == PANIC and d == 2):   # день выдачи отложенного — не условия паники
