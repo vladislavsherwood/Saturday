@@ -14,13 +14,13 @@
   }
   :root[data-theme="dark"] {
     --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
-    --line: rgba(255, 255, 255, 0.07); --accent: #C6F53A; --on-accent: #0A0B0D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
+    --line: rgba(255, 255, 255, 0.07); --accent: #3CCB85; --on-accent: #07140D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
     --shadow: none;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0A0B0D; --surface: #141619; --text: #F5F6F7; --mute: #6C737C; --faint: #2A2E33;
-      --line: rgba(255, 255, 255, 0.07); --accent: #C6F53A; --on-accent: #0A0B0D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
+      --line: rgba(255, 255, 255, 0.07); --accent: #3CCB85; --on-accent: #07140D; --bad: #FF6369; --sell: #FF8A4C; --soft: #0A0B0D;
       --shadow: none;
     }
   }
@@ -105,6 +105,7 @@
   .empty { text-align: center; color: var(--mute); padding: 70px 0; font-weight: 600; }
 
   /* кнопки внизу */
+  .list { margin-bottom: 96px; }
   .dock { position: fixed; right: 18px; bottom: calc(22px + env(safe-area-inset-bottom)); display: flex; gap: 12px; z-index: 5; }
   .fab { width: 60px; height: 60px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center; box-shadow: 0 10px 28px rgba(0,0,0,0.28); transition: transform 0.15s; }
   .fab.alt { background: var(--surface); color: var(--text); }
@@ -144,12 +145,20 @@
   .act.wk .wk-l b { display: block; font-size: 11px; font-weight: 650; color: var(--mute); letter-spacing: 0; } .act.wk.on .wk-l, .act.wk.on .wk-l b { color: var(--on-accent); }
   .act p { margin: 6px 0 0; color: var(--mute); font-size: 14px; font-weight: 600; line-height: 1.35; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .stmt { margin: 6px 0 0; background: var(--soft); border-radius: 16px; padding: 4px 14px; }
+  .stmt div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .stmt div:last-child { border-bottom: 0; }
+  .stmt dt { color: var(--mute); font-size: 13.5px; font-weight: 650; min-width: 0; } .stmt dd { margin: 0; font-size: 14.5px; font-weight: 750; text-align: right; }
+  .stmt .up { color: var(--accent); } .stmt .down { color: var(--sell); }
   .cell { background: var(--soft); border-radius: 16px; padding: 10px 14px; min-width: 0; }
   .cell small { display: block; color: var(--mute); font-size: 12px; font-weight: 650; }
   .cell b { font-size: 17px; font-weight: 750; overflow-wrap: anywhere; } .cell b.up { color: var(--accent); } .cell b.down { color: var(--sell); }
 
   /* рынок сейчас: правила стратегии со шкалами */
-  .rule { border-radius: 18px; padding: 12px 14px; background: var(--soft); margin-bottom: 8px; transition: box-shadow 0.2s; }
+  .rule { border-radius: 16px; padding: 12px 14px; background: var(--soft); margin-bottom: 6px; transition: box-shadow 0.2s; cursor: pointer; }
+  .rule.fold { padding-block: 10px; } .rule.fold .rb { display: none; } .rule.fold .rh b { font-size: 14.5px; font-weight: 700; }
+  .rule .rh .kd { flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center; background: var(--mute); } .rule .rh .kd.buy { background: var(--accent); } .rule .rh .kd.sell { background: var(--sell); }
+  .rule .rh b { flex: 1; min-width: 0; }
   .rule.on { box-shadow: inset 0 0 0 2px var(--accent); } .rule.on.sell { box-shadow: inset 0 0 0 2px var(--sell); }
   .rule .rh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .rule .rh b { font-size: 16px; font-weight: 750; } .rule .rh span { font-size: 13px; font-weight: 700; color: var(--mute); white-space: nowrap; }
@@ -438,12 +447,12 @@ function market(i) {
   if (!i.state) return "";
   return `<h3>Рынок сейчас</h3>` + i.state.map((r, n) => [r, n]).sort((x, y) => (x[0].order ?? x[1]) - (y[0].order ?? y[1])).map(([r, n]) => {
     const on = n === i.rule, all = r.conds.every((c) => c.ok), left = r.conds.filter((c) => !c.ok).length;
-    const tag = on ? "сработало сейчас" : all ? (i.rule >= 0 ? "выполнено, но раньше сработало другое" : "условия выполнены") : r.conds.length === 1 ? "не выполнено" : `выполнено ${r.conds.length - left} из ${r.conds.length}`;
+    const tag = on ? "сработало" : all ? (i.rule >= 0 ? "выполнено" : "условия выполнены") : `${r.conds.length - left} из ${r.conds.length}`;
     const kind = r.kind === "sell" ? "sell" : r.kind === "hold" || /^только взнос/.test(r.what) ? "hold" : "buy", w = r.what.charAt(0).toUpperCase() + r.what.slice(1);
-    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? `■ ${esc(w)}` : /копится/.test(r.what) ? `⏸ ${esc(w)}` : `▲ Купить: ${esc(r.what)}`;
-    return `<div class="rule ${on ? "on" : ""} ${kind}" onclick="this.querySelector('p').hidden = !this.querySelector('p').hidden">
-      <div class="rh"><b>${esc(r.title)}</b><span>${tag}</span></div><div class="chip ${kind}">${act}</div>${r.conds.map(gauge).join("")}<p ${on ? "" : "hidden"}>${esc(r.why)}</p></div>`;
-  }).join("") + `<div class="note">Правила проверяются сверху вниз, срабатывает первое выполненное. Серая точка — где показатель был неделю назад.</div>`;
+    const act = kind === "sell" ? `▼ ${esc(w)}` : kind === "hold" ? esc(w) : /копится/.test(r.what) ? esc(w) : `▲ Купить: ${esc(r.what)}`;
+    return `<div class="rule ${on ? "on" : "fold"} ${kind}" onclick="this.classList.toggle('fold')">
+      <div class="rh"><i class="kd ${kind}"></i><b>${esc(r.title)}</b><span>${tag}</span></div><div class="rb"><div class="chip ${kind}">${act}</div>${r.conds.map(gauge).join("")}<p>${esc(r.why)}</p></div></div>`;
+  }).join("") + `<div class="note">Правила проверяются сверху вниз, срабатывает первое выполненное. Нажмите на правило, чтобы увидеть его условия. Серая точка на шкале показывает, где показатель был неделю назад.</div>`;
 }
 function actionCard(i) {
   if (!i.reserve_mode) return scale(i);
@@ -452,16 +461,16 @@ function actionCard(i) {
   const head = i.tiny ? (i.tiny.sell ? `Продажа на $${big(i.tiny.have)} — меньше $1` : `Покупка на $${big(i.tiny.have)} — меньше $1`) : i.small_sell ? "Продавать нечего" : i.wait ? `Копим: $${big(i.wait.have)} из $${big(i.wait.need)}` : i.nothing_to_sell ? "Продавать нечего" : a < 0 ? `${perp ? "Закрыть" : "Продать"} ${Math.round(-a * 100)}% · $${big(-i.amount)}` : i.amount > 0 ? `${perp ? "Открыть лонг" : "Купить"} на $${big(i.amount)}` : "Без сделки";
   const owed = (i.label || "").match(/отложено (\d+)% резерва/), copit = /^копим/.test(i.action || ""), release = /^разворот USDT/.test(i.action || "");
   const sub = i.nothing_to_sell ? "Сигнал на продажу, но позиции пока нет. Сегодняшний взнос остаётся в резерве." : r ? r.why : "Сигналов нет — обычный ежедневный взнос.";
-  const steps = copit ? `<ol class="steps"><li><strong>Сегодня:</strong> только обычный взнос.</li><li><strong>Копим:</strong> покупку из резерва${owed ? ` (сейчас ≈${owed[1]}% резерва)` : ""} не делаем, она откладывается.</li><li><strong>Потом:</strong> когда доля USDT развернётся вниз (на 3,5% от своего 10-дневного пика), приложение скажет купить отложенное вдвойне.</li></ol>`
+  const steps = copit ? `<ol class="steps"><li><strong>Сегодня</strong> только обычный взнос.</li><li><strong>Копим</strong> долю резерва${owed ? ` (сейчас ≈${owed[1]}%)` : ""}.</li><li><strong>Потом</strong>, когда доля USDT развернётся вниз, покупаем её вдвойне.</li></ol>`
     : release ? `<ol class="steps"><li><strong>Сегодня:</strong> доля USDT развернулась вниз — покупаем отложенное ×2 сверх взноса.</li></ol>` : "";
   const mg = i.tiny ? (i.tiny.sell ? "Меньше $1 биржа не исполнит — продажу пропускаем." : "Меньше $1 биржа не исполнит — сегодня не покупаем, сумма добавится к следующей покупке.")
     : i.small_sell ? "Продажа меньше 0,01 монеты — на перпе не пройдёт, пропускаем." : i.wait ? `Минимум открытия перпа $${big(i.wait.need)} (больше из $5 и 0,01 монеты) — сегодня ничего не открываем, взнос копится.`
     : perp ? (i.amount > 0 && i.borrowed > 0 ? `Перп, плечо: из $${big(i.amount)} залог $${big(i.amount - i.borrowed)} своих, $${big(i.borrowed)} — плечом.` : i.amount > 0 ? `Перп без плеча: залог $${big(i.amount)}.` : "")
     : i.margin ? (a < 0 && i.repaid > 0 ? `Из выручки $${big(i.repaid)} — погасить долг по марже.` : (i.borrowed > 0 ? `Из них $${big(i.borrowed)} в долг (маржа, плечо ×${num(i.lev)}), своих $${big(i.amount - i.borrowed)}.` : "")
-        + (a >= 0 && i.missed_amount >= 0.1 ? ` В сумме — $${big(i.missed_amount)} обычных взносов, не купленных в прошлые дни.` : ""))
+        + (a >= 0 && i.missed_amount >= 0.1 ? ` Сюда входят $${big(i.missed_amount)} взносов прошлых дней, которые ещё не куплены.` : ""))
     : i.caught ? `Покупка на $${big(i.partial)} закрыла взносы прошлых дней. Это взнос нового дня — он начался в ${dayStart()}.`
     : i.partial ? `Сегодня уже куплено на $${big(i.partial)} — осталось докупить обычный взнос.`
-    : i.missed_amount >= 0.1 && a > 0 ? `В сумме — $${big(i.missed_amount)} обычных взносов, не купленных в прошлые дни.` : "";
+    : i.missed_amount >= 0.1 && a > 0 ? `Сюда входят $${big(i.missed_amount)} взносов прошлых дней, которые ещё не куплены.` : "";
   const dl = i.margin && i.debt > 0 ? `<p>${perp ? "Сейчас в позиции плечом" : "Долг по марже"}: $${big(i.debt)}</p>` : "";
   return `<div class="act ${kind}"><b>${head}</b>${steps || `<p>${esc(sub)}</p>`}${mg ? `<p style="font-weight:600;color:var(--text)">${esc(mg)}</p>` : ""}${dl}${changed(i, r)}</div>`;
 }
@@ -476,10 +485,10 @@ function wickBar(w) {
 function wickCard(i) {
   const w = i.wick; if (!w) return "";
   const now = `${w.drop > 0.0005 ? "−" + num(w.drop * 100) : "0"}% от вчерашнего закрытия`;
-  if (w.buy > 0) return `<div class="act wk on"><b>Фитиль: купить сейчас по рынку $${big(w.buy)}</b><p>Цена $${qty(w.price)} — ${now}. Из резерва, без плеча. Купил — запиши сделку.</p>${wickBar(w)}</div>`;
+  if (w.buy > 0) return `<div class="act wk on"><b>Фитиль: купить сейчас по рынку $${big(w.buy)}</b><p>Цена $${qty(w.price)}, ${now}. Из резерва, без плеча. После покупки запишите сделку.</p>${wickBar(w)}</div>`;
   const none = w.levels.every((L) => !L.amount && !L.done);
   return `<div class="act wk"><div class="wk-h"><b>Фитиль</b><span>${now}</span></div>${wickBar(w)}
-    <p>${none ? "Резерв пока мал — сигнала не будет." : "Упадёт до отметки — приложение скажет купить по рынку."}${w.live ? "" : " Цена — по закрытию дня."}</p></div>`;
+    <p>${none ? "Сигнала не будет, пока резерв мал." : "Цена дойдёт до отметки, и приложение скажет купить по рынку."}${w.live ? "" : " Цена по закрытию дня."}</p></div>`;
 }
 // во сколько по часам телефона начинается день приложения (он считается по UTC: в Израиле это 02:00 зимой, 03:00 летом)
 const dayStart = () => new Date(new Date().setUTCHours(0, 0, 0, 0)).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -503,8 +512,8 @@ function position(i) {
   if (i.dca_pnl != null && i.pnl != null) { const d = i.pnl - i.dca_pnl;
     cells.push(["Обычный DCA за эти дни", `${sg(i.dca_pnl)}$${big(Math.abs(i.dca_pnl))}`], ["Стратегия к обычному DCA", `${sg(d)}$${big(Math.abs(d))}`]); }
   const p = i.profit || 0, has = i.trades > 0;
-  return `<h3>Мой счёт</h3><div class="grid">${cells.map(([a, b]) => `<div class="cell"><small>${a}</small><b class="num">${b}</b></div>`).join("")}
-    <div class="cell" style="grid-column: 1 / -1"><small>Результат по сделкам</small><b class="num ${!has ? "" : p >= 0 ? "up" : "down"}">${has ? (p >= 0 ? "+" : "−") + "$" + big(Math.abs(p)) : "сделок пока нет"}</b></div></div>
+  cells.push(["Результат по сделкам", has ? `<span class="${p >= 0 ? "up" : "down"}">${(p >= 0 ? "+" : "−") + "$" + big(Math.abs(p))}</span>` : "сделок пока нет"]);
+  return `<h3>Мой счёт</h3><dl class="stmt">${cells.map(([a, b]) => `<div><dt>${a}</dt><dd class="num">${b}</dd></div>`).join("")}</dl>
     <div class="row2"><button class="btn main" onclick="startScan('${esc(i.symbol)}')">Скриншот сделки</button><button class="btn" onclick="tradeForm({ symbol: '${esc(i.symbol)}' })">Вручную</button></div>
     <div id="trades"></div>`;
 }
@@ -540,10 +549,10 @@ function openTicker(symbol) {
   const price = i.price ? Number(i.price).toLocaleString("ru-RU", { maximumSignificantDigits: 6 }) + " " + esc(i.currency || "") : esc(i.name || "");
   openSheet(`<div class="head"><div><div class="title">${esc(short(symbol))}</div><div class="price num">${price} · ${esc(i.strategy_name)}</div></div>
       <button class="icon" onclick="removeTicker('${s}')" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3"/></svg></button></div>
-    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + wickCard(i) + pxBox(s) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i) + position(i)}
+    ${i.error ? `<div class="note warn">${esc(i.error)}</div>` : actionCard(i) + wickCard(i) + position(i) + pxBox(s) + `<h3>Доходность на истории</h3><div id="hist"><div class="hint">Считаю…</div></div>` + market(i)}
     <h3>Стратегии на истории</h3><div id="strats"><div class="hint">Считаю историю…</div></div>
     ${i.has_margin ? `<h3>Где покупаю</h3><div class="pills" id="fMode">${[["spot", "Спот"], ["margin", "Маржа на споте"], ["perp", "Перпы"]].map(([k, n]) => `<button class="pill ${i.mode === k ? "on" : ""}" onclick="saveMode('${s}', '${k}')">${n}</button>`).join("")}</div>
-    <div class="note">${i.mode === "perp" ? "Перпы (Bybit): вся позиция — лонг-перп, залог — ваш USDT на том же счёте. Плечо на сигналах ×1,45 (на дне ×2). Открытие — от большего из $5 и 0,01 монеты: мелкие взносы копятся. Продажа — шагом 0,01 монеты. Держите все монеты-перпы на одном счёте." : i.mode === "margin" ? "Маржа на споте: дно 25% резерва с плечом ×2, паника — доли ×2 с плечом ×1,45, разворот — весь резерв с плечом ×1,45; сделки дна, паники и продаж — половина сегодня, половина завтра; продажи сначала гасят долг." : "Спот: только свои деньги, без плеча."}</div>` : ""}
+    <div class="note">${i.mode === "perp" ? "Перпы на Bybit: вся позиция в лонг-перпе, залог в USDT на том же счёте. Плечо на сигналах ×1,45, на дне ×2. Открыть можно от $5 или 0,01 монеты, смотря что больше, поэтому мелкие взносы копятся. Продажа шагом 0,01 монеты. Все перпы держите на одном счёте." : i.mode === "margin" ? "Маржа на споте: плечо на сигналах ×1,45, на дне ×2, в обычные дни без плеча. Покупки на дне и панике и продажи делятся пополам на два дня. Продажа сначала гасит долг. Минимум сделки $1." : "Спот: только свои деньги, без плеча."}</div>` : ""}
     <h3>Ежедневный взнос</h3><div class="field"><span>$</span><input id="unitIn" type="number" inputmode="decimal" min="1" value="${i.custom_unit ?? ""}" placeholder="${num(state.unit)}" onchange="saveUnit('${s}')"><em>в день</em></div>`);
   trades(symbol); strategies(symbol); histBox(symbol); drawPx(symbol);
 }
@@ -664,7 +673,7 @@ async function histBox(symbol) {
     box.innerHTML = `<div class="hist"><div class="hr hh"><span>Старт</span><span>Вложено</span><span>Стратегия</span><span>DCA</span></div>${r.rows.map((x) => { const s = pc(x.val, x.inv), d = pc(x.dca, x.inv);
       return `<div class="hr hx" onclick="toggleHist(this, '${esc(symbol)}', ${x.y || 0})"><span>${x.lab} <i class="hx-a">▾</i><small>с ${new Date(x.from + "T00:00:00Z").toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</small></span><span class="num">$${big(x.inv)}</span>
         <span class="num ${s >= d ? "up" : "down"}"><b>$${big(x.val)}</b><small>${sg(s)}</small></span><span class="num">$${big(x.dca)}<small>${sg(d)}</small></span></div>`; }).join("")}</div>
-      <div class="note">Взнос $${num(r.unit)} в день, стратегия ${esc(r.strategy)} без плеча. Старты каждые 30 дней за 3 года: лучше DCA в ${r.beat} из ${r.starts}, в минусе ${r.loss}. Это прошлое, не обещание.</div>`;
+      <div class="note">$${num(r.unit)} в день, ${esc(r.strategy)}, без плеча. Старты раз в 30 дней за 3 года: лучше DCA в ${r.beat} из ${r.starts}, в минусе ${r.loss}. Прошлое, а не обещание.</div>`;
   } catch (e) { box.innerHTML = ""; }
 }
 async function strategies(symbol) {
