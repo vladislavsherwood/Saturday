@@ -89,7 +89,7 @@ const polM = (o = {}) => ({ ...polW, c7_act: mkAct(o) });
 function coreNoThr() { const Q = L.clone(core); Q.rules = core.rules.filter((r) => !r.thr); return Q; }
 
 // ---------- отчёт ----------
-const run = (nm, S, pol = polW, o = {}) => O.run(nm, S, pol, o);
+const run = (nm, S, pol = polW, o = {}) => { if (S.rules.some((r) => r.f) && !(pol && pol.c7_act) && !o.raw) throw new Error('ядро/мини без множителя: передайте polM/polM2 (или o.raw)'); return O.run(nm, S, pol, o); };
 const sg = O.sg, L1 = O.L1, G3 = O.G3;
 const MINE = O.MINE, BY = O.BY, E = O.E;
 function mine(S, pol = polW, S0 = S7, pol0 = polW) { return MINE.map((nm) => { const X = BY[nm]; if (!X) return { nm, miss: 1 }; return { nm, b: E(X, S0, pol0), x: E(X, S, pol) }; }); }

@@ -7,4 +7,4 @@ console.log('ядро множителя‑политики:', C.core.rules.leng
 O.base('c6'); C.run('combo7 к combo6', C.S7);
 O.base('c7'); C.run('combo7 к combo7', C.S7);
 C.run('ядро 64 + множитель (как combo7)', C.core, C.polM());
-const t = Date.now(); C.run('ядро без множителя', C.core, C.polW); console.log('время прогона', Date.now() - t, 'мс');
+const t = Date.now(); C.run('ядро без множителя', C.core, C.polW, { raw: 1 }); console.log('время прогона', Date.now() - t, 'мс');

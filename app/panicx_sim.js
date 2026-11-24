@@ -73,7 +73,7 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     const ev = w.every || 1, jj = ev > 1 ? j - ((I.t[j] + (w.phase || 0)) % ev) : j, j0 = Math.max(0, jj), cl = w.mode === 'close', tt = w.tt || 0;
     if (jj !== wk.jj) { // новое окно заявок: выставлены после закрытия дня jj
       wk.jj = jj; wk.ref = w.ref ? w.ref(X, j0) : c[j0]; wk.lv = typeof w.lv === 'function' ? w.lv(X, j0) : w.lv; wk.done = new Uint8Array(wk.lv.length);
-      const mu = w.mult ? w.mult(X, j0) : 1; wk.mu = mu;
+      const mu = (w.mult ? w.mult(X, j0) : 1) * (pol.c7_wick ? pol.c7_wick({ X, j: j0, cash, units, p: c[j0] }) : 1); wk.mu = mu; // c7: pol.c7_wick(ctx) → множитель долей окна по состоянию счёта (без поля — 1)
       if (w.size === 'place') {
         wk.base = before; wk.amt = wk.lv.map(([, fr]) => fr * mu * before);
         if (w.min) { const mn = (q) => (typeof w.min === 'function' ? w.min(X, wk.ref * (1 - wk.lv[q][0])) : w.min), n = wk.lv.length, ord = w.merge === 'up' ? [...Array(n).keys()].reverse() : [...Array(n).keys()];

@@ -8,7 +8,7 @@ const sg = C.sg;
 const line = (r) => `${sg(r.dseg.all)} к${sg(r.dseg.big)} а${sg(r.dseg.alt)} м${sg(r.dseg.meme)} ${r.w ? '✗' : '✔'} | 100н ${sg(r.n100.m)} ${r.n100.u}/${r.n100.d} | пол ${sg(r.hv.h1)}/${sg(r.hv.h2)}`;
 if (mode === 'abl') {
   const out = [];
-  const go = (nm, S, pol) => { const r = C.run(nm, S, pol, { quiet: true }); out.push([nm, r]); console.log(`${nm.padEnd(52)} ${line(r)}`); };
+  const go = (nm, S, pol) => { const r = C.run(nm, S, pol, { quiet: true, raw: 1 }); out.push([nm, r]); console.log(`${nm.padEnd(52)} ${line(r)}`); };
   console.log('=== слои (без слоя: множитель выключен; к combo7) ===');
   go('без К1 (золото: покупки ×1,5)', C.core, C.polM({ k1: 0 }));
   go('без К4 (золото: страх ×1,5)', C.core, C.polM({ k4: 0 }));
