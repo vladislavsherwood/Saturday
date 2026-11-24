@@ -158,7 +158,8 @@ def compute(coins, code=MAIN, B=None):
         # маржа (основная схема combo4: дно 25% ×2, паника доли ×2 с плечом ×1,5, разворот 100% ×1,5, отложенная 50%; сделки дна, паники и продаж 50/50 на два дня)
         pm, dm, _ = defer_plan(AM[:, k], RIM[:, k], isPM, C[:, k], u, upk, pend, first, last)
         m = margin_today(pm, GM[:, k], LM, last)
-        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k, "m": m, "code": code}
+        out[sym] = {"idx": AD.IDX, "plan": plan, "fam": fm, "defer": dflag, "owed": owed_sh, "upk": upk, "usdt": u, "B": B, "k": k, "m": m, "code": code,
+                    "pm": pm, "gm": GM[:, k], "LM": LM}   # план маржи по дням, группа плеча, плечо по группам (для проекций, proj_margin.py)
     return out
 
 
