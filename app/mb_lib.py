@@ -23,6 +23,7 @@ DSEL, DEXAM = M.DSEL, M.DEXAM
 LOGDIR = "/tmp/claude-0/-home-user-Saturday/15711ac5-c34f-5060-9e22-6f2cb5b0f75f/scratchpad/mb"
 Q2M = M.VERS["Q2"]
 R3M = M.VERS["R3"]
+rel = M.rel
 ALLM = ["gold", "silver", "platinum", "palladium", "copper", "aluminum", "nickel", "lead", "zinc", "tin"]
 
 
@@ -322,3 +323,202 @@ def clean(o):
     if isinstance(o, float):
         return None if not np.isfinite(o) else round(o, 3)
     return o
+
+
+# ================= НОВЫЙ ПРОТОКОЛ (указание пользователя): главный период 2005–2026, половины A = 2005–15, B = 2016–26 =================
+A0, B0 = "2005-01-01", "2016-01-01"
+EPIS2 = {"2008": ("2008-07-01", "2009-03-31"), "2011–15": ("2011-04-01", "2015-12-31"), "2020-03": ("2020-02-01", "2020-04-30"),
+         "2022": ("2022-03-01", "2022-10-31"), "2025–26": ("2025-06-01", "2026-11-30")}
+MSEL = A.SEL
+
+
+def _ix(t, s):
+    return int(np.searchsorted(np.asarray(t, "datetime64[ns]"), np.datetime64(s)))
+
+
+def dsegs(X):
+    a, b = _ix(X.t, A0), _ix(X.t, B0)
+    return {"A": (a, b), "B": (b, X.n)}
+
+
+def lsum(v):
+    v = np.nan_to_num(np.asarray(v, float))
+    return float(np.log1p(v / 100).sum() * 100)
+
+
+def dcheck2(MM, fn, ref, keys=DSEL, rate=None, starts=True, episodes_=True, cache=None):
+    """Дневной протокол (2005–26): ячейки металл × половина A/B, сдвиг 1 и 2 дня, без эпизода, старты 2005–2020.
+    rate: None — резерв без дохода; 'tb' — векселя."""
+    o = {"cells": {}, "lag1": [], "lag2": [], "ep": {}, "starts": [], "full": {}}
+    for k in keys:
+        X = MM[k]
+        p, p0 = np.asarray(fn(X), np.float64), np.asarray(ref(X), np.float64)
+        rt = X.ratetb if rate == "tb" else X.rate0
+        sg = dsegs(X)
+        for h, seg in sg.items():
+            if seg[1] - seg[0] < 250:
+                continue
+            o["cells"][(k, h)] = rel(X.run(p, seg, rate=rt)[0], X.run(p0, seg, rate=rt)[0])
+            for lag, key in ((1, "lag1"), (2, "lag2")):
+                o[key].append(rel(X.run(p, seg, lag, rate=rt)[0], X.run(p0, seg, lag, rate=rt)[0]))
+            if episodes_:
+                for nm, (a, b) in EPIS2.items():
+                    w = (X.t >= a) & (X.t <= b)
+                    pe = np.where(w, p0, p)
+                    o["ep"].setdefault(nm, []).append(rel(X.run(pe, seg, rate=rt)[0], X.run(p0, seg, rate=rt)[0]))
+        full = (sg["A"][0], X.n)
+        o["full"][k] = rel(X.run(p, full, rate=rt)[0], X.run(p0, full, rate=rt)[0])
+        if starts:
+            for y in range(2005, 2021):
+                a0 = _ix(X.t, f"{y}-01-01")
+                if X.n - a0 > 250:
+                    o["starts"].append(rel(X.run(p, (a0, X.n), rate=rt)[0], X.run(p0, (a0, X.n), rate=rt)[0]))
+    v = np.array(list(o["cells"].values()))
+    o["n"] = len(v)
+    o["ok"] = int((v >= -0.5).sum())
+    o["worst"] = float(v.min())
+    o["sum"] = lsum(v)
+    o["A"] = lsum([o["cells"][(k, "A")] for k in keys if (k, "A") in o["cells"]])
+    o["B"] = lsum([o["cells"][(k, "B")] for k in keys if (k, "B") in o["cells"]])
+    o["l1"], o["l2"] = lsum(o["lag1"]), lsum(o["lag2"])
+    if episodes_:
+        o["epsum"] = {nm: lsum(v) for nm, v in o["ep"].items()}
+    if starts:
+        s = np.array(o["starts"])
+        o["share"] = float((s >= -0.5).mean() * 100)
+    return o
+
+
+def dok2(o, min_ok=7, min_worst=-3.0, min_sum=4.0):
+    why = []
+    need = min_ok if o["n"] == 8 else int(np.ceil(o["n"] * 7 / 8))
+    if o["ok"] < need:
+        why.append(f"не хуже {o['ok']}/{o['n']}")
+    if o["worst"] < min_worst:
+        why.append(f"худшая {o['worst']:+.1f}")
+    if o["sum"] < min_sum:
+        why.append(f"сумма {o['sum']:+.1f}")
+    if o["A"] < 0 or o["B"] < 0:
+        why.append(f"половины {o['A']:+.1f}/{o['B']:+.1f}")
+    if o["l1"] < 0 or o["l2"] < 0:
+        why.append(f"сдвиг {o['l1']:+.1f}/{o['l2']:+.1f}")
+    if "epsum" in o:
+        bad = [nm for nm, v in o["epsum"].items() if v < 0]
+        if bad:
+            why.append("без эпизода " + ",".join(bad))
+    if "share" in o and o["share"] < 70:
+        why.append(f"старты {o['share']:.0f}%")
+    return not why, "; ".join(why)
+
+
+def dfmt2(o, keys=DSEL):
+    cells = " ".join(f"{NAME[k][:3]} " + "/".join(f"{o['cells'][(k, h)]:+.1f}" if (k, h) in o["cells"] else "—" for h in ("A", "B")) for k in keys)
+    s = f"сумма {o['sum']:+.1f} (A {o['A']:+.1f}, B {o['B']:+.1f}), не хуже {o['ok']}/{o['n']}, худшая {o['worst']:+.1f} | {cells} | сдвиг {o['l1']:+.1f}/{o['l2']:+.1f}"
+    if "epsum" in o:
+        s += " | без эпиз. мин " + f"{min(o['epsum'].values()):+.1f}"
+    if "share" in o:
+        s += f" | старты {o['share']:.0f}%"
+    return s
+
+
+def msegs(d):
+    t = d["t"]
+    return {"A": (_ix(t, A0), _ix(t, B0)), "B": (_ix(t, B0), len(d["c"])), "82": (d["h82"], d["m"]), "65": (_ix(t, "1965-01-01"), d["h82"]),
+            "full05": (_ix(t, A0), len(d["c"]))}
+
+
+def mrun(d, p, seg, lag=0, rate=None):
+    c = d["c"]
+    n = len(c)
+    a0, a1 = seg
+    if a1 - a0 < 24:
+        return np.nan
+    r = np.zeros(n) if rate is None else rate
+    return L.sim(c, np.asarray(p, np.float64), a0, a1, lag, r)[0]
+
+
+def mcheck2(D, fn, ref, keys=MSEL):
+    """Месячный протокол (2005–26) + вторичная проверка 1982–98 / 1965–81."""
+    o = {"cells": {}, "lag1": [], "sec82": {}, "sec65": {}, "full05": {}}
+    for k in keys:
+        d = D[k]
+        p, p0 = np.asarray(fn(d), np.float64), np.asarray(ref(d), np.float64)
+        sg = msegs(d)
+        for h in ("A", "B"):
+            o["cells"][(k, h)] = rel(mrun(d, p, sg[h]), mrun(d, p0, sg[h]))
+            o["lag1"].append(rel(mrun(d, p, sg[h], 1), mrun(d, p0, sg[h], 1)))
+        o["full05"][k] = rel(mrun(d, p, sg["full05"]), mrun(d, p0, sg["full05"]))
+        for key, h in (("sec82", "82"), ("sec65", "65")):
+            e, e0 = mrun(d, p, sg[h]), mrun(d, p0, sg[h])
+            if np.isfinite(e) and np.isfinite(e0):
+                o[key][k] = rel(e, e0)
+    v = np.array(list(o["cells"].values()))
+    o["n"] = len(v)
+    o["ok"] = int((v >= -0.5).sum())
+    o["worst"] = float(np.nanmin(v))
+    o["sum"] = lsum(v)
+    o["A"] = lsum([o["cells"][(k, "A")] for k in keys])
+    o["B"] = lsum([o["cells"][(k, "B")] for k in keys])
+    o["l1"] = lsum(o["lag1"])
+    for key in ("sec82", "sec65"):
+        vv = np.array(list(o[key].values()))
+        o[key + "_sum"] = lsum(vv) if len(vv) else 0.0
+        o[key + "_worst"] = float(vv.min()) if len(vv) else 0.0
+    return o
+
+
+def mok2(o, min_sum=4.0):
+    why = []
+    if o["ok"] < 13:
+        why.append(f"не хуже {o['ok']}/16")
+    if o["worst"] < -5:
+        why.append(f"худшая {o['worst']:+.1f}")
+    if o["sum"] < min_sum:
+        why.append(f"сумма {o['sum']:+.1f}")
+    if o["A"] < 0 or o["B"] < 0:
+        why.append(f"половины {o['A']:+.1f}/{o['B']:+.1f}")
+    if o["l1"] < 0:
+        why.append(f"сдвиг {o['l1']:+.1f}")
+    return not why, "; ".join(why)
+
+
+def msec(o):
+    """Вторичная проверка: (ok, грубый провал, строка)."""
+    bad = []
+    for key, nm in (("sec82", "1982–98"), ("sec65", "1965–81")):
+        if o[key + "_sum"] < -10 or o[key + "_worst"] < -10:
+            bad.append(f"{nm} сумма {o[key + '_sum']:+.1f}, худший {o[key + '_worst']:+.1f}")
+    gross = o["sec82_sum"] < -30 or o["sec65_sum"] < -30
+    return not bad, gross, "; ".join(bad)
+
+
+def mfmt2(o, keys=MSEL):
+    cells = " ".join(f"{NAME[k][:3]} {o['cells'][(k, 'A')]:+.1f}/{o['cells'][(k, 'B')]:+.1f}" for k in keys)
+    return (f"сумма {o['sum']:+.1f} (A {o['A']:+.1f}, B {o['B']:+.1f}), не хуже {o['ok']}/16, худшая {o['worst']:+.1f}, сдвиг {o['l1']:+.1f} | {cells}"
+            f" || втор.: 1982–98 {o['sec82_sum']:+.1f} (худш. {o['sec82_worst']:+.1f}), 1965–81 {o['sec65_sum']:+.1f} (худш. {o['sec65_worst']:+.1f})")
+
+
+def q2var(**kw):
+    """Q2 с изменёнными параметрами r3 (g — доля резерва в месяц серии, k_on, persist и т. д.)."""
+    from metals_agent3_loop5 import cool
+    base = {"hot2": 0.5, **kw}
+    return cool(lambda dd: A.r3(dd, **base), 0.2, 24)
+
+
+def dprec2(MM, fn, keys=DSEL):
+    """Точность докупок в дневной модели на 2005–26 (старт с нуля в 2005)."""
+    out = {}
+    for k in keys:
+        X = MM[k]
+        p = fn(X)
+        a0 = dsegs(X)["A"][0]
+        r = X.run(p, (a0, X.n))
+        out[k] = precision(X.c, r[1], X.t, a0, X.n, 252, 504, 63)
+    return out
+
+
+def fprec2(P, keys=None):
+    keys = keys or list(P)
+    a = agg_prec({k: P[k] for k in keys})
+    return (f"рано {a['early']:.1f}%, к DCA рез. {a['vsdca']:+.1f}% | " +
+            ", ".join(f"{NAME[k][:3]} {P[k]['early']:.0f}/{P[k]['vsdca']:+.0f}" for k in keys if np.isfinite(P[k].get('early', np.nan))))
