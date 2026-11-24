@@ -691,7 +691,16 @@ async function strategies(symbol) {
   let h;
   try { h = await history(symbol); } catch (e) { const b = $("strats"); if (b) b.innerHTML = '<div class="hint">' + esc(e.message) + "</div>"; return; }
   const box = $("strats"); if (!box) return;
-  Explorer.list(box, h, { period: view.period, active: i.strategy, unit: i.unit, onPeriod: (p) => { view.period = p; strategies(symbol); }, onOpen: (code) => openStrategy(symbol, code) });
+  Explorer.list(box, h, { period: view.period, active: i.strategy, unit: i.unit, onPeriod: (p) => { view.period = p; strategies(symbol); }, onOpen: (code) => openStrategy(symbol, code), onSelect: (code) => pickStrategy(symbol, code, (h.strategies.find((x) => x.code === code) || {}).name) });
+}
+// выбор кружком прямо в списке: карточка монеты остаётся на том же месте
+async function pickStrategy(symbol, strategy, name) {
+  haptic("ok");
+  try {
+    await api("/api/tickers/" + encodeURIComponent(symbol), { method: "PATCH", body: JSON.stringify({ strategy }) }); await load();
+    const at = $("sheet").scrollTop; await openTicker(symbol); $("sheet").scrollTop = at; requestAnimationFrame(() => { $("sheet").scrollTop = at; });
+    toast(name ? "Стратегия: " + name : "Стратегия выбрана", true);
+  } catch (e) { toast(e.message); }
 }
 async function openStrategy(symbol, code) {
   const i = state.items.find((x) => x.symbol === symbol), h = await history(symbol);

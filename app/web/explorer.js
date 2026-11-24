@@ -17,7 +17,9 @@
   .ex-row { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; padding: 13px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .ex-row:last-child { border-bottom: 0; }
   .ex-row:active { opacity: .55; }
-  .ex-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--faint); }
+  .ex-pick { width: 44px; height: 44px; margin: -13px -13px; display: grid; place-items: center; border-radius: 50%; background: none; }
+  .ex-pick:active .ex-dot { transform: scale(.82); } .ex-pick:disabled { pointer-events: none; }
+  .ex-dot { display: block; box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--faint); transition: border-width .15s ease, border-color .15s ease, transform .12s ease; }
   .ex-row.on .ex-dot { border: 6px solid var(--text); }
   .ex-name { font-weight: 750; font-size: 17px; }
   .ex-delta { font-size: 13px; font-weight: 700; margin-top: 1px; color: var(--mute); }
@@ -226,12 +228,14 @@
     el.innerHTML = '<div class="ex">' + seg(period, h) + head.concat(rest).map(({ st, s }) => {
       const d = s.edge, cls = st.code === "dca" || d == null || Math.abs(d) < 0.05 ? "" : d > 0 ? "up" : "down";
       const delta = st.code === "dca" ? "эталон" : d == null ? "—" : pct(d, true).replace("%", " п.п.") + " к DCA";
-      return `<div class="ex-row ${st.code === o.active ? "on" : ""}" data-code="${st.code}"><div class="ex-dot"></div>
+      return `<div class="ex-row ${st.code === o.active ? "on" : ""}" data-code="${st.code}"><button class="ex-pick" data-pick="${st.code}" role="radio" aria-checked="${st.code === o.active}" aria-label="Выбрать: ${esc(st.name)}"${o.onSelect ? "" : " disabled"}><span class="ex-dot"></span></button>
         <div><div class="ex-name">${esc(st.name)}</div><div class="ex-delta ${cls}">${delta}</div></div>
         <div class="ex-ret">${pct(s.irr, true)}<small>${money(s.pnl, true)}</small></div></div>`;
     }).join("") + "</div>";
     el.querySelectorAll("[data-period]").forEach((b) => b.addEventListener("click", () => o.onPeriod && o.onPeriod(b.dataset.period)));
     el.querySelectorAll("[data-code]").forEach((r) => r.addEventListener("click", () => o.onOpen && o.onOpen(r.dataset.code)));
+    // кружок слева выбирает стратегию сразу; остальная строка по-прежнему открывает её разбор
+    el.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); if (o.onSelect && b.dataset.pick !== o.active) o.onSelect(b.dataset.pick); }));
   }
 
   /* ---------- свечи с отметками сделок ---------- */
