@@ -27,6 +27,8 @@ const sma200 = (() => { const v = DX.c, o = v.map(() => NaN); let s = 0; for (le
 const MC = { c7_dxy90: chg(dxc, 90), c7_dxy30: chg(dxc, 30), c7_tnx90: chg(tnc, 90, 1), c7_tnx30: chg(tnc, 30, 1), c7_dxy200: sma200 };
 const at = (a, t) => { const i = t - TT0; return i >= 0 && i < NT ? a[i] : NaN; };
 for (const k in MC) L.addInd(k, (X) => Float64Array.from(X.ind.t, (t) => at(MC[k], t)));
+// k4_mvmin180 — минимум MVRV BTC за 180 прошлых дней (рынок; NaN → 9): «капитуляция была недавно», если < 1 (правило «К4 и цикл», research/k4_cycle.md)
+L.addInd('k4_mvmin180', (X) => { const v = X.ind.mvrv, o = new Float64Array(X.n); for (let i = 0; i < X.n; i++) { let m = Infinity; for (let k = Math.max(0, i - 179); k <= i; k++) if (isFinite(v[k]) && v[k] < m) m = v[k]; o[i] = m === Infinity ? 9 : m; } return o; });
 
 // ---------- семьи правил combo7 ----------
 const has = (r, ind) => r.conds.some((x) => x.ind === ind);

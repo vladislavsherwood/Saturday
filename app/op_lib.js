@@ -24,7 +24,8 @@ const A = require('./au_lib.js');
 const { L, P, G, c, S6, polW, T, day } = A;
 L.addInd('agau30', (X) => Float64Array.from(X.ind.ag_r30, (v, i) => v - X.ind.au_r30[i]));
 const ld = (f) => ({ ...L.clone(), rules: require('./found/' + f).rules.map((r) => JSON.parse(JSON.stringify(r))) });
-const S7 = ld('combo7-draft.json');
+// combo7 = основа исследований op/c7: версия 1 (133 правила, до c7-best); текущий черновик — C7_BASE=combo7-draft.json
+const S7 = ld(process.env.C7_BASE || 'combo7-v1.json');
 let BASE = 'c6';
 function base(k = 'c6') { BASE = k; P.setBaseline(k === 'c7' ? S7 : S6, polW); return k === 'c7' ? S7 : S6; }
 const SB = () => (BASE === 'c7' ? S7 : S6);

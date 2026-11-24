@@ -36,6 +36,7 @@ _os = {s: pd.Series(v["c"], index=pd.to_datetime(v["d"])) for s, v in _om.items(
 _AU["op_vvix"] = _f(_os["^VVIX"])
 _dv = _f(_os["DVOL_BTC"])
 _AU["op_dvp"] = _dv.rolling(365, min_periods=365).apply(lambda w: (w <= w[-1]).mean(), raw=True)
+_AU["k4_mvmin180"] = _f(_MV).rolling(180, min_periods=1).min().fillna(9.0)  # «К4 и цикл»: минимум MVRV BTC за 180 дней (как c7_lib.js)
 
 
 def _ind_h2(self, k):
