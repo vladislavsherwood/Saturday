@@ -136,7 +136,9 @@ function edge(X, S, lag, part = 'full', rec = false, pol = null) {
     if (h1 && h1.grow) cash *= h1.grow(X, i, h1s); // h1: доход / форма хранения резерва
     const q = j >= 0 ? decide(R, j) : -2, before = cash;
     const a0_ = q >= 0 ? R[q].act : q === -2 ? 1 : S.base;
-    const a = hvS && q >= 0 && a0_ < 0 ? Math.max(-1, Math.min(0, hvS({ X, i, j, a: a0_, q, r: R[q].r, p, units, cash, s: hvs }))) : a0_; // hv2
+    const a1_ = hvS && q >= 0 && a0_ < 0 ? Math.max(-1, Math.min(0, hvS({ X, i, j, a: a0_, q, r: R[q].r, p, units, cash, s: hvs }))) : a0_; // hv2
+    // c7 (2026-11-24): pol.c7_act(ctx) → новая доля сработавшего правила q (множитель-политика вместо копий правил); ctx = { X, i, j, a, q, r }. Без поля — как раньше.
+    const a = pol && pol.c7_act && q >= 0 ? pol.c7_act({ X, i, j, a: a1_, q, r: R[q].r }) : a1_;
     cash += UNIT;
     if (pol && j >= 0 && I.pday[j] === 1 && st.ep !== j) st = { owed: 0, spent: 0, r0: before, ep: j, oo: st.oo || 0 };
     if (wk && wk.lots.length) { // wk: выход из фитильных покупок лимитом на продажу (исполняется внутри дня, до сделки правила)
