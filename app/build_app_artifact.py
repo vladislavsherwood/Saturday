@@ -37,8 +37,9 @@ def build_snap():
     # combo4 (итоговая): план с отложенной паникой из app_combo4 — та же логика, что проверена в бэктестах и марже
     import app_combo4 as C4
     lst = [(s, c["kind"]) for s, c in coins.items()]
-    R6 = C4.compute(lst, "combo6")
-    B0 = next(iter(R6.values()))["B"] if R6 else None
+    R7 = C4.compute(lst, "combo7")   # основная с 25.11.2026
+    B0 = next(iter(R7.values()))["B"] if R7 else None
+    R6 = C4.compute(lst, "combo6", B=B0) if R7 else {}
     R = C4.compute(lst, "combo5", B=B0) if R6 else {}
     R4 = C4.compute(lst, "combo4", B=B0) if R6 else {}
     cache = {}
@@ -59,11 +60,17 @@ def build_snap():
         e4 = min(C4.edge(h["c"], lo, st4["plan"], None, lag) for lag in (0, 1)) if st4 else None
         st["vs"] = {"combo5": round(e5, 1), "combo4": None if e4 is None else round(e4, 1), "better": e4 is None or e5 > e4}
         st6 = C4.strategy(s, c["h"], R6[s], ind) if s in R6 else None
+        st7 = C4.strategy(s, c["h"], R7[s], ind) if s in R7 else None
         c["h"]["strategies"].insert(0, st)
         if st4: c["h"]["strategies"].insert(1, st4)
         if st6:
             c["h"]["strategies"].insert(0, st6)
             print(f"{s}: combo6 сегодня {st6['plan_today']:+.3f} — {st6['action']}")
+        if st7:
+            e7 = min(C4.edge(h["c"], lo, st7["plan"], wk, lag) for lag in (0, 1)); e6 = min(C4.edge(h["c"], lo, st6["plan"], wk, lag) for lag in (0, 1)) if st6 else None
+            st7["vs"] = {"combo7": round(e7, 1), "combo6": None if e6 is None else round(e6, 1)}
+            c["h"]["strategies"].insert(0, st7)
+            print(f"{s}: combo7 сегодня {st7['plan_today']:+.3f} — {st7['action']} | история к DCA: combo7 {e7:+.0f}% · combo6 {e6:+.0f}%")
         print(f"{s}: {st['code']} сегодня {st['plan_today']:+.3f} — {st['action']} | {st['label']} | история к DCA: combo5 {e5:+.0f}% · combo4 {e4:+.0f}% → {'combo5' if st['vs']['better'] else 'combo4'}")
     return {"as_of": max(c["h"]["as_of"] for c in coins.values()), "coins": coins}
 

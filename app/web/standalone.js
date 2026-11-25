@@ -9,7 +9,7 @@ const coin = (s) => SNAP.coins[s];
 const modeOf = (t) => t.mode || (t.margin ? "margin" : "spot");   // режим исполнения монеты: спот / маржа на споте / перпы
 // combo5 — там, где на истории монеты она лучше combo4 (st.vs.better считается при сборке), иначе combo4
 const best5 = (symbol) => { const x = coin(symbol).h.strategies.find((q) => q.code === "combo5"); return !!x && (!x.vs || x.vs.better); };
-const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo6") ? "combo6" : best5(symbol) ? "combo5" : codes.includes("combo4") ? "combo4" : codes.includes("combo5") ? "combo5" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
+const fresh = (symbol) => { const k = coin(symbol), codes = k.h.strategies.map((x) => x.code); return { symbol, name: k.name, kind: k.kind, strategy: codes.includes("combo7") ? "combo7" : codes.includes("combo6") ? "combo6" : best5(symbol) ? "combo5" : codes.includes("combo4") ? "combo4" : codes.includes("combo5") ? "combo5" : codes.includes("main") ? "main" : codes.includes("quiet") ? "quiet" : "dca", unit: null, since: todayStr() }; };
 
 async function boot() {
   try {
@@ -24,7 +24,7 @@ async function boot() {
     if (col) {
       const snap = await Promise.race([col.get(), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 10000))]);
       for (const d of snap.docs) { const raw = d.data(); if (!raw) continue; const v = JSON.parse(JSON.stringify(raw));   // копия: данные из хранилища нельзя менять на месте
-        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; mem.mig11 = v.mig11 || null; mem.mig12 = v.mig12 || null; mem.mig13 = v.mig13 || null; mem.mig14 = v.mig14 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
+        if (d.id === "cfg") { mem.unit = v.unit || 10; mem.tickers = v.tickers || null; mem.mig = v.mig || null; mem.mig2 = v.mig2 || null; mem.mig3 = v.mig3 || null; mem.mig4 = v.mig4 || null; mem.mig5 = v.mig5 || null; mem.mig6 = v.mig6 || null; mem.mig7 = v.mig7 || null; mem.mig8 = v.mig8 || null; mem.mig9 = v.mig9 || null; mem.mig10 = v.mig10 || null; mem.mig11 = v.mig11 || null; mem.mig12 = v.mig12 || null; mem.mig13 = v.mig13 || null; mem.mig14 = v.mig14 || null; mem.mig15 = v.mig15 || null; } else if (d.id.startsWith("t")) mem.trades.push({ ...v, id: +d.id.slice(1) }); }
     } else { const v = JSON.parse(localStorage.getItem(LS) || "null"); if (v) Object.assign(mem, v); }
   } catch (e) { /* пустое или недоступное хранилище — работаем с набором по умолчанию */ }
   if (!mem.tickers) mem.tickers = DEFAULTS.filter(coin).map(fresh);
@@ -126,9 +126,15 @@ async function boot() {
     mem.mig14 = "combo6-margin";
     try { await saveCfg(); } catch (e) {}
   }
+  // один раз (по просьбе пользователя, 25.11.2026): все монеты на combo7; режим (маржа / перп) не меняется
+  if (mem.mig15 !== "combo7") {
+    for (const t of mem.tickers) if (coin(t.symbol).h.strategies.some((x) => x.code === "combo7")) t.strategy = "combo7";
+    mem.mig15 = "combo7";
+    try { await saveCfg(); } catch (e) {}
+  }
 }
 async function saveCfg() {
-  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null, mig11: mem.mig11 || null, mig12: mem.mig12 || null, mig13: mem.mig13 || null, mig14: mem.mig14 || null });
+  if (col) await col.doc("cfg").set({ unit: mem.unit, tickers: mem.tickers, mig: mem.mig || null, mig2: mem.mig2 || null, mig3: mem.mig3 || null, mig4: mem.mig4 || null, mig5: mem.mig5 || null, mig6: mem.mig6 || null, mig7: mem.mig7 || null, mig8: mem.mig8 || null, mig9: mem.mig9 || null, mig10: mem.mig10 || null, mig11: mem.mig11 || null, mig12: mem.mig12 || null, mig13: mem.mig13 || null, mig14: mem.mig14 || null, mig15: mem.mig15 || null });
   else try { localStorage.setItem(LS, JSON.stringify(mem)); } catch (e) {}
 }
 async function storeTrade(t) { mem.trades.push(t); if (col) { const { id, ...row } = t; await col.doc("t" + id).set(row); } else await saveCfg(); }
@@ -157,7 +163,7 @@ function owed(t, st, h, day, unit) {
   for (let d = start; d <= end; d++) {
     if (d === end) prior = p;   // что оставалось к покупке за прошлые дни, до сегодняшнего взноса
     const i = d > tl ? last + 1 : h.t[last - (tl - d)] === d ? last - (tl - d) : h.t.lastIndexOf(d);   // дни идут подряд; на случай пропуска — поиск
-    if ((i > 0 ? st.plan[Math.min(i, st.plan.length) - 1] : 1) > 0) p += unit;
+    if ((i > 0 ? st.plan[Math.min(i, st.plan.length) - 1] : 1) >= 1 - 1e-9) p += unit;   // продажа и «копить» (combo7: 0 < план < 1) — взнос в резерв
     p = Math.max(0, p - (got[d] || 0));
   }
   return { due: p, prior };
@@ -185,6 +191,7 @@ function today() {
           minOpen = Math.max(5, 0.01 * h.price);
           const pd = bk.lastBuy ? Math.round((Date.parse(day) - Date.parse(bk.lastBuy)) / 864e5) : days, pending = Math.min(reserve, unit * Math.max(1, pd)), base = Math.max(0, reserve - pending); due = pending;
           if (m.sf > 0) { const sq = m.sf * qty >= qty * 0.999 ? qty : Math.floor((m.sf * qty) / 0.01 + 1e-9) * 0.01; a = -m.sf; amount = -sq * h.price; repaid = qty > 0 ? (sq / qty) * debt : 0; small = sq <= 0 && qty > 0; }
+          else if (m.keep) { amount = 0; a = 1e-6; }   // combo7 К-V: VVIX выше 120 — взнос не покупать, копить в резерв
           else { const want = pending + m.es * base, own = Math.min(reserve, want); borrowed = want > 0 ? (m.bu * pending + m.bs * base) * own / want : 0; a = 1 + m.es;
             if (own + borrowed < minOpen) { wait = { have: r2(own + borrowed), need: r2(minOpen) }; amount = 0; borrowed = 0; } else amount = own + borrowed; }
         } else if (m.sf > 0) { a = -m.sf; amount = -m.sf * qty * h.price; repaid = m.sf * debt; }
@@ -199,7 +206,7 @@ function today() {
         // открытия); доля сигнала считается от остального резерва. Если всё покупалось вовремя и полностью — прежняя сумма.
         const ow = owed(t, st, h, day, unit), pending = Math.min(reserve, ow.due), base = Math.max(0, reserve - pending); due = pending;
         // уже покупал сегодня — к покупке остаётся только недокупленный взнос (долю сигнала второй раз не предлагаем)
-        amount = bk.today > 0 ? pending : Math.min(reserve, pending + (a - 1) * base);
+        amount = bk.today > 0 ? pending : Math.min(reserve, pending + Math.max(0, a - 1) * base);
         missedAmt = bk.today > 0 ? 0 : Math.max(0, pending - Math.min(reserve, unit)); missed = missedAmt >= 0.005 ? 1 : 0;
         if (bk.today > 0 && amount >= MIN_ORDER) partial = bk.today;
         // сегодняшняя покупка закрыла то, что оставалось за прошлые дни (с точностью до нескольких центов): значит, к покупке

@@ -12,10 +12,11 @@ import combo2_margin  # noqa: F401  регистрирует индикатор�
 import agent4d_margin as AD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SPECS = {code: json.load(open(os.path.join(HERE, "found", f"{code}-best.json"))) for code in ("combo6", "combo5", "combo4")}   # combo6 — основная, combo5 и combo4 — прежние
-MAIN = "combo6"
+SPECS = {code: json.load(open(os.path.join(HERE, "found", f"{code}-best.json"))) for code in ("combo6", "combo5", "combo4")}   # combo6, combo5 и combo4 — прежние
+SPECS["combo7"] = json.load(open(os.path.join(HERE, "found", "combo7-draft.json")))   # основная с 25.11.2026: combo6 + металлы К1/К4 + опционы К-V/К-D + К-D на эйфорию + К4 и цикл
+MAIN = "combo7"
 S4 = SPECS[MAIN]
-WICK = S4["wick"]
+WICK = SPECS["combo6"]["wick"]   # фитиль у combo6 и combo7 одинаковый
 _ind_prev = AD.Book.ind
 
 
@@ -33,6 +34,10 @@ def _ind_h2(self, k):
         close = self.I[k][0]; lr = np.log(close).diff()
         v90 = lr.rolling(90, min_periods=72).std(ddof=0) * np.sqrt(365) * 100
         I["hvv"] = I["vol180"].where(np.isfinite(I["vol180"]), v90) if "vol180" in I else v90
+    if "au_r30" not in I:   # combo7: золото, серебро, VVIX, DVOL, MVRV за 180 дней (mkt7.py, как c7_margin.py)
+        import mkt7
+        for nm, sr in mkt7.series().items():
+            I[nm] = sr.reindex(I["fng"].index)
     return I
 
 
@@ -97,8 +102,11 @@ def defer_plan(Ak, RIk, isP, Ck, u, upk, pend, first, last):
             rel = 0.0
             if owed > 0 and (upk[t] < RV or pend[t]):
                 rel = owed * (MULT if upk[t] < RV else 1.0); owed = 0.0; dflag[t] = 2
-            amt = min(r, 1.0 + extra + rel); units += amt * 0.999 / p; r -= amt
-            if before > 1e-9 and a > 0: plan[t] = 1.0 + (amt - 1.0) / before
+            if 0 < a < 1 and rel == 0:   # combo7 К-V: доля взноса (1e-6 — взнос копится в резерв), как panicx_sim
+                amt = min(r, a); units += amt * 0.999 / p; r -= amt
+            else:
+                amt = min(r, 1.0 + extra + rel); units += amt * 0.999 / p; r -= amt
+                if before > 1e-9 and a > 0: plan[t] = 1.0 + (amt - 1.0) / before
         if pend[t]: owed = 0.0
         owed_sh[t] = owed / r if r > 1e-9 else 0.0
     return plan, dflag, owed_sh
@@ -112,14 +120,19 @@ def margin_today(pm, Gk, LM, t):
     sf = 0.0; es = 0.0; bu = 0.0; bs = 0.0
     if a < 0: sf += -a * (0.5 if SPLIT[g] else 1.0)
     if ap < 0 and SPLIT[gp]: sf += -ap * 0.5                      # вторая половина вчерашней продажи
-    if a >= 0:
+    if 0 < a < 1:   # combo7 К-V: взнос не покупать — копить в резерв (без займа)
+        a = 0.0; keep = True
+    else:
+        keep = False
+    if a >= 0 and not keep:
         bu = max(0.0, L(g) - 1)
+    if a >= 0:
         if a > 1:
             part = (a - 1) * (0.5 if SPLIT[g] else 1.0); es += part; bs += max(0.0, L(g) - 1) * part
         if ap > 1 and SPLIT[gp]:                                  # вторая половина вчерашней покупки (в день продажи пропадает)
             part = (ap - 1) * 0.5; es += part; bs += max(0.0, L(gp) - 1) * part
     lev = max([L(g)] + ([L(gp)] if (ap > 1 and SPLIT[gp]) else []))
-    return {"es": round(es, 6), "bu": round(bu, 6), "bs": round(bs, 6), "sf": round(min(1.0, sf), 6), "lev": lev, "a": round(a, 6)}
+    return {"es": round(es, 6), "bu": round(bu, 6), "bs": round(bs, 6), "sf": round(min(1.0, sf), 6), "lev": lev, "a": round(a, 6), "keep": keep}
 
 
 def compute(coins, code=MAIN, B=None):
@@ -177,7 +190,7 @@ def strategy(sym, h, R, ind):
     acts = "".join(codes[int(x) + 3] for x in np.select([np.array(plan) <= -1, np.array(plan) <= -0.3, np.array(plan) < 0, np.array(plan) >= 2, np.array(plan) > 1], [-3, -2, -1, 3, 2], default=1))
     if d == 1: action = "копим: сегодня только обычный взнос, доля резерва откладывается до разворота USDT"
     elif d == 2: action = "разворот USDT: покупаем отложенное ×2 сверх взноса"
-    elif f >= 0: action = FAM[f] + (f" — продать {abs(a) * 100:.0f}%" if a < 0 else f" — взнос и {(a - 1) * 100:.0f}% резерва" if a > 1 else " — только взнос, на страхе не продаём" if f == 15 else " — только взнос")
+    elif f >= 0: action = FAM[f] + (f" — продать {abs(a) * 100:.0f}%" if a < 0 else f" — взнос и {(a - 1) * 100:.0f}% резерва" if a > 1 else " — взнос не покупать, копить в резерв (VVIX выше 120)" if 0 < a < 1 - 1e-9 else " — только взнос, на страхе не продаём" if f == 15 else " — только взнос")
     else: action = "обычный взнос"
     beta = ind("beta180", li)
     label = (f"бета к BTC {beta:.2f}".replace(".", ",") + (" (ходит с рынком)" if beta >= 0.9 else " (слабо связана с рынком)" if beta < 0.5 else "")) if beta is not None else ""
@@ -187,6 +200,11 @@ def strategy(sym, h, R, ind):
     mm = R["m"]
     if code == "combo4":
         return {"fam": fams, "m": mm, "code": "combo4", "name": "combo4", "about": "Прежняя итоговая стратегия: 57 правил (дно, ликвидации, паника, разворот, продажи на страхе и вершинах, эйфория в стейблах) + отложенная паника. Без удержания после капитуляции и без лимиток на фитиль.",
+                "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
+                "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
+    if code == "combo7":
+        return {"fam": fams, "m": mm, "code": "combo7", "name": "combo7", "about": "Итоговая стратегия: combo6 + золото и серебро (паника при серебре, отстающем от золота, — доля резерва ×1,5; страх при растущем золоте — продажа ×1,5, у крупных монет — не в первые полгода после капитуляции) + опционы (VVIX выше 120 — перегретый фандинг не продаёт, взнос копится; дешёвые опционы BTC — продажи у вершины и в памп ×1,5, на эйфории у некрупных ×2). Фитиль и отложенная паника — как в combo6.",
+                "wick": {"lv": [[-float(k), float(f)] for k, f in zip(WICK["levels"], WICK["fractions_of_reserve"])], "every": int(WICK["every_days"]), "age": int(WICK["coin_age_min_days"])},
                 "acts": acts, "today": int(codes.index(acts[-1]) - 3), "plan": plan, "plan_today": a, "label": label, "action": action,
                 "rule": FAM.index("Паника в стейблах") if d else f, "state": st}
     if code == "combo6":
@@ -211,10 +229,26 @@ def state(ind, i, R, code=MAIN):
                 "week": None if w is None else round(w, 3)}
     upk = R["upk"]
     # combo6: у волатильной некрупной монеты продажи у вершины ×1,5 (hvv > 110) / ×2 (> 130), порог пампа +275% / +250% вместо +300%
-    hv, big = (ind("hvv", i), ind("isbig", i)) if code == "combo6" else (None, None)
+    hv, big = (ind("hvv", i), ind("isbig", i)) if code in ("combo6", "combo7") else (None, None)
     vm = 1.0 if hv is None or (big is not None and big > 0.5) else 2.0 if hv > 130 else 1.5 if hv > 110 else 1.0
     pt = {2.0: 250, 1.5: 275}.get(vm, 300)
-    vx = "" if code != "combo6" else f" (у этой монеты сейчас ×{vm:g} — волатильная)".replace(".", ",") if vm > 1 else ""
+    vx = "" if code not in ("combo6", "combo7") else f" (у этой монеты сейчас ×{vm:g} — волатильная)".replace(".", ",") if vm > 1 else ""
+    # combo7: слои-множители (металлы, опционы) — подпись к действию карточки с текущим значением
+    L7 = {}
+    if code == "combo7":
+        z = lambda x, d=1: f"{x:+.{d}f}".replace(".", ",").replace("-", "−") if x is not None else "нет данных"  # noqa: E731
+        on = lambda b: " — действует" if b else ""  # noqa: E731
+        ag, au, vv, dp, mv, age = (ind(k, i) for k in ("agau30", "au_r30", "op_vvix", "op_dvp", "k4_mvmin180", "age"))
+        old = age is not None and age > 365
+        k1 = f"; ×1,5, если серебро за 30 дней хуже золота на 6 п.п. и больше (сейчас {z(ag)}){on(old and ag is not None and ag < -6)}"
+        k4ok = old and au is not None and au > 3 and not (big is not None and big > 0.5 and mv is not None and mv < 1)
+        k4 = f"; ×1,5, если золото за 30 дней выросло на 3% и больше (сейчас {z(au)}%; у крупных — не в первые полгода после капитуляции){on(k4ok)}"
+        kv = f"; не продавать и копить взнос, если VVIX выше 120 (сейчас {vv:.0f}){on(vv is not None and vv > 120)}" if vv is not None else ""
+        cheap = dp is not None and dp < 0.3
+        kd = f"; ×1,5, если опционы BTC дешёвые — DVOL в нижних 30% года (сейчас {dp * 100:.0f}%){on(cheap)}" if dp is not None else ""
+        ke = f"; ×2 у некрупных, если DVOL в нижних 30% года (сейчас {dp * 100:.0f}%){on(cheap and not (big is not None and big > 0.5))}" if dp is not None else ""
+        L7 = {"Капитуляция": k1, "Отложенная покупка после выноса": k1, "Волна ликвидаций": k1, "Паника в стейблах": k1, "Сильный страх": k4, "Страх": k4,
+              "Перегретый фандинг": kv, "Широкая тихая вершина": kd, "Памп в медвежьем рынке": kd, "Эйфория в стейблах": ke}
     rows = [
         ("Капитуляция", "взнос + 25% резерва", "buy", "Страх и жадность ниже 10 — паника на пике.", [c("Страх и жадность", "fng", "<", 10, 0, 100)]),
         ("Отложенная покупка после выноса", "взнос + 50% резерва", "buy", "После волны ликвидаций OI восстановился, а лонги вернулись — дно позади.", [c("Сигнал отложенной покупки", "dly20_100f", ">", 0.5, 0, 1, "", 1)]),
@@ -240,7 +274,7 @@ def state(ind, i, R, code=MAIN):
           c("Мем (1 — да)", "meme", "<", 0.5, 0, 1, "", 1), c("Биткоин за 30 дней", "btcr30", "<", 20, -40, 60, "%")]),
     ]
     # order — место карточки в списке «Рынок сейчас» (порядок проверки правил): удержание проверяется сразу после охраны, до продаж на страхе
-    return [{"title": t, "what": w, "kind": kd, "why": y, "conds": cs, "order": 4.5 if t == "Удержание после капитуляции" else n} for n, (t, w, kd, y, cs) in enumerate(rows)]
+    return [{"title": t, "what": w + L7.get(t, ""), "kind": kd, "why": y, "conds": cs, "order": 4.5 if t == "Удержание после капитуляции" else n} for n, (t, w, kd, y, cs) in enumerate(rows)]
 
 
 def edge(c, l, plan, wick=None, lag=0, fee=0.001):
