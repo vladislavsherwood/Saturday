@@ -152,3 +152,20 @@
 3. Таблица «По годам»: Год | Куплено ($) | Продано ($) | Прибыль (накопленная с начала периода, на конец года) | DCA (то же для DCA).
 
 В конце — 3–5 строк выводов: в какие годы стратегия обогнала или отстала от DCA и почему (какие правила тогда срабатывали).
+
+## 7. Где брать данные (всё бесплатно, без ключей)
+
+- Цены монеты и BTC (дневные свечи OHLC, UTC): Yahoo Finance через библиотеку yfinance (тикер вида BTC-USD, ETH-USD; у новых монет Yahoo бывают свои тикеры, например PEPE24478-USD) или Binance: https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000 (листать по startTime). Если монеты нет на Binance — CoinGecko /api/v3/coins/{id}/market_chart?vs_currency=usd&days=365 (без максимумов/минимумов дня; тогда фитили считать по закрытию).
+- Страх и жадность (fng): https://api.alternative.me/fng/?limit=0 (с 2018-02-01).
+- Доли USDT, BTC, ETH (usdtd, othd): CoinMarketCap, открытый data-api —
+  общая капитализация: https://api.coinmarketcap.com/data-api/v3/global-metrics/quotes/historical?format=chart&interval=1d&timeStart=2020-01-01&timeEnd=2024-12-31 (метка «13 ноября 00:00» = итог 12 ноября);
+  капитализация монеты по дням: https://api.coinmarketcap.com/data-api/v3/cryptocurrency/historical?id=1&convertId=2781&timeStart=<unix>&timeEnd=<unix>&interval=1d (id: BTC 1, ETH 1027, USDT 825; запрашивать по году — длинный запрос отдаёт недели).
+  Доля = капитализация монеты / общая × 100. Запасной вариант — TradingView (USDT.D, BTC.D, ETH.D, OTHERS.D), но он без API.
+- Открытый интерес, лонги/шорты BTC (oidd30, lsr, dly20_100f): открытый архив Binance —
+  https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-YYYY-MM-DD.zip (с 2020-09; открытый интерес — поле sum_open_interest (в BTC), последнее значение суток; лонги/шорты — count_long_short_ratio, среднее за сутки). До 2020-09 этих данных нет: правила 2–5, 7, 8 (где есть oidd30) в те дни не срабатывают.
+- Фандинг BTC (fund30): https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-YYYY-MM.zip (с 2019-09; ставки каждые 8 ч — сложить за сутки, потом сумма за 30 дней, в %). Архив помесячный: дни текущего месяца — с Hyperliquid, POST https://api.hyperliquid.xyz/info с телом {"type": "fundingHistory", "coin": "BTC", "startTime": <мс>} (ставка почасовая, сумма за сутки).
+- MVRV биткоина: https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&page_size=10000&start_time=2011-01-01 (листать по next_page_url).
+- Золото, серебро, VVIX: Yahoo Finance — GC=F, SI=F, ^VVIX (торговые дни; на выходные — последнее значение).
+- DVOL BTC: https://www.deribit.com/api/v2/public/get_volatility_index_data?currency=BTC&resolution=1D&start_timestamp=<мс>&end_timestamp=<мс> (с 2021-03-24; отдаёт до 1000 точек, дальше — по полю continuation; незакрытые сутки не брать).
+
+Если какой-то источник недоступен — напиши, какой, и считай условия с этим индикатором ложными (правило не срабатывает), а не придумывай значения. В отчёте перечисли, с какой даты были все данные.
